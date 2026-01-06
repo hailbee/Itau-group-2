@@ -90,4 +90,4 @@ if __name__ == '__main__':
     # --test_filepath data/processed/validate_pairs_ref_10k.parquet 
     # --backbone siglip 
     # --model_weights weights\best_model_siglip_pair.pt 
-    # --plot True
+    # --plot False
