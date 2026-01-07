@@ -32,7 +32,8 @@ def main():
                       help='Device to use (cuda or cpu)')
     parser.add_argument('--plot', type=ast.literal_eval, default=False, nargs='?',
                       help='Whether to plot ROC and confusion matrix (True/False)')
-
+    parser.add_argument('--save_misclassified', type=str, default=False,
+                      help='Extract the misclassified samples as a csv')
 
     args = parser.parse_args()
 
@@ -81,6 +82,24 @@ def main():
         for k, v in metrics.items():
             if k != 'roc_curve':
                 print(f"{k}: {v}")
+            
+    # Save misclassified
+    if args.save_misclassified:
+
+        from scripts.evaluation.error_analysis import extract_misclassified
+
+        misclassified_df = extract_misclassified(
+            results_df,
+            threshold=metrics["threshold"]
+        )
+
+        misclassified_df.to_csv(
+            "misclassified_samples.csv",
+            index=False
+        )
+
+        print(f"Saved {len(misclassified_df)} misclassified samples to misclassified_samples.csv")
+
 
 if __name__ == '__main__':
     main() 
@@ -93,10 +112,12 @@ if __name__ == '__main__':
     # --plot False
 
     """
-    python3 Itau-group-2/main.py \
+
+    python3 main.py \
     --mode evaluate_saved \
-    --test_filepath Itau-group-2/data/processed/validate_pairs_ref_10k.parquet \
+    --test_filepath data/processed/validate_pairs_ref_10k.parquet \
     --backbone siglip \
-    --model_weights Itau-group-2/weights/best_model_siglip_pair.pt \
-    --plot False
+    --model_weights weights/best_model_siglip_pair.pt \
+    --plot False \
+    --save_misclassified True
     """
