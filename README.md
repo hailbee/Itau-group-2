@@ -1,19 +1,20 @@
 # Itau Group 2 – Text Similarity Evaluation
 
 This repository contains code for evaluating text similarity models for matching
-fraudulent (spoofed) company names against real company names using Siamese-style
-embedding models and baseline vision-language models.
+fraudulent (spoofed) names against real names using Siamese-style embedding models
+and baseline vision-language models (VLMs).
 
 The project supports:
 
 * Baseline model evaluation (CLIP, CoCa, FLAVA, SigLIP)
-* Evaluation of trained Siamese models (embedding + similarity scoring)
+* Evaluation of trained Siamese models using embedding similarity
 * ROC/AUC, accuracy, precision, recall metrics
-* Optional plots (ROC, confusion matrix) and exporting misclassified samples
+* Optional plots (ROC, confusion matrix)
+* Exporting misclassified samples for error analysis
 
 ---
 
-## Install dependencies
+## Install Dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -23,69 +24,69 @@ pip install -r requirements.txt
 
 ## Usage
 
-All experiments are run through `main.py`.
+All evaluations are run through `main.py`.
 
-### Modes
+### Supported Modes
 
-`main.py` supports two modes:
+`main.py` supports two execution modes:
 
-* `baseline`
-  Runs baseline VLM embedding similarity evaluation using one or more pretrained models.
+* **`baseline`**
+  Evaluates pretrained vision-language models by computing similarity between name pairs.
 
-* `evaluate_saved`
-  Evaluates a trained Siamese model checkpoint on a labeled test dataset.
+* **`evaluate_saved`**
+  Loads a trained Siamese model checkpoint and evaluates it on a labeled test dataset.
 
 ---
 
-## CLI Parameters (main.py)
+## CLI Parameters (`main.py`)
 
-Below are the arguments supported by `main.py`:
+Below are the arguments supported by `main.py` and how they are used:
 
-* `--mode` (required)
+* **`--mode`** (required)
   Choices: `baseline`, `evaluate_saved`
 
-  * `baseline`: test baseline pretrained models
+  * `baseline`: evaluate baseline VLM models
   * `evaluate_saved`: evaluate a trained Siamese model
 
-* `--test_filepath` (required)
-  Path to test data (**CSV or Parquet**) containing:
+* **`--test_filepath`** (required)
+  Path to test data (**CSV or Parquet**) containing the columns:
 
   * `fraudulent_name`
   * `real_name`
   * `label`
 
-* `--baseline_model` (baseline mode)
+* **`--baseline_model`** (baseline mode only)
   Choices: `clip`, `coca`, `flava`, `siglip`, `all`
   Default: `clip`
   Selects which baseline model(s) to evaluate.
 
-* `--backbone` (siamese backbone selection)
+* **`--backbone`** (evaluate_saved mode)
   Choices: `clip`, `coca`, `flava`, `siglip`
   Default: `clip`
-  Vision-language backbone used by the Siamese model during evaluation.
+  Backbone used when instantiating the Siamese model for evaluation.
 
-* `--batch_size`
+* **`--model_weights`** (evaluate_saved mode, required)
+  Path to the trained Siamese model checkpoint (`.pt`).
+
+* **`--batch_size`**
   Default: `32`
-  Batch size used during embedding generation / evaluation.
+  Batch size used during embedding generation and evaluation.
 
-* `--plot_roc`
+* **`--device`**
+  Default: automatically set to `cuda` if available, otherwise `cpu`.
+
+* **`--plot_roc`**
   Default: `False`
-  If `True`, plots ROC curve.
+  If `True`, plots the ROC curve (baseline mode).
 
-* `--model_weights` (evaluate_saved mode)
-  Path to the trained Siamese model weights checkpoint.
-
-* `--device`
-  Default: auto-detected (e.g., `cuda` if available, else `cpu`)
-  Device used to run inference.
-
-* `--plot`
+* **`--plot`**
   Default: `False`
-  If `True`, plots ROC and confusion matrix.
+  If `True`, plots ROC curve and confusion matrix (Siamese evaluation).
 
-* `--save_misclassified`
+* **`--save_misclassified`**
   Default: `False`
-  If set, exports misclassified samples to a CSV (path or enabled flag depending on implementation).
+  If enabled, extracts misclassified samples after evaluation and saves them to
+  `misclassified_samples.csv`.
 
 ---
 
@@ -96,37 +97,36 @@ Below are the arguments supported by `main.py`:
 ```bash
 python main.py \
   --mode baseline \
-  --test_filepath data/processed/german_merged_dataset.csv \
+  --test_filepath data/processed/validate_pairs_ref_10k.parquet \
   --baseline_model clip \
   --batch_size 32 \
-  --device cuda \
-  --plot True
+  --plot_roc True
 ```
+
+---
 
 ### 2) Baseline evaluation (all models)
 
 ```bash
 python main.py \
   --mode baseline \
-  --test_filepath data/processed/german_merged_dataset.csv \
+  --test_filepath data/processed/validate_pairs_ref_10k.parquet \
   --baseline_model all \
-  --batch_size 32 \
-  --device cuda \
-  --plot_roc True
+  --batch_size 32
 ```
+
+---
 
 ### 3) Evaluate a trained Siamese model
 
 ```bash
 python main.py \
   --mode evaluate_saved \
-  --test_filepath data/processed/german_merged_dataset.csv \
-  --model_weights weights/siamese_checkpoint.pt \
-  --backbone clip \
-  --batch_size 32 \
-  --device cuda \
-  --plot True \
-  --save_misclassified misclassified.csv
+  --test_filepath data/processed/validate_pairs_ref_10k.parquet \
+  --backbone siglip \
+  --model_weights weights/best_model_siglip_pair.pt \
+  --plot False \
+  --save_misclassified True
 ```
 
 ---
@@ -139,18 +139,19 @@ python main.py \
   * precision
   * recall
   * ROC AUC
-  * optimal thresholds (if enabled)
+  * optimal threshold
 * Optional plots:
 
   * ROC curve
   * confusion matrix
-* Misclassified samples (if enabled):
+* Error analysis:
 
-  * CSV export of incorrectly predicted pairs
+  * `misclassified_samples.csv` containing incorrectly predicted pairs
 
 ---
 
 ## Requirements
 
 * Python 3.12.5
-  See `requirements.txt` for the full list.
+
+See `requirements.txt` for the full list.
