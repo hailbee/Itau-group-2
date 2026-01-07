@@ -91,3 +91,12 @@ if __name__ == '__main__':
     # --backbone siglip 
     # --model_weights weights\best_model_siglip_pair.pt 
     # --plot False
+
+    """
+    python3 Itau-group-2/main.py \
+    --mode evaluate_saved \
+    --test_filepath Itau-group-2/data/processed/validate_pairs_ref_10k.parquet \
+    --backbone siglip \
+    --model_weights Itau-group-2/weights/best_model_siglip_pair.pt \
+    --plot False
+    """
