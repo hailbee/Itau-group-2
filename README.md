@@ -11,22 +11,6 @@ The project supports:
 
 ---
 
-## Repository Structure
-
-Itau-group-2/
-├── data/                     # Datasets (CSV / Parquet)
-├── main.py                   # Entry point for evaluation
-├── model_utils/              # Model definitions and wrappers
-├── scripts/
-│   ├── baseline/             # Baseline model evaluation
-│   └── evaluation/           # Evaluator and error analysis
-├── utils/                    # Embeddings, metrics, helpers
-├── weights/                  # Trained model checkpoints
-├── requirements.txt          # Python dependencies
-├── README.md
-
----
-
 ## Install dependencies
 
 pip install -r requirements.txt
