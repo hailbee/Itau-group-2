@@ -3,7 +3,6 @@ from .wrappers import (
     CoCaModelWrapper,
     FLAVAModelWrapper,
     SigLIPModelWrapper,
-    CogVLMModelWrapper,
 )
 
 class ModelFactory:
