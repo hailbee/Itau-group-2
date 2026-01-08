@@ -17,6 +17,10 @@ The project supports:
 ## Install Dependencies
 
 ```bash
+git clone https://github.com/hailbee/Itau-group-2.git
+cd Itau-group-2
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
