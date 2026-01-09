@@ -3,6 +3,9 @@ from .wrappers import (
     CoCaModelWrapper,
     FLAVAModelWrapper,
     SigLIPModelWrapper,
+    CogVLMModelWrapper,
+    QwenVLMModelWrapper,
+    GemmaModelWrapper,
 )
 
 class ModelFactory:
@@ -28,7 +31,22 @@ class ModelFactory:
             'class': SigLIPModelWrapper,
             'default_name': 'google/siglip-base-patch16-224',
             'year': 2023,
-        }
+        },
+        'cogvlm': {
+            'class': CogVLMModelWrapper,
+            'default_name': 'THUDM/cogvlm-chat-hf',
+            'year': 2023,
+        },
+        'qwenvlm': {
+            'class': QwenVLMModelWrapper,
+            'default_name': 'Qwen/Qwen-VL',
+            'year': 2023,
+        },
+        'gemma': {
+            'class': GemmaModelWrapper,
+            'default_name': 'google/gemma-2b',
+            'year': 2024,
+        },
     }
     
     @classmethod
