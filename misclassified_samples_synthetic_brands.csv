@@ -1,0 +1,823 @@
+fraudulent_name,real_name,label,max_similarity,predicted_label,error_type
+𝖡𝓪𝓏o๐𝜅α,Bazooka,1,0.9044805,0,false_negative
+𝞐𝘚Ϻ 𝚕𝜛𝘁er𝜋𝚊t⍳on𝘢𝟭,ASM International,1,0.8733619,0,false_negative
+Email Limited,EnergyAustralia,0,0.9164698,1,false_positive
+𝐄sc𝞼n𝚍ͺ𝗱𝛂,Escondida,1,0.8924915,0,false_negative
+Ｔ𝛼𝝞ⵏℽ﹘Η𝘰,Tally-Ho,1,0.89459187,0,false_negative
+Tresemme,Zagori,0,0.93700755,1,false_positive
+Kiss My Face,Crown Lager,0,0.9154294,1,false_positive
+Ergon S.A.,Ben-Gay,0,0.9265688,1,false_positive
+𝘟⁃𝖠𝑐𝓉𝑜,X-Acto,1,0.8854906,0,false_negative
+𝙍e𝕖f,Reef,1,0.9050076,0,false_negative
+𝘊𝚰ι𝒏ͺ𝕔,Clinic,1,0.9048901,0,false_negative
+CCR,Clinic,0,0.9207759,1,false_positive
+𝘚𝑒c𝛕г𝗮,Sectra,1,0.88138646,0,false_negative
+ꓗrn𝝰𝙧𝝉,Kmart,1,0.907273,0,false_negative
+Ꮥ𝕙ｅ𝕀l C𝕒пad𝖆,Shell Canada,1,0.880051,0,false_negative
+Kelvinator,Hydroxycut,0,0.9110296,1,false_positive
+𝑨meriс𝖺𝕟 E╳prℯss,American Express,1,0.87686664,0,false_negative
+𝗥ı𝔠𝐞-𝐴-R𝞸𝜛Ꭵ,Rice-A-Roni,1,0.89156413,0,false_negative
+Cinzano Vermouth,Ann Taylor,0,0.9256891,1,false_positive
+Nu Skin,Breville,0,0.9249331,1,false_positive
+𝙍T𝗟,RTL,1,0.89119625,0,false_negative
+Trapiche Roble,Volvic,0,0.9312714,1,false_positive
+Vizio,AmBev,0,0.9193851,1,false_positive
+Hopewell Holdings,Blaupunkt,0,0.92688346,1,false_positive
+Marmot,Bowflex,0,0.9247843,1,false_positive
+Kiss My Face,Kriek,0,0.9227242,1,false_positive
+𝓑Н𝑃 ᗷͺℐｌ𝛊𝙩o𝕟,BHP Billiton,1,0.88530993,0,false_negative
+Durex,Clairol,0,0.9407632,1,false_positive
+Qualcomm,Right Guard,0,0.91562676,1,false_positive
+𝖲𝑒𝒶 𝖂ം𝐫𝞘𝙙,Sea World,1,0.89947087,0,false_negative
+𝒮𝓲𝓮mens,Siemens,1,0.89871955,0,false_negative
+ℰ𝙣ℂ𝚊𝙣α,EnCana,1,0.86171126,0,false_negative
+𝖠c𝖚r𝖺,Acura,1,0.87743676,0,false_negative
+𝓕𝚞𝖏𝙞τ𝑠𝘶,Fujitsu,1,0.8863466,0,false_negative
+𝔗𝜠𝘓US,TELUS,1,0.88774335,0,false_negative
+Entel PCS,DirectTV,0,0.91785926,1,false_positive
+𝚳c𝒜𝚏𝗲ℯ,McAfee,1,0.8991058,0,false_negative
+𝘚𝐏𝑨𝙈,SPAM,1,0.9047575,0,false_negative
+𝔎ｏ𝑟ℯa𝐧 Air,Korean Air,1,0.877937,0,false_negative
+CCR,Acindar SA,0,0.9319485,1,false_positive
+Canadian Natural Resources,CÃ©line,0,0.9153216,1,false_positive
+𝛢ꝸᎬ,A&E,1,0.8744401,0,false_negative
+General Electric,Tooheys Extra Dry,0,0.91832834,1,false_positive
+𝕻a𝘶ls,Pauls,1,0.9025475,0,false_negative
+Nextel,Multiplex,0,0.9150499,1,false_positive
+𝘙𝚎𝒄𝚊𝗿๐,Recaro,1,0.8750384,0,false_negative
+𝖧౦𝕞ｅ,Home,1,0.8398864,0,false_negative
+Ꭹ𝗲𝘐𝐈𝗈ᴡ,Yellow,1,0.8979971,0,false_negative
+President,Yellow,0,0.9134393,1,false_positive
+Westvleteren,TWG Tea Company,0,0.9266708,1,false_positive
+𝘼𝑐ne,Acne,1,0.85959697,0,false_negative
+Ꭰ𝔎ℕ𝝪,DKNY,1,0.9052843,0,false_negative
+Ꮶ𝗹ⲟℼ𝖉𝛊k℮,Klondike,1,0.8651026,0,false_negative
+Schwan's,Spray ân Wash,0,0.9316939,1,false_positive
+Ⲥ𝛐tt,Cott,1,0.88207763,0,false_negative
+Persil,Absolut,0,0.91751677,1,false_positive
+Westpac New Zealand,BabyGap,0,0.9254422,1,false_positive
+LÃ¶wenbrÃ¤u,Itaipava,0,0.913005,1,false_positive
+𝘿IΑ,DIA,1,0.86640155,0,false_negative
+Alcatel,Kurnia,0,0.9203266,1,false_positive
+𝕷α𝓴𝒆𝑝סr𝔱 Вrewing Com𝝔𝑎n𝜸,Lakeport Brewing Company,1,0.88666725,0,false_negative
+iPod,Persil,0,0.94294393,1,false_positive
+Sam Adams,Tenaris,0,0.91334873,1,false_positive
+Book,Annedd'ale,0,0.9109406,1,false_positive
+Rolex,Temax,0,0.9214677,1,false_positive
+Fruit of the Loom,Abercrombie & Fitch,0,0.92160094,1,false_positive
+Stanley Steemer,Rite Aid,0,0.91631764,1,false_positive
+Valtrex,SNS REAAL,0,0.9161117,1,false_positive
+Saint-Gobain S.A.,Qvale,0,0.914062,1,false_positive
+𝙍ege𝟉t,Regent,1,0.88841635,0,false_negative
+𝑾𝕖𝛕 𝐎𝛡е𝔰,Wet Ones,1,0.90572345,0,false_negative
+E.ON,Gen-i,0,0.91529953,1,false_positive
+K9 Advantix,Banco Rio de la Plata SA,0,0.9117057,1,false_positive
+Heineken,Fluor,0,0.93730843,1,false_positive
+𝓐𝔯i𝓇α𝜛g,Arirang,1,0.89026004,0,false_negative
+𝘏Iᕼ Iпѕ𝗎𝚛𝒶n𝒄e,HIH Insurance,1,0.85895234,0,false_negative
+𝙱Ã¶h𝐈𝕖𝒓−𝖀𝒹𝘥eհo𝗹𝑚,BÃ¶hler-Uddeholm,1,0.90917885,0,false_negative
+Chinachem Group,Schooner Lager,0,0.9271997,1,false_positive
+Teck Cominco,Invisalign,0,0.9172449,1,false_positive
+Lexus,Nestea,0,0.915668,1,false_positive
+𝘋𝓻𝒑er𝗌,Drpers,1,0.9099729,0,false_negative
+𝘽𝐏,BP,1,0.9038286,0,false_negative
+Tr௦jａ𝞹,Trojan,1,0.901848,0,false_negative
+𝖠𝓘￨е𝓃𝒔,Allens,1,0.8947912,0,false_negative
+𝒜N𝚻1 G𝚛o𝔲ρ,ANT1 Group,1,0.90742797,0,false_negative
+𝙴Ｉ𝐟𝖎𝓃 𝐂𝒂ᴦs,Elfin Cars,1,0.90647614,0,false_negative
+X3M,MÃ¡quina de Vendas,0,0.91522074,1,false_positive
+Axis Bank,Victa lawn mower,0,0.9147896,1,false_positive
+Martha Stewart Living,Luigi Bosca Reserve,0,0.91898793,1,false_positive
+𝓖ᴦ𝕖𝚎𝜋 𝔊𝝸𝛂𝛡𝑡,Green Giant,1,0.8918569,0,false_negative
+NyQuil,De Bortoli Wines,0,0.9124019,1,false_positive
+𝖲т𝘢ⲅ 𝖢𝘩𝚊𝝅𝜛𝒆∣,Star Channel,1,0.8740977,0,false_negative
+Propellerhead Software,Old Spice,0,0.916805,1,false_positive
+𝕹ɑ𝔱𝒾𝐨𝛑𝕨𝜄𝒅𝐞,Nationwide,1,0.9102488,0,false_negative
+𝕬𝒍𝟷 𝘚t𝒂𝚛,All Star,1,0.8615664,0,false_negative
+Eа𝜏𝗈𝒏,Eaton,1,0.90690136,0,false_negative
+𝜜𝓦𝜝 Li𝗺i𝘁ℯ𝒹,AWB Limited,1,0.90362257,0,false_negative
+Liquid Paper,ITT Technical Institute,0,0.9132872,1,false_positive
+Whittaker's,Kibbles ân Bits,0,0.916205,1,false_positive
+Nintendo,CIMB,0,0.92639184,1,false_positive
+𝐶ⲟ𝔯𝚍𝐞𝗅𝙄 𝘐𝛡𝕗०𝖗𝔪α𝘵Ꭵ٥𝕟,Cordell Information,1,0.87931174,0,false_negative
+𝟊l𝑖gհt ꓚe𝜛𝛕𝑟𝑒,Flight Centre,1,0.8988656,0,false_negative
+𝓐𝘂𝒸Ꮒ𝝰𝛡,Auchan,1,0.9007322,0,false_negative
+Ortho Tri-Cyclen,Molson Export,0,0.91345733,1,false_positive
+Peroni,Frooti,0,0.9325225,1,false_positive
+Brasil Foods,Tonka,0,0.91390043,1,false_positive
+𝐿eᕁυs,Lexus,1,0.8986512,0,false_negative
+Rebel,Lexus,0,0.9221689,1,false_positive
+Telecom Italia Mobile,Lufthansa,0,0.91439474,1,false_positive
+Swedish Fish,Papa John's,0,0.9193841,1,false_positive
+𝜨𝑹ꓟ𝐴,NRMA,1,0.90806574,0,false_negative
+𝕲ꓔ,GT,1,0.8856404,0,false_negative
+𝐇𝗎g𝑔𝚒e𝕤,Huggies,1,0.8918413,0,false_negative
+𝐒𝕦aѵe,Suave,1,0.8873467,0,false_negative
+𝕎he𝗮tables,Wheatables,1,0.8832567,0,false_negative
+𝘟-Men,X-Men,1,0.8878182,0,false_negative
+Xigmatek,Quiksilver,0,0.9202689,1,false_positive
+𝙕𝚎𝓉a,Zeta,1,0.8868644,0,false_negative
+Domino's Pizza,Royal Bank of Scotland,0,0.9127354,1,false_positive
+𝘗ಂ𝟭𝚊𝗿,Polar,1,0.8959167,0,false_negative
+Inraero,Polar,0,0.9204941,1,false_positive
+𝗕log,Blog,1,0.9013875,0,false_negative
+Cointreau,Altos Del Plata,0,0.91250193,1,false_positive
+𝛨ℯ𝐫𝕓𝞪ℐ 𝔼ѕ𝑠𝖊ℼ𝙘е𝒔,Herbal Essences,1,0.8987092,0,false_negative
+Xigmatek,Herbal Essences,0,0.9197842,1,false_positive
+TiVo,Travelocity,0,0.929504,1,false_positive
+𝗔сⅇ 𝑹𝖺𝗱ℹ𝗼,Ace Radio,1,0.8902914,0,false_negative
+𝑨𝙧𝕥 ℓ𝗇stᎥ𝕥ute I𝞏te𝕣ռ𝛂t𝞲𝖔𝝅a𝓵,Art Institute International,1,0.8976245,0,false_negative
+𝑆т𝝰𝙩еꜱm𝞪𝛑,Statesman,1,0.86025923,0,false_negative
+𝐀𝔫𝔤e𝜤 𝑺௦𝐟𝜏,Angel Soft,1,0.89633787,0,false_negative
+WellPoint,Crayola,0,0.93108034,1,false_positive
+𝓣ⅈ𝒹𝝲 Ｃ𝚊𝓽𝕤,Tidy Cats,1,0.89922017,0,false_negative
+𝑳𝑎𝓯𝔣ү ⟙𝛼𝙛𝔣𝝲,Laffy Taffy,1,0.90031856,0,false_negative
+Merida,Murrays,0,0.93638396,1,false_positive
+Ꭹ𝘛𝘕,YTN,1,0.9039508,0,false_negative
+𝙋ɑⲥi𝒇ιｃa,Pacifica,1,0.85913426,0,false_negative
+𝚳i𝙘ᴦ𝜊sof𝞽,Microsoft,1,0.90422785,0,false_negative
+𝑫eW𝑨L𝑇,DeWALT,1,0.88707227,0,false_negative
+𝖬YOB,MYOB,1,0.8789929,0,false_negative
+𝜯acℴ𝗺а,Tacoma,1,0.8890036,0,false_negative
+Merida,Tacoma,0,0.9128296,1,false_positive
+𝐏𝒐𝑤𝗲𝒓Ᏼ𝘢𝘳,PowerBar,1,0.89220697,0,false_negative
+𝛭uⲅａ𝛑ಂ,Murano,1,0.9004142,0,false_negative
+ꓮ1Տ,AIS,1,0.8940369,0,false_negative
+ᑭO𝘚ℂ𝐎,POSCO,1,0.8776697,0,false_negative
+𝝖Ⅰℐｓт𝖊𝙚𝟙,Allsteel,1,0.88727164,0,false_negative
+𝐒ρߊi𝗰𝚎,Splice,1,0.8929578,0,false_negative
+𝑳𝚎𝙖𝒹𝐞𝚛 𝖯𝔯𝗶𝚌𝐞,Leader Price,1,0.89035803,0,false_negative
+Kcel,KitchenAid,0,0.91112775,1,false_positive
+⟙𝘳ι𝓿iaⅠ 𝜬սrs𝜐𝓲𝕥,Trivial Pursuit,1,0.90423316,0,false_negative
+Holiday Inn,HermÃ©s,0,0.9281678,1,false_positive
+T𝘳oǀ￨ｅ𝘳,Troller,1,0.90090925,0,false_negative
+𝕋𝑒𝕤ｃｏ,Tesco,1,0.8531532,0,false_negative
+Vogue,Vespa,0,0.9123266,1,false_positive
+I Love Biscuits,Lowes Menswear,0,0.9108479,1,false_positive
+Acindar SA,Fanta,0,0.9163996,1,false_positive
+ꓙ𝒐𝔫ℯ𝔰 𝒩𝒆vv 𝒀𝞂ᴦ𝞳,Jones New York,1,0.9024681,0,false_negative
+Harry Potter,Medtronic,0,0.9211411,1,false_positive
+9,Albertsons,0,0.9162288,1,false_positive
+𝘋ow𝟉𝓎,Downy,1,0.8886207,0,false_negative
+𝑬g𝗴o,Eggo,1,0.8887134,0,false_negative
+𝙉oᕁ𝕫𝕖𝓂𝒂,Noxzema,1,0.90700155,0,false_negative
+𝕿o𝘳𝙤𝝅𝝉၀-ⅅοʍӏ𝝕𝜾ಂ𝓷 Ban𝞳,Toronto-Dominion Bank,1,0.9045917,0,false_negative
+Matchbox,Dramamine,0,0.9331348,1,false_positive
+Ꮯ𝖊𝔫𝗈𝔳𝘂ｓ 𝙀𝓷𝙚𝑟𝘨𝙮,Cenovus Energy,1,0.8961961,0,false_negative
+𝘌vian,Evian,1,0.8808757,0,false_negative
+Elmer Fudd,Malvern Star,0,0.9202684,1,false_positive
+Tally-Ho,Chanel,0,0.91675365,1,false_positive
+𝐁ᎩD,BYD,1,0.9025426,0,false_negative
+Zanussi,Pepto-Bismol,0,0.91843367,1,false_positive
+Moulinex,Healthy Choice,0,0.9205929,1,false_positive
+Onida,John Frida,0,0.92871517,1,false_positive
+𝘗ιⲒ𝘰𝝉,Pilot,1,0.88950366,0,false_negative
+TrimSpa,BASF,0,0.92456436,1,false_positive
+𝖯Ꭵᴑ𝑛𝒆𝖊𝖗,Pioneer,1,0.89460355,0,false_negative
+Naturalizer,Elantra,0,0.91931856,1,false_positive
+𝐸𝑫𝔉 E|𝐞𝑐𝜏𝒓𝓲c,EDF Electric,1,0.8983108,0,false_negative
+𝔈l𝛎o,Elvo,1,0.88273746,0,false_negative
+Empire State Building,Land O'Lakes,0,0.92325014,1,false_positive
+𝐋а𝟉ⅾ𝓸𝕣 ꝸ 𝞖𝔞𝔴𝖺,Landor & Hawa,1,0.89162934,0,false_negative
+𝔏evia𝓉han,Leviathan,1,0.90960306,0,false_negative
+𝙍ᴏƍⅇ𝔯𝚜,Rogers,1,0.8835832,0,false_negative
+ℛ𝑩𝙎,RBS,1,0.9096864,0,false_negative
+𝘙𝖾𝝔𝓼𝗼ǀ,Repsol,1,0.89058197,0,false_negative
+Qvale,Cinnamon Toast Crunch,0,0.9251136,1,false_positive
+Corsendonk Pater Noster,Cococontacts Pty Ltd,0,0.94333494,1,false_positive
+IOPE,Shiseido,0,0.91238886,1,false_positive
+Rimmel,Spinbrush,0,0.91450536,1,false_positive
+Netflix,Ray-Ban,0,0.9210857,1,false_positive
+𝓔𝞽Ꮒ⍳𝓬ａו 𝓞𝗰𝔢аո,Ethical Ocean,1,0.894243,0,false_negative
+ℋ૦l𝓵𝚤𝘀𝖙𝖾r,Hollister,1,0.9102017,0,false_negative
+Pearl Vision,SociÃ©tÃ© GÃ©nÃ©rale,0,0.9129091,1,false_positive
+Speed Stick,Hefty,0,0.9154554,1,false_positive
+𝑶MO,OMO,1,0.8936622,0,false_negative
+Rainbow Brite,Empire State Building,0,0.9181962,1,false_positive
+𝔐o𝐭el 6,Motel 6,1,0.903675,0,false_negative
+Crayola,Motel 6,0,0.94643635,1,false_positive
+𝑩𝖆να𝐫𝛊𝗮,Bavaria,1,0.9070394,0,false_negative
+Naturalizer,Nuvaring,0,0.91398644,1,false_positive
+𝘏𝒂˛𝓃𝙖𝖓 Ａⅰ𝓻𝗅𝕚𝞏еѕ,Hainan Airlines,1,0.8718124,0,false_negative
+𝚂𝙥ℯ𝗇𝙘𝑒ⲅ,Spencer,1,0.8960861,0,false_negative
+Linguistically Based,Naraya,0,0.915837,1,false_positive
+TCell,Theraflu,0,0.91831654,1,false_positive
+𝕬∣l,All,1,0.87544864,0,false_negative
+𝙱і𝓶𝖻𝓸,Bimbo,1,0.9004415,0,false_negative
+𝑌𝘛𝖫,YTL,1,0.90610445,0,false_negative
+𝑪𝗵u𝜛ƍhաa 𝒯elecоrn C𝘰,Chunghwa Telecom Co,1,0.8993999,0,false_negative
+Queiroz GalvÃ£,Ford Motor,0,0.9323643,1,false_positive
+Alumina Limited,National Grid,0,0.916569,1,false_positive
+𝔸xis Bank,Axis Bank,1,0.85050005,0,false_negative
+Antares,CNP Assurances,0,0.9108633,1,false_positive
+ꓪ٥о𝔡𝒔 𝗕αցσ𝒕,Woods Bagot,1,0.9086995,0,false_negative
+Allplastics,Four Loko,0,0.91882235,1,false_positive
+𝙎𝖎𝝿a,Sina,1,0.88726604,0,false_negative
+Star Wars,Greenpeace,0,0.9286258,1,false_positive
+𝗜𝔐A𝐗,IMAX,1,0.87034446,0,false_negative
+La Chouffe,U.S. Airways,0,0.915934,1,false_positive
+𝔖𝔲𝚗lɩ𝔤h𝜏,Sunlight,1,0.90818805,0,false_negative
+𝔐⍺cleaℼs,Macleans,1,0.8790082,0,false_negative
+𝕳&R Blᴏck,H&R Block,1,0.8877002,0,false_negative
+In.gr,H&R Block,0,0.9354164,1,false_positive
+ComgÃ¡s,Clear Channel Communications,0,0.91594046,1,false_positive
+𝔖a𝖿𝑒τℽ 𝘈𝛖ƽτ𝐫𝔞Ⅰⅰа,Safety Australia,1,0.9073642,0,false_negative
+Ꭺν𝙚𝘥𝑎,Aveda,1,0.904335,0,false_negative
+𝘚i𝘦𝒏𝛡𝛂,Sienna,1,0.91039085,0,false_negative
+𝔅a𝐢𝒹u,Baidu,1,0.8813884,0,false_negative
+Whole Foods Markets,O boticÃ¡rio,0,0.9328977,1,false_positive
+𝐼𝐂ℬℂ,ICBC,1,0.88947123,0,false_negative
+𝚁𝑒𝖛𝕝𝜊𝒏,Revlon,1,0.88207954,0,false_negative
+Sⲟ𝜋𝚤𝖈𝔞𝔯𝐞,Sonicare,1,0.9064386,0,false_negative
+𝖤ϖ𝓲 ꓢ܁𝘱꘎ᗅ․,Eni S.p.A.,1,0.8992295,0,false_negative
+𝙈emo𝖗ex,Memorex,1,0.90115577,0,false_negative
+Dentyne,Samsung,0,0.9121748,1,false_positive
+𝓗𝖚τ𝓬𝕙𝑖s૦ո 𝕎𝖍𝒶ʍ𝝆𝝾𝕒,Hutchison Whampoa,1,0.91073227,0,false_negative
+American Dairy Association,Accu-Chek,0,0.9185506,1,false_positive
+𝑶𝕗𝗳ǃ,Off!,1,0.8665463,0,false_negative
+𝖬α𝗋k՚𝕤,Mark's,1,0.9021658,0,false_negative
+𝗥ం𝒂d ℝunn𝗲r,Road Runner,1,0.88236177,0,false_negative
+NASDAQ,Dr. Scholl's,0,0.9228799,1,false_positive
+Paper Mate,Bugatti,0,0.91821265,1,false_positive
+𝛭ⲅ٠ 𝙋ം𝞽𝞪ᴛ𝞂 Ⲏ𝗲𝕒d,Mr. Potato Head,1,0.89479506,0,false_negative
+R𝙚аӀ,Real,1,0.8889153,0,false_negative
+ௐ൦ꜱ𝗆ᴏtｅ,Cosmote,1,0.86547554,0,false_negative
+𝙎𝓔𝕾,SES,1,0.82629126,0,false_negative
+SNS REAAL,FedEx Office,0,0.92288756,1,false_positive
+Zagori,Zoloft,0,0.9389132,1,false_positive
+𝖧𝖚𝕒 Xіa B𝞪𝗻k,Hua Xia Bank,1,0.9022609,0,false_negative
+Ꭺ𝗱ı𝓭ａ𝑠,Adidas,1,0.8909726,0,false_negative
+Planned Parenthood,Pineapple Lumps,0,0.9117821,1,false_positive
+𝓒𝙤ᴨ𝑛𝒆с𝚝𝔼𝝰ｓ𝛕,ConnectEast,1,0.90833855,0,false_negative
+Suzuki,Mercedes-Benz,0,0.9262871,1,false_positive
+𝑅ℯlօ𝛼𝘥,Reload,1,0.90526235,0,false_negative
+𝑪ⅇ𝟉𝘁𝖚𝒓ｙ ᒿ|,Century 21,1,0.8850034,0,false_negative
+Black Label,Tresemme,0,0.91094327,1,false_positive
+NA𝕊CАR,NASCAR,1,0.9104698,0,false_negative
+𝔎𝙚𝕕ƽ,Keds,1,0.8895134,0,false_negative
+Chaumet,deGrisogono,0,0.931442,1,false_positive
+Cheez Whiz,Brandchannel,0,0.9235448,1,false_positive
+Woolworths,Wing Wah,0,0.92222923,1,false_positive
+𝒴as𝔪in,Yasmin,1,0.89717245,0,false_negative
+Kikki-K,TJ Maxx,0,0.9216849,1,false_positive
+Marcolini,ArcelorMittal,0,0.9143437,1,false_positive
+𝓛ꓰ𝑮O,LEGO,1,0.8451218,0,false_negative
+Nestea,LEGO,0,0.9374013,1,false_positive
+Von Dutch,Looney Tunes,0,0.9161461,1,false_positive
+Moet & Chandon,Matebo,0,0.9228458,1,false_positive
+HasserÃ¶der,Take5,0,0.92711514,1,false_positive
+𝐒e𝙄𝚎𝙘t Ⲥ౦m𝖋੦r𝜏,Select Comfort,1,0.90876937,0,false_negative
+Ｓі𝗇g𝐼𝕖𝚜,Singles,1,0.90412694,0,false_negative
+𝗛⍺ne𝚜,Hanes,1,0.8706584,0,false_negative
+Star Wars,Email Limited,0,0.9110845,1,false_positive
+Xigmatek,Marriott,0,0.9249926,1,false_positive
+Telegraaf Media Groep,Waitrose,0,0.9121687,1,false_positive
+Ꮋｅ𝒍𝖑𝛔 Ⲕ𝕚𝓉τ𝗒,Hello Kitty,1,0.9100222,0,false_negative
+Play-Doh,Hello Kitty,0,0.9166452,1,false_positive
+𝘔𝚨Ᏼ ℭංr𝘱𝒐𝕣𝗮𝙩ℹ𝖔n,MAB Corporation,1,0.89393014,0,false_negative
+ᗞ𝒐le,Dole,1,0.90015084,0,false_negative
+Samsung,Kohler,0,0.9280711,1,false_positive
+ℳı𝙄l𝔢𝓇,Miller,1,0.8821189,0,false_negative
+𝙱r𝜾ꜱ𝚌𝘰,Brisco,1,0.9067862,0,false_negative
+𝕸𝒆𝑛𝑎ⲅ𝔡｀ƽ,Menard's,1,0.90177137,0,false_negative
+𝒢𝜎၀g𝕴℮,Google,1,0.90778303,0,false_negative
+Arla,Apollo,0,0.91749704,1,false_positive
+𝖠𝓻l𝗮,Arla,1,0.8874987,0,false_negative
+Harris Teeter,Korres,0,0.91164,1,false_positive
+El Corte InglÃ©s,Keglevich,0,0.91429526,1,false_positive
+Rail Control Systems Australia,Blundstone Footwear,0,0.911154,1,false_positive
+Lojas Riachuelo,CitroÃ«n,0,0.9262541,1,false_positive
+𝚂ℹ𝖝 𝕱1𝒶ｇs,Six Flags,1,0.9102967,0,false_negative
+Raymonds,Tuna Helper,0,0.9125681,1,false_positive
+Hummer,Carlsberg,0,0.92203456,1,false_positive
+Mitsubishi,Aunt Jemima,0,0.916425,1,false_positive
+𝕳ӏ𝟭𝛪𝓼Ꮒ𝘪𝗋𝓮 𝔽𝖆𝓻ʍ,Hillshire Farm,1,0.89698535,0,false_negative
+Ϻ𝙪𝟉𝗶ᴄ𝖍 R℮,Munich Re,1,0.9103898,0,false_negative
+Ԝ𝑟𝖺𝕟𝕘𝓘𝚎r,Wrangler,1,0.90365183,0,false_negative
+Viper,Wrangler,0,0.9231244,1,false_positive
+American Idol,Quiznos,0,0.9160638,1,false_positive
+Fair and Handsome,Helzberg Diamond,0,0.9256955,1,false_positive
+𝙋𝑎ⲥⅰ𝗳ⅰᴄ 𝑺𝘵𝛂𝓇 𝞜е𝒕𝖜𝒐𝙧𝚔 𝖫ɩ𝓶і𝐭ⅇ𝔡,Pacific Star Network Limited,1,0.8967254,0,false_negative
+𝖬𝔢g𝖆 ꓚ𝒽an𝝿e𝜤,Mega Channel,1,0.89442426,0,false_negative
+𝙈𝖊α𝖽𝗈𝓌 Ⳑе𝛼,Meadow Lea,1,0.9034161,0,false_negative
+Marriott,Blistex,0,0.92102313,1,false_positive
+Nicorette,Thomasville,0,0.91612595,1,false_positive
+𝐌ᴑո𝘰𝑝ంǀy,Monopoly,1,0.90527564,0,false_negative
+𝓝𝛔𝓶ı𝙨,Nomis,1,0.8390177,0,false_negative
+𝑻ꓦՅ,TV3,1,0.87033784,0,false_negative
+𝘚o𝝔𝐫𝞸le,Soprole,1,0.90230674,0,false_negative
+Graco,Purell,0,0.93073034,1,false_positive
+𝑍ℯnιt𝘩,Zenith,1,0.91042125,0,false_negative
+Nissan,Zenith,0,0.92554104,1,false_positive
+ɪ𝓣ս𝔫ℯ𝔰,iTunes,1,0.8925973,0,false_negative
+𝑯an𝛼 B𝛂nk,Hana Bank,1,0.8813384,0,false_negative
+𝑴ust S𝖾e 𝓣V,Must See TV,1,0.90473247,0,false_negative
+𝘒α𝙨hi,Kashi,1,0.88018,0,false_negative
+M𝞪𝐢пl𝗮ᴨԁ,Mainland,1,0.90915906,0,false_negative
+Lindt,Bitburger,0,0.9141112,1,false_positive
+𝑳𝙪𝓬𝓀𝘺 𝕃ɑƍeⲅ,Lucky Lager,1,0.8802927,0,false_negative
+Antarctica,Lucky Lager,0,0.91542184,1,false_positive
+Liquid-Plumr,Red Bull,0,0.9156431,1,false_positive
+𝙼𝝸𝚍as,Midas,1,0.8759477,0,false_negative
+𝓤BᏚ,UBS,1,0.90780616,0,false_negative
+Manwich,Pine O Cleen,0,0.91863257,1,false_positive
+𝓥i𝙧𝗴in𝙞𝕒 Ѕ𝖑𝚒𝐦s,Virginia Slims,1,0.8951991,0,false_negative
+𝖯𝛂𝖓ason𝚒𝒸,Panasonic,1,0.88091904,0,false_negative
+Spotify,Lockheed Martin,0,0.9121834,1,false_positive
+𝒜п𝙘𝗵or,Anchor,1,0.90874535,0,false_negative
+Nature's Path,Lion Nathan,0,0.9244756,1,false_positive
+Tim Hortons,ItaÃº Unibanco,0,0.91918945,1,false_positive
+Noggin IT,WD-40,0,0.92589575,1,false_positive
+𝑆𝕱𝐑,SFR,1,0.8781025,0,false_negative
+𝖡ℯΙ𝔩 𝛢𝞃𝚕𝝰𝚗𝓽𝚒𝘤,Bell Atlantic,1,0.8945586,0,false_negative
+𝑺𝚎𝖆𝑟𝓈,Sears,1,0.9072013,0,false_negative
+𝖂𝑎𝑙𝐝𝔢πЬｏ𝘰𝛞ｓ,Waldenbooks,1,0.9095938,0,false_negative
+𝚳𝑖𝘭𝟣℮πɩ𝜐𝗺 ꝸ 𝐂𝞼𝓹𝛕𝘩σ𝚛𝞏𝚎 𝝜𝜎𝞃𝑒𝙄𝚜,Millenium & Copthorne Hotels,1,0.9069264,0,false_negative
+𝔾𝞂𝒐𝕕,Good,1,0.8941533,0,false_negative
+Stanley Steemer,Riesen,0,0.92556703,1,false_positive
+ℬri𝖉g𝖾𝑠𝔱о𝙣e,Bridgestone,1,0.90718365,0,false_negative
+𝐁𝘂𝕤αп 𝐁𝙖𝗇𝛞,Busan Bank,1,0.83938795,0,false_negative
+𝕲⍳𝚊ℼ𝒕 𝐄𝘢ｇߊ𝒆,Giant Eagle,1,0.8930092,0,false_negative
+Blaupunkt,Novartis,0,0.9109296,1,false_positive
+ᒪ𝘪𝒻𝖊𝖘ᴛℽƖ𝖾 𝗖𝚰σ𝜏𝗁𝓮𝔰l𝝸𝟉ℯ𝔰,Lifestyle Clotheslines,1,0.900322,0,false_negative
+Naming Articles,Guinness,0,0.9215053,1,false_positive
+Ꮷ.Ⲣ܁ ᗰ੦𝐫gɑ𝞹,J.P. Morgan,1,0.90377283,0,false_negative
+Pavilion,Chipotle,0,0.9217838,1,false_positive
+E𝟈c𝓸t,Epcot,1,0.8820029,0,false_negative
+CorningWare,Corelle,0,0.94916534,1,false_positive
+5 Second,Yukon,0,0.9184369,1,false_positive
+ℙ𝗅𝖾𝕕𝔤e,Pledge,1,0.8752031,0,false_negative
+𝐿ɑ,La,1,0.8160008,0,false_negative
+Hotmail,Brand Architecture,0,0.91464484,1,false_positive
+BCBG,Airbus,0,0.91415244,1,false_positive
+Crown Limited,Coles Group Lmt,0,0.9373793,1,false_positive
+𝒩𝝰𝛕𝗂𝐨𝜛𝙖𝗜 Αᴜ𝕤𝗍𝓇аⲒ𝙞a Вan𝓴,National Australia Bank,1,0.90496135,0,false_negative
+𝐷𝗲𝔁ͺａ,Dexia,1,0.89625204,0,false_negative
+ℯBa𝛾,eBay,1,0.9059004,0,false_negative
+𝘙E⼃MA𝗫,RE/MAX,1,0.8814534,0,false_negative
+𝙎օհ𝓊,Sohu,1,0.9096434,0,false_negative
+Hugo Boss,Havainas,0,0.9149695,1,false_positive
+𝕀rnpe𝓻𝗂a∣ ଠ𝚤l,Imperial Oil,1,0.90106964,0,false_negative
+𝗕𝜊𝑠𝜏ంn M𝖆𝗿𝕜e𝒕,Boston Market,1,0.8959413,0,false_negative
+M𝒂gᎥ𝗰 ᗰa𝘳ker,Magic Marker,1,0.9039274,0,false_negative
+𝑃𝑰a𝘺𝖇οү,Playboy,1,0.9014084,0,false_negative
+𝑯Ƨ,H2,1,0.8647387,0,false_negative
+𝖩௦𝔠𝕜𝑒𝜸,Jockey,1,0.9000698,0,false_negative
+𝗟ᴜcкy 𝐶𝕙a𝕣𝕞𝕤,Lucky Charms,1,0.86626774,0,false_negative
+Sydney Water,Shivam Technologies,0,0.9241487,1,false_positive
+𝙅a𝐜uzz𝚒,Jacuzzi,1,0.88762057,0,false_negative
+WestJet,Jacuzzi,0,0.91427475,1,false_positive
+Cochlear Limited,Fridgidaire,0,0.9292728,1,false_positive
+𝗔𝒅e𝓬c൦,Adecco,1,0.87860763,0,false_negative
+Swedish Fish,DreamWorks,0,0.916847,1,false_positive
+ℐ 𝐋o𝘃ℯ ℬi𝔰𝒸𝓊𝚒𝖙𝑠,I Love Biscuits,1,0.8783262,0,false_negative
+King Snedley's Beer,I Love Biscuits,0,0.9171442,1,false_positive
+𝘼sus,Asus,1,0.9040172,0,false_negative
+𝑨𝘂st𝔢rе٥ Rаd𝐢o N𝐞𝘁w𝝄r𝚔,Austereo Radio Network,1,0.9061344,0,false_negative
+𝐀𝕸P 𝗟im𝓲ted,AMP Limited,1,0.88671005,0,false_negative
+Breville,New Balance,0,0.9223,1,false_positive
+𝑵ew Wo𝓻𝕀d,New World,1,0.8756733,0,false_negative
+Siemens,Hummer,0,0.9161315,1,false_positive
+𝘓ɑ𝓭𝘺 𝖲𝓹ⅇ𝗲𝕕 𝖲𝘵𝓲𝚌ᴋ,Lady Speed Stick,1,0.9103719,0,false_negative
+𝔇𝑢𝓼𝑡𝕭u𝑠𝘁er,DustBuster,1,0.89131033,0,false_negative
+Nexen,Panadol,0,0.9150046,1,false_positive
+𝗦𝖍𝔢𝒓𝝰𝖙𝘰𝛡,Sheraton,1,0.89201,0,false_negative
+𝐺oǀⅆ𝖾𝚗 𝘎𝓇𝛼ℎ𝑎m𝑠,Golden Grahams,1,0.9060775,0,false_negative
+Sony,Ensure,0,0.91405773,1,false_positive
+𝒮oߊ𝛼𝓻⍺,Solara,1,0.9000819,0,false_negative
+𝔐𝘆℮𝕣,Myer,1,0.9021336,0,false_negative
+𝙾𝗋౦𝑐ဝbᴦе,Orocobre,1,0.9066041,0,false_negative
+ꓠ𝘂𝐫𝛔f𝔢𝝿,Nurofen,1,0.90926343,0,false_negative
+𝛵𝜄𝒶 Ꮪ𝙪p𝕖𝓇𝒎𝐞г𝑐a𝙙os,Tia Supermercados,1,0.90937966,0,false_negative
+ℜaymonds,Raymonds,1,0.9061338,0,false_negative
+30߀,300,1,0.8534496,0,false_negative
+Princess Cruises,Fleet Farm,0,0.9109319,1,false_positive
+𝘟ｃℯ𝙸 𝘌п𝖾𝘳𝕘γ,Xcel Energy,1,0.89712524,0,false_negative
+DYMO,Bunnings,0,0.91292983,1,false_positive
+United Parcel Service,Lindt,0,0.9114176,1,false_positive
+Best Western,Frucor,0,0.9200908,1,false_positive
+𝕱𝗶𝙨𝗰h𝔢𝓇,Fischer,1,0.9078745,0,false_negative
+Velcro,PUMA,0,0.91195345,1,false_positive
+Dolby Surround,Quattro,0,0.9209361,1,false_positive
+T-Mobile,Thermos,0,0.91843665,1,false_positive
+𝑩us𝒉,Bush,1,0.8781251,0,false_negative
+WebJect Linhas AÃ©read,Gueuze,0,0.9162661,1,false_positive
+ꓑ𝝈𝕣𝝉𝖆 𝙋ം𝗍𝛕ı,Porta Potti,1,0.90876156,0,false_negative
+Stella Artois,RingkÃ¸bing Landbobank,0,0.9166466,1,false_positive
+𝐸v௦𝖗a,Evora,1,0.91063803,0,false_negative
+𝒜ɩ𝐫 𝖩٥𝙧𝕕𝑎𝝿,Air Jordan,1,0.8971642,0,false_negative
+Lancer,Air Jordan,0,0.92022353,1,false_positive
+SA𝙾,SAO,1,0.89215606,0,false_negative
+𝘿aK𝑖n𝒆,DaKine,1,0.87726575,0,false_negative
+Sligro,Magazine LuÃ­za,0,0.9216667,1,false_positive
+ℬ𝖾𝙖𝙣𝐢𝗲 𝓑𝜶𝔟𝝸𝖊𝓈,Beanie Babies,1,0.895649,0,false_negative
+Air Jordan,Beanie Babies,0,0.9268671,1,false_positive
+Reebok,Singapore Airlines,0,0.9111825,1,false_positive
+𝔚𝘦𝐛Ꮇⅅ,WebMD,1,0.89892423,0,false_negative
+𝑴ortein,Mortein,1,0.89520407,0,false_negative
+𝕀𝐾𝐄A,IKEA,1,0.8968052,0,false_negative
+Tegel Foods,IKEA,0,0.9159709,1,false_positive
+Champion,Old Style Pilsner,0,0.9156751,1,false_positive
+𝗔ccor𝔡,Accord,1,0.8875625,0,false_negative
+𝓜𝔢𝞃𝒸a𝓈𝒉,Metcash,1,0.9029464,0,false_negative
+𝖲ʋ𝕡𝓮𝚛 B𝛔𝔀𝙄,Super Bowl,1,0.9077863,0,false_negative
+York,Baron Otard Cognacs,0,0.91749024,1,false_positive
+𝗖aｐ𝑟i 𝚂un,Capri Sun,1,0.87570673,0,false_negative
+𝙀𝛪𝕚 Ⅼ𝗶lｌү,Eli Lilly,1,0.88436854,0,false_negative
+𝐽𝙪ᴠ𝖊ո𝘁us,Juventus,1,0.8725264,0,false_negative
+Daffy Duck,Tupperware,0,0.9127167,1,false_positive
+𝑮odiva,Godiva,1,0.867202,0,false_negative
+𝑆𝛕𝜶𝔫ᴡ℮Ⅰⅼ Ⲥ𝑜r𝓅𝞼𝒓a𝙩ｉ𝝈п,Stanwell Corporation,1,0.90806484,0,false_negative
+Mercedez-Benz,Rubbermaid,0,0.9190113,1,false_positive
+Meteor,BlackBerry,0,0.91955996,1,false_positive
+𝔇𝛊ɑ𝛒𝚎r 𝐆ⅇռͺ𝒆,Diaper Genie,1,0.90845,0,false_negative
+𝘗𝔞𝚌ɪ𝔣𝜾𝘤 𝐶൦𝔣ք𝓮𝔢 Ｃ𝝈𝕞𝟈𝙖𝛑𝒚,Pacific Coffee Company,1,0.89268523,0,false_negative
+Juicy Fruit,J.C. Penney,0,0.9226377,1,false_positive
+ᕼeᴨ𝞹𝗲s,Hennes,1,0.9084192,0,false_negative
+Banana Republic,Henry Jones IXL,0,0.9284382,1,false_positive
+Ergon S.A.,Celebrity Cruises,0,0.917623,1,false_positive
+𝚆C ꓢᗅ,WC SA,1,0.8915842,0,false_negative
+Welch's,WC SA,0,0.921472,1,false_positive
+Marlboro,Oland Export Ale,0,0.9196558,1,false_positive
+Playtex,Lancome,0,0.9113134,1,false_positive
+𝓚℮ｅbl𝚎𝒓,Keebler,1,0.9032721,0,false_negative
+U𝐏𝐒,UPS,1,0.8579795,0,false_negative
+Crest,GAS,0,0.9202341,1,false_positive
+Rockport,Ben & Jerry's,0,0.9166908,1,false_positive
+𝖬𝝰r𝘪𝖓𝔢𝓻,Mariner,1,0.9020169,0,false_negative
+NFL,Ashley Furniture,0,0.91863424,1,false_positive
+𝑲arం,Karo,1,0.9031191,0,false_negative
+𝕷𝞪ռ𝖾Ã­𝗀𝖊,LaneÃ­ge,1,0.8902998,0,false_negative
+Max Factor,LaneÃ­ge,0,0.91167957,1,false_positive
+𝔐ℴ੦𝚜𝖾𝔥𝕖аԁ 𝑩𝘳еw𝙚rʏ,Moosehead Brewery,1,0.8982323,0,false_negative
+Name DNA Validation,Zodac,0,0.9411329,1,false_positive
+𝗗е𝞺၀,Depo,1,0.8174296,0,false_negative
+𝜢𝞑𝓞,HBO,1,0.8906269,0,false_negative
+𝕯օ𝒅𝗀𝕖,Dodge,1,0.84618366,0,false_negative
+O boticÃ¡rio,Banana Republic,0,0.9432342,1,false_positive
+𝗟𝝾|𝑰ყ 𝙂σ𝙗𝔟ǀ𝖊 Ᏼ𝙸ⅈ𝒔𝒔 𝐵𝑜𝓶Ꮟ𝑠,Lolly Gobble Bliss Bombs,1,0.9062107,0,false_negative
+ꓗ𝔴⍺Ｉι𝔱ყ,Kwality,1,0.8919127,0,false_negative
+Blog,Cheez-It,0,0.9140916,1,false_positive
+Captain Morgan,R. M. Williams,0,0.91740036,1,false_positive
+𝒟ⅰG𝖎,DiGi,1,0.8877651,0,false_negative
+Franck Muller,Telekom Austria,0,0.9261356,1,false_positive
+Fanta,Group Sense PDA,0,0.9178587,1,false_positive
+Dragon Bleu,Amazon.com,0,0.9138651,1,false_positive
+M𝕪 𝙇𝚒t𝛕𝑰e Pℴ𝝅𝕪,My Little Pony,1,0.8940234,0,false_negative
+ଠꜱ𝐜𝗮𝚛 𝖬𝖆𝗒𝔢𝑟,Oscar Mayer,1,0.8794389,0,false_negative
+Sportmart,S. Pellegrino,0,0.91272295,1,false_positive
+TraveLodge,YouTube,0,0.92121524,1,false_positive
+La Chouffe,Oreck,0,0.9159184,1,false_positive
+Paper Mate,Publix,0,0.91166055,1,false_positive
+𝑫ℋᒪ,DHL,1,0.88984317,0,false_negative
+Four Loko,Tagline Development,0,0.92782354,1,false_positive
+𝕾𝙬e𝙙𝔟ɑ𝞏𝘬,Swedbank,1,0.90950954,0,false_negative
+𝐁٥ha𝔢,Bohae,1,0.89280534,0,false_negative
+𝔙⍺Ⅰｅ,Vale,1,0.896194,0,false_negative
+𝘖𝙸𝗱 𝙀I 𝙿α𝒔ဝ,Old El Paso,1,0.89185685,0,false_negative
+𝓢ߊ𝗶m𝙵a𝙨𝓉,SlimFast,1,0.9083916,0,false_negative
+𝞠𝗲𝔱ᴄס,Petco,1,0.9026261,0,false_negative
+𝕯𝞾Pᴏո𝖙,DuPont,1,0.85739374,0,false_negative
+Nike,Polo Ralph Lauren,0,0.9220326,1,false_positive
+𝗛uⵏ𝐚-𝙃𝐨𝐨𝗉,Hula-Hoop,1,0.89000857,0,false_negative
+𝙎ꓝ ꓐ𝘭О,SF BIO,1,0.8906521,0,false_negative
+𝓗𝗼𝝕ⅇʏ𝘸𝔢𝟏Ｉ,Honeywell,1,0.90135074,0,false_negative
+BʋᖯƄ𝙸℮ 𝘖´ Bӏ𝚰𝘐,Bubble O' Bill,1,0.8586788,0,false_negative
+𝙰viv𝒶,Aviva,1,0.83651876,0,false_negative
+⋿s𝖈𝔞𝐩𝒆,Escape,1,0.8931581,0,false_negative
+𝗣wC,PwC,1,0.9087347,0,false_negative
+Old Milwaukee,A1 Steak Sauce,0,0.93881804,1,false_positive
+Jared Galleria,UGG,0,0.9266375,1,false_positive
+𝗖аꓒ℮𝛑𝖈𝕖 𝗖𝖺𝝔𝒾𝚝𝒂𝟷 𝕷𝜄𝗺𝕚т𝚎ꓒ,Cadence Capital Limited,1,0.8720087,0,false_negative
+Emu Brewery,Amoy Food,0,0.913807,1,false_positive
+Ꭺյ𝚤𝔰e𝔫 𝑹а𝔪℮𝝕,Ajisen Ramen,1,0.89412636,0,false_negative
+Antarctica,Ultrapar,0,0.91983676,1,false_positive
+𝒦𝜄𝖘𝙨αп,Kissan,1,0.84239095,0,false_negative
+Cater𝛒iⅠlar,Caterpillar,1,0.9039301,0,false_negative
+Air Jordan,Carte Noire,0,0.9283494,1,false_positive
+Taglines and Slogans,5-Hour Energy,0,0.9331739,1,false_positive
+American Airlines,Alkane Exploration,0,0.92276275,1,false_positive
+Second Cup,CafÃ© de Colombia,0,0.94143754,1,false_positive
+𝑫e𝓷𝓷y＇𝓈,Denny's,1,0.8580262,0,false_negative
+𝐁𝘭𝗖,BIC,1,0.8967964,0,false_negative
+Sara Lee,Leonida,0,0.9140562,1,false_positive
+Ꭲ𝗵𝖾 𝕾𝝉⍺r,The Star,1,0.90989935,0,false_negative
+𝕿𝐫𝝄ρ𝑖𝔠aℼ𝚊,Tropicana,1,0.9061947,0,false_negative
+𝐇𝖾￨ߊ ℙι𝐳𝖟a,Hell Pizza,1,0.87147176,0,false_negative
+Courtyard by Marriott,Naming Articles,0,0.9190795,1,false_positive
+𝘾σ𝔯o𝝿a,Corona,1,0.86841935,0,false_negative
+Boral Limited,Paper Mate,0,0.927706,1,false_positive
+𝐃awn,Dawn,1,0.8787156,0,false_negative
+𝐶ℯℑes𝓬,Celesc,1,0.8865005,0,false_negative
+𝖢em˛𝙜,Cemig,1,0.9098159,0,false_negative
+J𝒱𝑪,JVC,1,0.9063506,0,false_negative
+𝕄e𝔳ƍ𝐚𝑰,Mevgal,1,0.8748513,0,false_negative
+𝕬ѵi𝔰,Avis,1,0.8950928,0,false_negative
+𝐵a𝒏ϲ𝛐 Ⲣоⲣu𝟏𝗮ⲅ,Banco Popular,1,0.8569319,0,false_negative
+Nixon Watches,Movicom,0,0.9152584,1,false_positive
+𝒫ℐaռ𝒏ｅd 𝓟arent𝘩𝝄𝗼ꓒ,Planned Parenthood,1,0.9043303,0,false_negative
+𝐷𝖔𝗿𝒊𝑡ｏ𝔰,Doritos,1,0.8942746,0,false_negative
+DenTek,Crown Royal,0,0.91487455,1,false_positive
+𝙼𝚊𝙜𝓃a Ⅰnt𝔢𝔯𝕟атι𝞸𝘯𝓪𝐼,Magna International,1,0.90927446,0,false_negative
+ℙerfect 1੪6𝟦,Perfect 1864,1,0.89452684,0,false_negative
+𝐂૦𝗼𝐈𝞀i╳,Coolpix,1,0.8898833,0,false_negative
+AꓠϹ𝘈,ANCA,1,0.8602725,0,false_negative
+Reebok,Quantic Dream,0,0.918697,1,false_positive
+𝐃ou𝘣𝐼e𝗍ree,Doubletree,1,0.90454525,0,false_negative
+Ϲℎӏ𝘯𝚊 ᗰ𝖔𝑏ͺ𝕴𝕖,China Mobile,1,0.88148093,0,false_negative
+𝓣𝞪𝗹i𝘴𝓶𝖆n En𝙚𝓇𝑔y,Talisman Energy,1,0.87964916,0,false_negative
+𝙲ɪſ,Cif,1,0.889073,0,false_negative
+Mini Cooper,Teflon,0,0.9131594,1,false_positive
+𝕱r𝞪𝘯𝒄ĸ M𝐮l|𝔢𝗿,Franck Muller,1,0.9035071,0,false_negative
+Tilex,Language History,0,0.9175855,1,false_positive
+Hobby Lobby,Air France,0,0.9234139,1,false_positive
+AAA 01 Center WS,Track7,0,0.93342745,1,false_positive
+Empire State Building,TracFone,0,0.91904545,1,false_positive
+Dettol,Leffe,0,0.91986907,1,false_positive
+𝜢S𝙱C,HSBC,1,0.882027,0,false_negative
+𝐏𝝾𝓂𝞀𝘂ⅰ,Pompui,1,0.9088155,0,false_negative
+Vale,Fila,0,0.9158623,1,false_positive
+𝓡०𝐦⍺,Roma,1,0.8953984,0,false_negative
+Hoegaarden,Imodium,0,0.9160255,1,false_positive
+𝞐І𝜾𝘣𝘢Ƅα,Alibaba,1,0.89972246,0,false_negative
+Crate & Barrel,Schincoariol,0,0.92663157,1,false_positive
+Pams,Advair,0,0.92699116,1,false_positive
+𝕍a𝖘elin𝔢,Vaseline,1,0.9078158,0,false_negative
+Pepsodent,Vaseline,0,0.92551357,1,false_positive
+𝚩𝒓𝛂𝙨𝐢ℑ 𝝩𝙚ⅼ𝙚𝒸𝝄rn,Brasil Telecom,1,0.8950809,0,false_negative
+ℋ𝗮ribо,Haribo,1,0.8745684,0,false_negative
+Pond's,Latex Gloves,0,0.9190095,1,false_positive
+P𝕌ꓣ,PUR,1,0.9060978,0,false_negative
+𝓒ꝸА,C&A,1,0.8815284,0,false_negative
+𝙲𝛔𝚜𝙩𝐜ಂ,Costco,1,0.9052264,0,false_negative
+Maalox,Pirelli,0,0.911787,1,false_positive
+𝘞e𝓁|𝕤 Ϝ𝙖rᶃ੦,Wells Fargo,1,0.8844367,0,false_negative
+ℂh𝔦𝛑a С𝞼ᴨ𝙨𝒕ⲅ𝑢c𝞃ion 𝘽𝑎nk,China Construction Bank,1,0.90488243,0,false_negative
+BNP Paribas,JÃ¤germeister,0,0.9279406,1,false_positive
+𝐈Ｏ𝘖 𝐆𝐫𝓪𝞹𝖉,100 Grand,1,0.8725061,0,false_negative
+PeoplePC,Boppy,0,0.9244372,1,false_positive
+Alsa,Alcan,0,0.9251008,1,false_positive
+𝑇𝚌hiᖯo,Tchibo,1,0.9060845,0,false_negative
+𝓗e𝔫𝜅𝖾𝙄,Henkel,1,0.90556663,0,false_negative
+𝑯a𝚑n Br𝔢𝘸еry,Hahn Brewery,1,0.87806743,0,false_negative
+ℬ𝒐𝑢𝒄Ꮒ𝕖𝕣𝛐𝔫,Boucheron,1,0.90710574,0,false_negative
+𝐺o౦d 𝝜𝜊𝞾𝓈𝕖𝒌𝚎𝗲pi𝔫𝗀,Good Housekeeping,1,0.87869024,0,false_negative
+𝕲oгｅ˗𝑻℮𝐱,Gore-Tex,1,0.9084041,0,false_negative
+𝐖B,WB,1,0.89778507,0,false_negative
+𝐵𝑖𝐬s𝐞l𝖨,Bissell,1,0.90576756,0,false_negative
+Manwich,Bissell,0,0.91412705,1,false_positive
+Schincoariol,Silverton Rail,0,0.93730164,1,false_positive
+Water Mission,Swanndri,0,0.92706335,1,false_positive
+𝓐𝛖𝔰𝗍r⍺𝙄𝛊𝓪𝐧 𝒜ɪ𝙧 𝗘x𝓹r𝖾𝖘s,Australian Air Express,1,0.9000245,0,false_negative
+Papa John's,Ocean Pacific,0,0.91217065,1,false_positive
+𝔻ι𝓮t 𝗖𝑜𝚔ⅇ,Diet Coke,1,0.8941854,0,false_negative
+Six Apart,Westfield Group,0,0.9139883,1,false_positive
+𝘔𝐞ᴦ𝕔a𝙙ංπа,Mercadona,1,0.8907791,0,false_negative
+C𝕒ra∨𝚊ᴨ,Caravan,1,0.8976276,0,false_negative
+Ꮮ𝜾fe 𝕾𝜶𝕧er𝗌,Life Savers,1,0.8991846,0,false_negative
+Centrale Latte Roma,Sedona,0,0.91354847,1,false_positive
+𝑆y𝟉𝗇eх,Synnex,1,0.90495634,0,false_negative
+John Lewis,JBS S.A.,0,0.93275505,1,false_positive
+KahlÃºa,Kia,0,0.934512,1,false_positive
+Ray-Ban,Pokemon,0,0.9170593,1,false_positive
+𝓜o𝐛i￨ϰ𝒐m Austr𝔦𝐚,Mobilkom Austria,1,0.9052706,0,false_negative
+𝘾𝒉𝒶𝑛ƍy𝜐,Changyu,1,0.91008496,0,false_negative
+Mitre 10,Office Max,0,0.93119687,1,false_positive
+XᎥ𝑰eոc𝚎,Xilence,1,0.8873979,0,false_negative
+𝘼𝑚𝓫𝑎𝒏𝓀,Ambank,1,0.88073444,0,false_negative
+Language History,Grupo Folha,0,0.926996,1,false_positive
+PlaySkool,Kingfisher,0,0.9358927,1,false_positive
+Maytag,Equinox,0,0.92111856,1,false_positive
+Virgin Atlantic,Maytag,0,0.91850996,1,false_positive
+Rawlings,Juicy Couture,0,0.9286066,1,false_positive
+𝔅a𝒌𝘦𝓇 ℌ𝕦𝗴ｈ𝑒𝚜,Baker Hughes,1,0.8750933,0,false_negative
+𝔅ⲅ𝗼tһ𝔢ᴦ,Brother,1,0.9055666,0,false_negative
+Givenchy,Evenflo,0,0.9377196,1,false_positive
+Samby,Celebrex,0,0.9196417,1,false_positive
+U𝐧⍳vers𝒾ty Ga𝓶es,University Games,1,0.9031852,0,false_negative
+𝞖oߊｓ𝓉𝖊n,Holsten,1,0.8592261,0,false_negative
+𝙺G𝞘,KGI,1,0.83878684,0,false_negative
+𝕎i𝘀e𝑷٥𝚠e𝒓,WisePower,1,0.8973483,0,false_negative
+𝝜o𝕴ly𝓼 Cംffee,Hollys Coffee,1,0.891289,0,false_negative
+𝗖𝐏𝟣С,CPIC,1,0.8660807,0,false_negative
+𝐕𝐮𝕖,Vue,1,0.899173,0,false_negative
+LensCrafters,Walgreens,0,0.9209921,1,false_positive
+Cacharel,The Oriental Bangkok,0,0.93332213,1,false_positive
+𝓟𝖎𝐳𝚣ɑ Rം𝚰𝐥ƽ,Pizza Rolls,1,0.85879874,0,false_negative
+Q-tips,Zales Jewelry,0,0.9189212,1,false_positive
+WorleyParsons,Swan Brewery,0,0.9348887,1,false_positive
+ℒ𝐚𝚖𝚋ӏ𝒄,Lambic,1,0.9026211,0,false_negative
+Sam's Club,Mazda,0,0.91310287,1,false_positive
+𝕾𝙝𝚎rן𝝈c𝞳 𝕳𝞼ן𝓂𝙚𝔰,Sherlock Holmes,1,0.90957886,0,false_negative
+Air New Zealand,Carling Black Label,0,0.9268954,1,false_positive
+Hummer,U.S. Air Force,0,0.93559045,1,false_positive
+Ⲥɑ𝑛𝜶ԁ𝗂𝒂𝘯 Ν𝑎ᴛ𝘂𝗿𝔞𝕀 ℜ𝕖𝔰𝞸𝓾𝔯𝚌𝖊𝓼,Canadian Natural Resources,1,0.90733445,0,false_negative
+𝙋аtr౦n,Patron,1,0.90872777,0,false_negative
+𝑃𝒞ௐ𝗪,PCCW,1,0.8711339,0,false_negative
+𝖧a𝐬𝓫ro,Hasbro,1,0.9029037,0,false_negative
+Aunt Jemima,Preparation H,0,0.932683,1,false_positive
+Tunԁ𝚛a,Tundra,1,0.9018308,0,false_negative
+𝑯&𝝡,H&M,1,0.8730457,0,false_negative
+AGL Energy,Cargill,0,0.92895436,1,false_positive
+Florida Orange Juice,Forbes,0,0.9129918,1,false_positive
+𝕌𝝿˛𝜏𝖾𝖉 𝙿ɑ𝘳𝙘𝚎I Ѕ𝔢𝕣⋁𝘪𝙘𝚎,United Parcel Service,1,0.9103045,0,false_negative
+𝗔ⅼ𝔞𝓂o𝗌,Alamos,1,0.8805554,0,false_negative
+Hotels.com,Naming Resources,0,0.91664225,1,false_positive
+Chevron,Crumpler,0,0.93641996,1,false_positive
+M𝑬𝐶𝑊𝓐,MECWA,1,0.88763607,0,false_negative
+𝔖𝖆ｖе˗𝞞𝟉‒ᖴoဝ𝓭𝒔,Save-On-Foods,1,0.89470696,0,false_negative
+𝑾𝖍𝞪t–ｃℎ⍺﹘𝚖𝖆﹘𝚌аℓ𝓁-⍳𝜏,What-cha-ma-call-it,1,0.91025907,0,false_negative
+𝓕𝑎ꜱ𝒉ι𝞼𝞹 T𝙑,Fashion TV,1,0.89454293,0,false_negative
+𝓟ⅇ𝒶𝗋𝟷,Pearl,1,0.89834344,0,false_negative
+𝑆В𝓣,SBT,1,0.9083087,0,false_negative
+S𝗍eℯl ℛes𝐞𝑟v𝚎,Steel Reserve,1,0.90713894,0,false_negative
+𝒟𝗈𝚌kⅇ𝐫𝓼,Dockers,1,0.89995795,0,false_negative
+D𝛼ⲅ𝗿𝑒𝙄Ⲓ Ⳑ𝙚𝕒,Darrell Lea,1,0.8997267,0,false_negative
+Aerolineas Argentinas,Choclitos,0,0.9126886,1,false_positive
+Motel 6,Jelly Belly,0,0.94128734,1,false_positive
+ᑭ𝒍𝕻E 𝚴et𝖜𝓸𝗋kꜱ,PIPE Networks,1,0.90157187,0,false_negative
+L𝗮𝒗𝘈z𝐳𝗮,LavAzza,1,0.90379685,0,false_negative
+𝗟𝜄𝚎𝘣𝐡𝚎𝑟𝖗,Liebherr,1,0.8972668,0,false_negative
+Element Skateboards,QMI Solutions Limited,0,0.91726315,1,false_positive
+Haribo,Haier,0,0.9214198,1,false_positive
+𝐒on𝔶,Sony,1,0.8953581,0,false_negative
+Star Wars,Sony,0,0.9206227,1,false_positive
+Mazda,Boeing,0,0.9296592,1,false_positive
+Օr𝝰𝝕ℊ℮,Orange,1,0.8975154,0,false_negative
+𝖦oo𝒹𝘆,Goody,1,0.8828013,0,false_negative
+Yukon,Grape Nuts,0,0.9148475,1,false_positive
+𝙶ⲟ𝑰ԁ𝘦ᴨ 𝛨ɑ𝓇𝗏𝖾ƽ𝓉,Golden Harvest,1,0.90338784,0,false_negative
+Epson,No Name,0,0.91385955,1,false_positive
+Gigabyte,Cheetos,0,0.92305195,1,false_positive
+𝑪𝑎𝐛𝞼𝗼𝕕𝗅𝒆𝘴,Caboodles,1,0.9030343,0,false_negative
+Oreck,Caboodles,0,0.91526335,1,false_positive
+Bertolli Olive Oil,Bubble Yum,0,0.9331323,1,false_positive
+Zales Jewelry,Morgan Stanley,0,0.92704475,1,false_positive
+ℭo𝟉𝔱ι𝙣𝖊n𝘁al,Continental,1,0.9046541,0,false_negative
+Clairol,CNN,0,0.93391407,1,false_positive
+𝑺𝑝𝐫ℹn𝚝,Sprint,1,0.84596235,0,false_negative
+𝘕е𝒔𝒸𝒂𝕗Ã©,NescafÃ©,1,0.9008127,0,false_negative
+Nexxus,NescafÃ©,0,0.92439204,1,false_positive
+ℂi𝘴ⲥⲟ,Cisco,1,0.8613805,0,false_negative
+𝞐r𝚖𝔞nι,Armani,1,0.9090131,0,false_negative
+𝐹rankli𝐧s,Franklins,1,0.8793768,0,false_negative
+TrimSpa,UPM-Kymmene,0,0.913541,1,false_positive
+𝕷іnc၀𝘐n,Lincoln,1,0.8008072,0,false_negative
+𝘾⍳𝖙𝐢𝓰𝑟ℴʋρ,Citigroup,1,0.9077157,0,false_negative
+𝔾𝛼ᶃfaһ,Gagfah,1,0.8870457,0,false_negative
+𝓤nion Pacif𝕚c,Union Pacific,1,0.88329065,0,false_negative
+TJ Maxx,Union Pacific,0,0.9345969,1,false_positive
+Twizzlers,Rollerblade,0,0.9165941,1,false_positive
+Frucor,Warner Brothers,0,0.9131754,1,false_positive
+𝙱𝙖ߊ𝒆no,Baleno,1,0.88591063,0,false_negative
+Percocet,French's,0,0.91218585,1,false_positive
+Ⲙυ𝛑𝖈𝗁ⲕ𝐢𝛑,Munchkin,1,0.8784168,0,false_negative
+𝓖𝗼၀ԁ𝜸＇𝐬,Goody's,1,0.88287365,0,false_negative
+𝔏𝖺𝟉𝔠𝙞𝗮,Lancia,1,0.89376724,0,false_negative
+Ⲥം𝒕𝐭𝜎𝝅ｅ𝖑𝙸𝔢,Cottonelle,1,0.8903242,0,false_negative
+Mini Cooper,"Claire's Stores, Inc.",0,0.91270006,1,false_positive
+𝐶𝛂𝒏𝗮ⅆ𝗶𝒶𝖓 Ⲛ𝛂𝑡ισ𝚗𝙖𝖨 𝓡𝚊ι𝚰𝗐𝛼𝞬,Canadian National Railway,1,0.88123685,0,false_negative
+𝝢oᴦt٥𝜛 𝗔n𝜏𝘪Ѵirս𝙨,Norton AntiVirus,1,0.88590366,0,false_negative
+Јꓻ 𝓛⍳𝑛𝖽𝚎b𝔢𝑟𝗀,J. Lindeberg,1,0.8950509,0,false_negative
+Osim,Nintendo,0,0.9338098,1,false_positive
+𝓛ం𝗸ａ𝗜,Lokal,1,0.8071486,0,false_negative
+𝓑aϖd‒ꓮ𝝸d,Band-Aid,1,0.89530474,0,false_negative
+Jared Galleria,Taco Bell,0,0.93162984,1,false_positive
+The Oriental Bangkok,Rainbow Brite,0,0.91294795,1,false_positive
+𝙻𝑎𝞏ⲥ℮𝗿,Lancer,1,0.8820871,0,false_negative
+Del Monte,Don de Dieu,0,0.93154377,1,false_positive
+𝕝ℬENOX,IBENOX,1,0.8937778,0,false_negative
+𝓡𝑒𝖒𝘪n𝗴𝓉𝝄n,Remington,1,0.906546,0,false_negative
+𝑆maг𝕥,Smart,1,0.89824116,0,false_negative
+𝕆𝑟𝑖𝑜n,Orion,1,0.8702069,0,false_negative
+James Hardie,X6,0,0.91556495,1,false_positive
+𝟹𝓜,3M,1,0.9001611,0,false_negative
+𝘾𝞪𝓈in𝞼,Casino,1,0.90521497,0,false_negative
+Lufthansa Airlines,El Mercio SAP,0,0.9234473,1,false_positive
+Cհ𝜄𝘯α ᑌ𝚗ɩ𝗰𝛐𝑚,China Unicom,1,0.90552825,0,false_negative
+𝙁๐𝙘𝞄𝖘,Focus,1,0.88200533,0,false_negative
+Indesit,Knorr,0,0.94158196,1,false_positive
+𝐓ｈ𝜾𝝿𝟆𝝦𝑎d,ThinkPad,1,0.9062208,0,false_negative
+𝘋o𝗜𝘣𝔶 𝐒ur𝘳ou𝔫𝒹,Dolby Surround,1,0.8954357,0,false_negative
+𝗣𝖺ꓒd𝘭𝐞 ℙop,Paddle Pop,1,0.9037263,0,false_negative
+Krombacher,Max Factor,0,0.91311264,1,false_positive
+Little Debbie,Dabur,0,0.9201865,1,false_positive
+𝘉ᴏbсa𝞃,Bobcat,1,0.9094351,0,false_negative
+Ben & Jerry's,Schwarzkopf,0,0.9132151,1,false_positive
+Clarinex,Brahma,0,0.9154263,1,false_positive
+𝘈𝗏alａn𝕔he,Avalanche,1,0.89716935,0,false_negative
+Hot Wheels,Matchbox,0,0.95312595,1,false_positive
+𝑆ɯ𝑎ոƽ౦ո,Swanson,1,0.90183735,0,false_negative
+Milky Way,Cobalt,0,0.9404823,1,false_positive
+Yamaha,Nokia,0,0.93302816,1,false_positive
+Duracell,Dulux,0,0.92615306,1,false_positive
+𝚮ං𝘮𝚎 𝕊𝔥𝛐𝛠𝛒𝒊𝞏𝗴 𝐍ℯ𝚝𝙬௦𝓻ᴋ,Home Shopping Network,1,0.8474469,0,false_negative
+ℂH𝐄P,CHEP,1,0.8744706,0,false_negative
+5 Second,Merrill Lynch,0,0.91500366,1,false_positive
+𝘏𝚊ᶌա𝖺𝚛𝒅𝑠,Haywards,1,0.9016262,0,false_negative
+𝖢ᴏ﹘𝝄𝓅,Co-op,1,0.83351004,0,false_negative
+Tanqueray,Original Ranch,0,0.9225972,1,false_positive
+Banana Boat,Benjamin Moore,0,0.919103,1,false_positive
+𝔎Ꭲ,KT,1,0.86633027,0,false_negative
+𝒜ꓲ𝖎π𝚝𝞪 Ԍ𝛂ｓ,Alinta Gas,1,0.9093884,0,false_negative
+𝓜०𝕀ԁ𝒄e𝝞ℓ,Moldcell,1,0.8559159,0,false_negative
+𝖯ul𝕝–Ups,Pull-Ups,1,0.87246406,0,false_negative
+Clinique,XFX,0,0.928112,1,false_positive
+𝓡𝚎ԁ ꓣ𝚘𝘣𝝸𝝅,Red Robin,1,0.89215696,0,false_negative
+𝕂𝗘𝓑,KEB,1,0.8675691,0,false_negative
+𝙱a𝓇ιllａ,Barilla,1,0.89196134,0,false_negative
+𝐍ംvog𝑒п,Novogen,1,0.9026697,0,false_negative
+𝚮ɪ𝑔𝘩 𝑉𝙖Ｉ￨еỿ,High Valley,1,0.8789923,0,false_negative
+Acer,Under Armour,0,0.92944336,1,false_positive
+𝒜dvil,Advil,1,0.8788234,0,false_negative
+Ꭹ𝔢ⵏ𝙄𝛐𝗐 𝓟𝛂𝖌𝚎𝚜,Yellow Pages,1,0.88924766,0,false_negative
+𝙿аn𝜏e𝒏𝗲,Pantene,1,0.89948803,0,false_negative
+𝗧𝔂ⅽo,Tyco,1,0.9020994,0,false_negative
+Stanley,Fendi,0,0.9233073,1,false_positive
+Trapiche Roble,PiratfÃ¶rlaget,0,0.9197037,1,false_positive
+Smart Ones,Olympus,0,0.9334576,1,false_positive
+𝙔𝞪𝔥𝒐ο！,Yahoo!,1,0.8786088,0,false_negative
+Slurpee,Petro Canada,0,0.9117229,1,false_positive
+EDF Electric,Entel PCS,0,0.91763383,1,false_positive
+ℳ𝜶Ｉi𝕓u,Malibu,1,0.9064345,0,false_negative
+〇𝒳𝜪,OXO,1,0.87560564,0,false_negative
+𝖀nited 𝖂𝖆y,United Way,1,0.89002097,0,false_negative
+Albertsons,Sweet'n Low,0,0.921054,1,false_positive
+𝗣𝒂𝔯𝕜ｓ𝑜𝜛,Parkson,1,0.8826677,0,false_negative
+𝗝𝘓e𝚞𝓽𝑒𝛑𝑒ᶃ𝗀𝘦𝐫 𝙋𝗍ყ Lт𝔡,JLeutenegger Pty Ltd,1,0.9028871,0,false_negative
+𝐆𝟮ꓳ𝞞Ο,G2000,1,0.8486775,0,false_negative
+𝓐М𝟷,AMI,1,0.8872925,0,false_negative
+𝒬uℯbec𝓸r,Quebecor,1,0.86533755,0,false_negative
+Vidal Sassoon,Kids âRâ Us,0,0.92521906,1,false_positive
+Bravox,Gree,0,0.9107705,1,false_positive
+G૦d𝙧ej,Godrej,1,0.89218354,0,false_negative
+Voltaren,Vodafone,0,0.9278228,1,false_positive
+𝔈𝑥t𝓇⍺,Extra,1,0.8946062,0,false_negative
+𝘚ingha,Singha,1,0.89295954,0,false_negative
+ℒⲟ𝐠𝒊𝗍𝗲𝙘ℎ,Logitech,1,0.9060483,0,false_negative
+Carte Noire,Logitech,0,0.9307416,1,false_positive
+Telenor,Orval,0,0.9120325,1,false_positive
+XFX,Facebook,0,0.9188912,1,false_positive
+Selters,St John,0,0.9203694,1,false_positive
+Codan Limited,Coldwater Creek,0,0.93587244,1,false_positive
+Ocean Spray,Brasil Foods,0,0.93165505,1,false_positive
+GlashÃ¼tte,CVS,0,0.9176909,1,false_positive
+𝘐𝑔𝙸૦౦,Igloo,1,0.81889254,0,false_negative
+Swanndri,Company Naming,0,0.92866844,1,false_positive
+I Can't Believe It's Not Butter,Cacharel,0,0.9169403,1,false_positive
+Ruby Tuesday,Urban Outfitters,0,0.92983323,1,false_positive
+ᗰ𝑜𝘯ꓒ𝒊,Mondi,1,0.9073172,0,false_negative
+𝙍℮d ℛо𝜊𝒔𝓉𝕖г,Red Rooster,1,0.8995875,0,false_negative
+Ricard,ÃBB,0,0.9280908,1,false_positive
+𝔓аⲅ𝘮𝓪ⅼa𝘁,Parmalat,1,0.8741524,0,false_negative
+𝙰𝚖𝕖ᴦι𝖼𝛂 𝛰ռℑ𝜄𝘯𝑒,America Online,1,0.8542273,0,false_negative
+Slurpee,Kapiti Fine Foods,0,0.9115102,1,false_positive
+𝐵𝑟aun,Braun,1,0.90274,0,false_negative
+Comedy Central,CRSanjiu,0,0.9249905,1,false_positive
+Voltaren,More,0,0.9344739,1,false_positive
+𝑪𝕒𝓇rn𝘢᙮,Carmax,1,0.8863834,0,false_negative
+Sharper Image,Town House,0,0.9151663,1,false_positive
+𝕋ung 𝑳𝝾k 𝗚roup,Tung Lok Group,1,0.90106195,0,false_negative
+Juicy Couture,Tung Lok Group,0,0.9308895,1,false_positive
+𝙈𝐨n𝓼𝒂𝟉𝘵𝔬,Monsanto,1,0.84695077,0,false_negative
+𝕎ｅѕ𝙨໐𝕟,Wesson,1,0.89657223,0,false_negative
+Antarctica,QR,0,0.93553376,1,false_positive
+Big Lots,Thighmaster,0,0.92286885,1,false_positive
+Thermacare,Lojas Riachuelo,0,0.9200275,1,false_positive
+Baby Mild,Nutella,0,0.9205029,1,false_positive
+𝗣hilips,Philips,1,0.90286654,0,false_negative
+Movicom,Neutrogena,0,0.91285396,1,false_positive
+𝗟𝒆nd 𝔏℮𝛂se C𝖔𝘳𝖕𝞸r𝝰tiᴑ𝑛,Lend Lease Corporation,1,0.9032577,0,false_negative
+Breville,Bank of Nova Scotia,0,0.9230529,1,false_positive
+𝖳obl𝒆𝖗o𝜋e,Toblerone,1,0.90916,0,false_negative
+𝘋𝜎ս᙮,Doux,1,0.81328416,0,false_negative
+General Mills,Kikkoman,0,0.9296818,1,false_positive
+𝔖ⅿaгt𝔑𝘚,SmartNS,1,0.9000303,0,false_negative
+Streets,SmartNS,0,0.92755854,1,false_positive
+𝙸൦n,Ion,1,0.7684734,0,false_negative
+𝛢ՏＢ,ASB,1,0.90733844,0,false_negative
+AkzoNobel,Bonne Bell,0,0.92179114,1,false_positive
+Pepperidge Farm,Marcolini,0,0.91139364,1,false_positive
+𝑺𝗍𝚊𝕞𝚤𝜛aԁе,Staminade,1,0.90051097,0,false_negative
+Patagonia,Liquid Paper,0,0.9289646,1,false_positive
+S.T. Dupont,Terminix,0,0.9258044,1,false_positive
+𝛵𝒱N,TVN,1,0.9024353,0,false_negative
+𝙂MAC,GMAC,1,0.8811991,0,false_negative
+Massimo Zanetti,Big Lots,0,0.9321959,1,false_positive
+𝐹ං𝞸t 𝙇𝜎𝑐ⲕℯ𝚛,Foot Locker,1,0.88733995,0,false_negative
+DaKine,Foot Locker,0,0.9268745,1,false_positive
+AA𝐀,AAA,1,0.89145684,0,false_negative
+𝘽𝐞𝔢𝘁1𝖊,Beetle,1,0.89457905,0,false_negative
+𝘒in𝑰ey,Kinley,1,0.90038544,0,false_negative
+Universal Music Group,BOTOX,0,0.9218757,1,false_positive
+Helzberg Diamond,Monterey,0,0.9248354,1,false_positive
+Mobilkom Austria,Captain Morgan,0,0.9241606,1,false_positive
+Pirelli,Stanley Black & Decker,0,0.9318257,1,false_positive
+Soft 'n Gentle,Durango,0,0.918321,1,false_positive
+𝑳𝑒 𝗠౦𝜋𝗱𝕖,Le Monde,1,0.8374599,0,false_negative
+𝔗rеnԁ 𝓜ⅰ𝕔г𝘰,Trend Micro,1,0.89978325,0,false_negative
+Splice,Sole,0,0.9200054,1,false_positive
+C𝕙𝑒ap 𝐌ℴπ𝗱𝕒𝗒,Cheap Monday,1,0.88745755,0,false_negative
+Carl's Jr.,De'Longhi,0,0.9164292,1,false_positive
+Santal,S.T. Dupont,0,0.9170901,1,false_positive
+T𝑊A,TWA,1,0.90149933,0,false_negative
