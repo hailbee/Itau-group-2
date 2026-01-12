@@ -393,3 +393,14 @@ if __name__ == '__main__':
 
     # # With visualization
     # python main.py --mode ocr --test_filepath data/processed/validate_pairs_ref_10k.parquet --plot_roc True
+
+    ### Valerie
+
+    # # Basic OCR test
+    # python main.py --mode ocr --test_filepath data/processed/validate_pairs_ref_10k.parquet
+
+    # # Siglip text encoder
+    # python main.py --mode baseline --baseline_model siglip --test_filepath data/processed/validate_pairs_ref_10k.parquet
+
+    # # Siglip image encoder
+    # python main.py --mode image_encoder --image_encoder siglip --test_filepath data/processed/validate_pairs_ref_10k.parquet
