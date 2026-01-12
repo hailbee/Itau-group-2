@@ -21,7 +21,7 @@ def main():
                       help='Mode to run. "baseline" to test VLM models, "image_encoder" to test image encoders on glyphs, "ocr" to test OCR on glyphs, "evaluate_saved" to evaluate a trained Siamese model, "latency" to measure VLM latency')
     parser.add_argument('--test_filepath', type=str, required=True,
                       help='Path to test data (CSV or Parquet with fraudulent_name, real_name, label)')
-    parser.add_argument('--baseline_model', type=str, choices=['clip', 'coca', 'flava', 'siglip', 'cogvlm', 'qwenvlm', 'gemma', 'all'], default='clip',
+    parser.add_argument('--baseline_model', type=str, choices=['clip', 'coca', 'flava', 'siglip', 'all'], default='clip',
                       help='Baseline model to test (for baseline mode)')
     parser.add_argument('--image_encoder', type=str, 
                       choices=['vit', 'resnet', 'convnext', 'vitmae', 'siglip', 'all'], 
@@ -287,7 +287,7 @@ def main():
         results = []
         
         if args.baseline_model == 'all':
-            model_types = ['clip', 'coca', 'flava', 'siglip', 'cogvlm', 'qwenvlm', 'gemma']
+            model_types = ['clip', 'coca', 'flava', 'siglip']
         else:
             model_types = [args.baseline_model]
         
@@ -299,6 +299,23 @@ def main():
                 results.append(metrics)
                 print(metrics)
                 print()
+            except RuntimeError as e:
+                error_msg = str(e)
+                # Check if it's a gated model error
+                if 'gated model' in error_msg.lower():
+                    print(f"⚠️  {model_type.upper()} Skipped: Gated Model (Authentication Required)")
+                    print(f"   → To use this model, visit: https://huggingface.co/google/gemma-2b")
+                    print(f"   → Then run: huggingface-cli login")
+                    print()
+                # Check if it's a transformers library compatibility issue
+                elif 'Unrecognized configuration class' in error_msg or 'Failed to create' in error_msg:
+                    print(f"⚠️  {model_type.upper()} Skipped: {error_msg.split(':')[0]}")
+                    if 'cogvlm' in model_type.lower() or 'qwen' in model_type.lower():
+                        print(f"   → Tip: Try upgrading transformers: pip install --upgrade transformers")
+                    print()
+                else:
+                    print(f"Error profiling {model_type}: {error_msg}")
+                    print()
             except Exception as e:
                 print(f"Error profiling {model_type}: {str(e)}")
                 print()
