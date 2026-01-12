@@ -3,7 +3,6 @@ from .wrappers import (
     CoCaModelWrapper,
     FLAVAModelWrapper,
     SigLIPModelWrapper,
-    CogVLMModelWrapper,
 )
 
 class ModelFactory:
@@ -29,7 +28,7 @@ class ModelFactory:
             'class': SigLIPModelWrapper,
             'default_name': 'google/siglip-base-patch16-224',
             'year': 2023,
-        }
+        },
     }
     
     @classmethod
@@ -44,6 +43,10 @@ class ModelFactory:
             
         Returns:
             Model wrapper instance
+            
+        Raises:
+            ValueError: If model_type is not supported
+            RuntimeError: If model cannot be created
         """
         if model_type not in cls.MODEL_CONFIGS:
             raise ValueError(f"Unsupported model type: {model_type}. "
@@ -67,7 +70,28 @@ class ModelFactory:
                 )
             else:
                 raise ImportError(f"Failed to create {model_type} model: {str(e)}")
+        except OSError as e:
+            # Handle gated models and network errors
+            error_msg = str(e)
+            if 'gated repo' in error_msg.lower() or '403' in error_msg:
+                raise RuntimeError(
+                    f"Failed to create {model_type} model: This is a gated model.\n"
+                    f"You need to authenticate with HuggingFace. Visit: https://huggingface.co/{model_name}\n"
+                    f"Then run: huggingface-cli login"
+                )
+            else:
+                raise RuntimeError(f"Failed to create {model_type} model: {str(e)[:200]}")
         except Exception as e:
+            # For CogVLM and QwenVLM, provide special error messages
+            if model_type in ['cogvlm', 'qwenvlm']:
+                error_msg = str(e)
+                if 'Unrecognized configuration class' in error_msg:
+                    raise RuntimeError(
+                        f"Failed to create {model_type} model: {model_type.upper()} requires a newer or custom "
+                        f"version of the transformers library. The model config is not registered in this environment.\n"
+                        f"To fix this, try: pip install --upgrade transformers\n"
+                        f"Error details: {error_msg[:200]}"
+                    )
             raise RuntimeError(f"Failed to create {model_type} model: {str(e)}")
     
     @classmethod

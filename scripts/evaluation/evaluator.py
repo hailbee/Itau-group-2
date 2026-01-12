@@ -89,6 +89,7 @@ class Evaluator:
         else:
             df = pd.read_parquet(test_filepath)
         
+        df = df.head(1024)
         fraud_names = df['fraudulent_name'].astype(str).tolist()
         real_names = df['real_name'].astype(str).tolist()
         labels = df['label'].astype(float).tolist()
