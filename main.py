@@ -44,7 +44,6 @@ def main():
                       help='Whether to plot ROC curve (True/False)')
     parser.add_argument('--model_weights', type=str, default=None,
                       help='Path to trained Siamese model weights (for evaluate_saved mode)')
-    
     parser.add_argument('--device', type=str, default=device,
                       help='Device to use (cuda or cpu)')
     parser.add_argument('--plot', type=ast.literal_eval, default=False, nargs='?',
