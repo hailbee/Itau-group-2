@@ -6,13 +6,16 @@ from scripts.evaluation.evaluator import Evaluator
 from scripts.optimization.unified_optimizer import UnifiedHyperparameterOptimizer
 from model_utils.models.learning.siamese import SiameseModelPairs
 
+# python3 main_edited.py --mode train --optuna False --training_filepath "/Users/a../Downloads/df_with_real_embeddings.parquet" --test_filepath "/Users/a../Downloads/df_with_real_embeddings.parquet" 
+# same test/train file but just to see if training works
+
 def main():
     parser = argparse.ArgumentParser(description='Train or evaluate a Siamese model for business name matching.')
     parser.add_argument('--mode', type=str, 
                       choices=['train', 'evaluate_saved'], 
                       required=True,
                       help='Mode to run: train or evaluate_saved')
-    parser.add_argument('--optuna', type=str, choices=[True, False], default=True,
+    parser.add_argument('--optuna', type=str, choices=['True', 'False'], default='True',
                       help='Optuna hyperparameter optimization (True/False)')
     parser.add_argument('--training_filepath', type=str,
                       help='Path to training data (for training modes)')
@@ -45,13 +48,6 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def get_siamese_model(mode, backbone_name, embedding_dim=512, projection_dim=128, device=None):
-        from scripts.baseline.baseline_tester import BaselineTester
-        tester = BaselineTester(model_type=backbone_name, batch_size=1, device=device)
-        backbone_module = tester.model_wrapper  # Use the wrapper, not .model
-        assert hasattr(backbone_module, 'encode_text'), f"Backbone {type(backbone_module)} does not have encode_text"
-        return SiameseModelPairs(embedding_dim, projection_dim, backbone=backbone_module)
-    
     if args.mode == 'evaluate_saved':
         print("Loading saved model for evaluation...")
         # Load backbone
@@ -117,11 +113,17 @@ def main():
 
     elif args.mode == 'train':
         # Single training run
-        model = get_siamese_model('pair', 'siglip', embedding_dim=512, projection_dim=128, device=device).to(device)
-        
+        from model_utils.models.learning.siamese import SiameseEmbeddingModel
+
+        model = SiameseEmbeddingModel(
+            embedding_dim=768,
+            hidden_dim=256,
+            out_dim=128
+        ).to(device)
+
         # Get appropriate loss class
-        from model_utils.loss.pair_losses import CosineLoss
-        criterion = CosineLoss(margin=0.5)
+        from model_utils.loss.pair_losses import ContrastiveLoss
+        criterion = ContrastiveLoss(margin=1.0)
 
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
         
@@ -134,8 +136,8 @@ def main():
         
         # Create appropriate dataset and dataloader based on model type
 
-        from utils.data import TextPairDataset
-        dataset = TextPairDataset(dataframe)
+        from utils.data import EmbeddingPairDataset
+        dataset = EmbeddingPairDataset(dataframe)
         dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
 
         ### here: pass in the model_type
@@ -149,10 +151,10 @@ def main():
             easy_loader=None,
             curriculum=args.curriculum,
             validate_filepath=args.validate_filepath,
-            plot=args.plot
+            #plot=args.plot
         )
 
-    elif args.optuna == True:
+    elif args.optuna == 'True':
         # Advanced hyperparameter optimization
         optimizer = UnifiedHyperparameterOptimizer('siglip', device=device, log_dir=args.log_dir)
         

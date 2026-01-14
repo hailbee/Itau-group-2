@@ -3,6 +3,33 @@ from torch.utils.data import Dataset
 import numpy as np
 import ast
 
+class EmbeddingPairDataset(Dataset):
+    def __init__(self, df):
+        self.labels = torch.tensor(
+            df.iloc[:, 2].values,
+            dtype=torch.float32
+        )
+
+        self.fake_emb = torch.tensor(
+            df.iloc[:, 3:771].values,
+            dtype=torch.float32
+        )
+
+        self.real_emb = torch.tensor(
+            df.iloc[:, 771:1539].values,
+            dtype=torch.float32
+        )
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        return (
+            self.fake_emb[idx],
+            self.real_emb[idx],
+            self.labels[idx]
+        )
+
 class TextPairDataset(Dataset):
     def __init__(self, dataframe):
         # Handle both old format (name1, name2, label) and new format (fraudulent_name, real_name, label)
