@@ -4,7 +4,6 @@ import torch
 from scripts.training.trainer import Trainer
 from scripts.evaluation.evaluator import Evaluator
 from scripts.optimization.unified_optimizer import UnifiedHyperparameterOptimizer
-from model_utils.models.learning.siamese import SiameseModelPairs
 
 # python3 main_edited.py --mode train --optuna False --training_filepath "/Users/a../Downloads/train_pairs_with_siglip_embeddings.parquet" --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet" 
 # same test/train file but just to see if training works
@@ -144,19 +143,14 @@ def main():
         trainer = Trainer(model, criterion, optimizer, device, model_type='pair')
         trainer.train(
             dataloader=dataloader,
-            test_filepath=args.test_filepath,
             mode='pair',
             epochs=args.epochs,
-            medium_loader=None,
-            easy_loader=None,
-            curriculum=args.curriculum,
             validate_filepath=args.validate_filepath,
-            #plot=args.plot
         )
 
     elif args.optuna == 'True':
         # Advanced hyperparameter optimization
-        optimizer = UnifiedHyperparameterOptimizer('siglip', device=device, log_dir=args.log_dir)
+        optimizer = UnifiedHyperparameterOptimizer('pairwise_contrastive', device=device, log_dir=args.log_dir)
         
         # Prepare optimization parameters
         opt_params = {

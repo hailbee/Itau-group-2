@@ -4,11 +4,7 @@ import numpy as np
 import copy
 import os
 from datetime import datetime
-from scripts.optimization.bayesian import BayesianOptimizer
-from scripts.optimization.random_optimizer import RandomOptimizer
 from scripts.optimization.optuna import OptunaOptimizer
-from scripts.training.trainer import Trainer
-from scripts.evaluation.evaluator import Evaluator
 
 class UnifiedHyperparameterOptimizer:
     """
@@ -34,8 +30,6 @@ class UnifiedHyperparameterOptimizer:
         os.makedirs(self.log_dir, exist_ok=True)
         
         # Initialize different optimizers
-        self.bayesian_optimizer = BayesianOptimizer(model_type, model_name, device, f"{log_dir}/bayesian")
-        self.random_optimizer = RandomOptimizer(model_type, model_name, device, f"{log_dir}/random")
         self.optuna_optimizer = OptunaOptimizer(model_type, model_name, device, f"{log_dir}/optuna")
     
     def sample_initial_hyperparameters(self, mode, population_size):
@@ -262,19 +256,7 @@ class UnifiedHyperparameterOptimizer:
         """
         # Base recommendations
         recommendations = {
-            'clip': {
-                'pair': {'lr': 1e-4, 'batch_size': 32, 'internal_layer_size': 128},
-                'triplet': {'lr': 1e-4, 'batch_size': 64, 'internal_layer_size': 256},
-                'supcon': {'lr': 1e-4, 'batch_size': 32, 'internal_layer_size': 128, 'temperature': 0.1},
-                'infonce': {'lr': 1e-4, 'batch_size': 32, 'internal_layer_size': 128, 'temperature': 0.1}
-            },
-            'flava': {
-                'pair': {'lr': 5e-5, 'batch_size': 16, 'internal_layer_size': 256},
-                'triplet': {'lr': 5e-5, 'batch_size': 32, 'internal_layer_size': 512},
-                'supcon': {'lr': 5e-5, 'batch_size': 16, 'internal_layer_size': 256, 'temperature': 0.07},
-                'infonce': {'lr': 5e-5, 'batch_size': 16, 'internal_layer_size': 256, 'temperature': 0.07}
-            },
-            'siglip': {
+            'pairwise_contrastive': {
                 'pair': {'lr': 1e-4, 'batch_size': 32, 'internal_layer_size': 128},
                 'triplet': {'lr': 1e-4, 'batch_size': 64, 'internal_layer_size': 256},
                 'supcon': {'lr': 1e-4, 'batch_size': 32, 'internal_layer_size': 128, 'temperature': 0.1},

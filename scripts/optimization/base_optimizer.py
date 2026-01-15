@@ -5,13 +5,6 @@ import os
 from datetime import datetime
 from scripts.training.trainer import Trainer
 from scripts.evaluation.evaluator import Evaluator
-from model_utils.models.model_factory import ModelFactory
-from model_utils.models.learning import (
-    SiameseModelPairs, 
-    SiameseModelTriplet,
-    SiameseModelSupCon,
-    SiameseModelInfoNCE
-)
 
 class BaseOptimizer:
     """
