@@ -77,6 +77,7 @@ class OptunaOptimizer(BaseOptimizer):
             print(f"{'='*50}")
             result = self.evaluate_trial(
                 params,
+                trial_number = trial.number + 1,
                 training_filepath=training_filepath,
                 test_filepath=test_filepath,
                 mode=mode,

@@ -161,6 +161,7 @@ class BaseOptimizer:
         test_filepath,
         mode,
         loss_type,
+        trial_number,
         medium_filepath=None,
         easy_filepath=None,
         epochs=5,
@@ -191,6 +192,8 @@ class BaseOptimizer:
                 f"Opt={params['optimizer']}"
             )
 
+            string = f"_LR={lr:.6f}_Batch={batch_size}_Layer={internal_layer_size}_Opt={params['optimizer']}"
+
             dataframe = pd.read_parquet(training_filepath)
             dataloader = self.create_dataloader(dataframe, batch_size, mode)
 
@@ -208,17 +211,18 @@ class BaseOptimizer:
                 criterion=criterion,
                 optimizer=optimizer,
                 device=self.device,
-                log_csv_path=f"{self.log_dir}/training_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 model_type=mode,
             )
 
             best_metrics = trainer.train(
                 dataloader=dataloader,
                 test_filepath=test_filepath,
+                trial_number=trial_number,
                 mode=mode,
                 epochs=epochs,
                 validate_filepath=validate_filepath,
-                validate_dataloader=val_dataloader
+                validate_dataloader=val_dataloader,
+                string=string
             )
 
             result = {
