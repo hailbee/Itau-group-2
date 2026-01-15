@@ -45,3 +45,7 @@ class SiameseEmbeddingModel(torch.nn.Module):
         z1 = self.head(x1)
         z2 = self.head(x2)
         return z1, z2
+
+    def encode(self, x):
+        # dummy encode method for compatibility
+        return x

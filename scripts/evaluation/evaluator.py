@@ -3,7 +3,6 @@ import torch.nn.functional as F
 import pandas as pd
 from sklearn.metrics import roc_curve, precision_score, recall_score, accuracy_score, roc_auc_score
 from utils.evals import find_best_threshold_youden, plot_roc_curve, plot_confusion_matrix, find_best_threshold_accuracy
-from utils.embeddings import EmbeddingExtractor, SupConEmbeddingExtractor, batched_embedding
 import numpy as np
 from sklearn.metrics import auc
 
@@ -15,13 +14,7 @@ class Evaluator:
         self.model = model
         self.batch_size = batch_size
         self.model_type = model_type
-        # Only use embedding extractor
-        if model_type in ['supcon', 'infonce']:
-            print("USING SUPCON EMBEDDING EXTRACTOR")
-            self.extractor = SupConEmbeddingExtractor(model)
-        else:
-            print("USING STANDARD EMBEDDING EXTRACTOR")
-            self.extractor = EmbeddingExtractor(model)
+        self.extractor = None
 
     def compute_metrics(self, results_df, plot=False):
         """
@@ -93,10 +86,16 @@ class Evaluator:
         fraud_names = df['fraudulent_name'].astype(str).tolist()
         real_names = df['real_name'].astype(str).tolist()
         labels = df['label'].astype(float).tolist()
-        
-        fraud_embs = batched_embedding(self.extractor, fraud_names, self.batch_size)
-        real_embs = batched_embedding(self.extractor, real_names, self.batch_size)
-        
+
+        fraud_embs = torch.tensor(
+            df.iloc[:, 3:771].values,
+            dtype=torch.float32
+        )
+
+        real_embs = torch.tensor(
+            df.iloc[:, 771:1539].values,
+            dtype=torch.float32
+        )
         similarities = F.cosine_similarity(fraud_embs, real_embs, dim=1).detach().cpu().numpy()
         results_df = pd.DataFrame({
             'fraudulent_name': fraud_names,
