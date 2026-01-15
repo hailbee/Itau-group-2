@@ -6,7 +6,7 @@ from scripts.evaluation.evaluator import Evaluator
 from scripts.optimization.unified_optimizer import UnifiedHyperparameterOptimizer
 from model_utils.models.learning.siamese import SiameseModelPairs
 
-# python3 main_edited.py --mode train --optuna False --training_filepath "/Users/a../Downloads/df_with_real_embeddings.parquet" --test_filepath "/Users/a../Downloads/df_with_real_embeddings.parquet" 
+# python3 main_edited.py --mode train --optuna False --training_filepath "/Users/a../Downloads/train_pairs_with_siglip_embeddings.parquet" --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet" 
 # same test/train file but just to see if training works
 
 def main():
