@@ -132,21 +132,7 @@ class UnifiedHyperparameterOptimizer:
         Run hyperparameter optimization using the specified method.
         """
         # Filter kwargs for each optimizer
-        if method == "bayesian":
-            allowed = ["n_calls", "n_random_starts", "epochs"]
-            filtered = {k: kwargs[k] for k in allowed if k in kwargs}
-            return self._run_bayesian_optimization(
-                training_filepath, test_filepath,
-                mode, loss_type, medium_filepath, easy_filepath, validate_filepath=validate_filepath, curriculum=curriculum, **filtered
-            )
-        elif method == "random":
-            allowed = ["n_trials", "epochs"]
-            filtered = {k: kwargs[k] for k in allowed if k in kwargs}
-            return self._run_random_optimization(
-                training_filepath, test_filepath,
-                mode, loss_type, medium_filepath, easy_filepath, validate_filepath=validate_filepath, curriculum=curriculum, **filtered
-            )
-        elif method == "optuna":
+        if method == "optuna":
             allowed = ["n_trials", "sampler", "pruner", "study_name", "epochs"]
             filtered = {k: kwargs[k] for k in allowed if k in kwargs}
             return self._run_optuna_optimization(
@@ -156,22 +142,6 @@ class UnifiedHyperparameterOptimizer:
         else:
             raise ValueError(f"Unknown optimization method: {method}")
     
-    def _run_bayesian_optimization(self, training_filepath, test_filepath,
-                                 mode, loss_type, medium_filepath, easy_filepath, validate_filepath=None, curriculum=None, **kwargs):
-        """Run Bayesian optimization."""
-        return self.bayesian_optimizer.optimize(
-            training_filepath, test_filepath,
-            mode, loss_type, medium_filepath, easy_filepath, validate_filepath=validate_filepath, curriculum=curriculum, **kwargs
-        )
-    
-    def _run_random_optimization(self, training_filepath, test_filepath,
-                               mode, loss_type, medium_filepath, easy_filepath, validate_filepath=None, curriculum=None, **kwargs):
-        """Run random search optimization."""
-        return self.random_optimizer.optimize(
-            training_filepath, test_filepath,
-            mode, loss_type, medium_filepath, easy_filepath, validate_filepath=validate_filepath, curriculum=curriculum, **kwargs
-        )
-    
     def _run_optuna_optimization(self, training_filepath, test_filepath,
                                mode, loss_type, medium_filepath, easy_filepath, validate_filepath=None, curriculum=None, **kwargs):
         """Run Optuna optimization."""
@@ -179,60 +149,7 @@ class UnifiedHyperparameterOptimizer:
             training_filepath, test_filepath,
             mode, loss_type, medium_filepath, easy_filepath, validate_filepath=validate_filepath, curriculum=curriculum, **kwargs
         )
-    
-    def compare_methods(self, training_filepath, test_filepath,
-                       mode="pair", loss_type="cosine", medium_filepath=None, easy_filepath=None, curriculum=None, **kwargs):
-        """
-        Compare different optimization methods on the same problem.
-        """
-        print(f"Comparing optimization methods for {self.model_type} model")
-        print(f"Mode: {mode}, Loss: {loss_type}")
-        
-        methods = ["random", "bayesian", "optuna"]
-        results = {}
-        for method in methods:
-            print(f"\n{'='*50}")
-            print(f"Running {method.upper()} optimization")
-            print(f"{'='*50}")
-            try:
-                # Filter kwargs for each optimizer
-                if method == "bayesian":
-                    allowed = ["n_calls", "n_random_starts", "epochs"]
-                elif method == "random":
-                    allowed = ["n_trials", "epochs"]
-                elif method == "optuna":
-                    allowed = ["n_trials", "sampler", "pruner", "study_name", "epochs"]
-                filtered = {k: kwargs[k] for k in allowed if k in kwargs}
-                method_results = self.optimize(
-                    method, training_filepath, test_filepath,
-                    mode, loss_type, medium_filepath, easy_filepath, curriculum=curriculum, **filtered
-                )
-                results[method] = method_results
-                if method_results:
-                    best_auc = max(r.get('test_auc', 0) for r in method_results)
-                    best_accuracy = max(r.get('test_accuracy', 0) for r in method_results)
-                    print(f"{method.upper()} - Best AUC: {best_auc:.4f}, Best Accuracy: {best_accuracy:.4f}")
-            except Exception as e:
-                print(f"Error in {method} optimization: {e}")
-                results[method] = []
-        self._save_comparison_results(results, mode, loss_type)
-        return results
-    
-    def _save_comparison_results(self, results, mode, loss_type):
-        """Save comparison results to CSV."""
-        all_results = []
-        for method, method_results in results.items():
-            for result in method_results:
-                result['optimization_method'] = method
-                all_results.append(result)
-        
-        if all_results:
-            df = pd.DataFrame(all_results)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"{self.log_dir}/comparison_results_{mode}_{loss_type}_{timestamp}.csv"
-            df.to_csv(filename, index=False)
-            print(f"Comparison results saved to {filename}")
-    
+
     def get_recommended_settings(self, mode, loss_type, dataset_size=None):
         """
         Get recommended hyperparameter settings based on the model type and mode.

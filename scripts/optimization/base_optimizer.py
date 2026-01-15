@@ -194,6 +194,9 @@ class BaseOptimizer:
             dataframe = pd.read_parquet(training_filepath)
             dataloader = self.create_dataloader(dataframe, batch_size, mode)
 
+            val_df = pd.read_parquet(validate_filepath)
+            val_dataloader = self.create_dataloader(val_df, batch_size, mode)
+
             model = self.create_siamese_model(mode, internal_layer_size).to(self.device)
             optimizer = self.create_optimizer(model, params)
 
@@ -214,7 +217,8 @@ class BaseOptimizer:
                 test_filepath=test_filepath,
                 mode=mode,
                 epochs=epochs,
-                validate_filepath=validate_filepath
+                validate_filepath=validate_filepath,
+                validate_dataloader=val_dataloader
             )
 
             result = {

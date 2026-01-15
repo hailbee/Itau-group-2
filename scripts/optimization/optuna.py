@@ -6,7 +6,6 @@ from datetime import datetime
 import optuna
 from optuna.samplers import TPESampler, RandomSampler, CmaEsSampler
 from optuna.pruners import MedianPruner, HyperbandPruner
-from scripts.training.trainer import Trainer
 from scripts.evaluation.evaluator import Evaluator
 from .base_optimizer import BaseOptimizer
 
@@ -158,7 +157,7 @@ class OptunaOptimizer(BaseOptimizer):
             )
         
         # Run optimization
-        study.optimize(objective_wrapper, n_trials=50)
+        study.optimize(objective_wrapper, n_trials=2)
         
         # Save results
         self._save_results(study)
