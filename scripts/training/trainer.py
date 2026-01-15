@@ -74,6 +74,7 @@ class Trainer:
     def train(
         self,
         dataloader,
+        test_filepath,
         mode="pair",
         epochs=30,
         validate_filepath=None,

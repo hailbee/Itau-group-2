@@ -9,7 +9,6 @@ from scripts.optimization.optuna import OptunaOptimizer
 class UnifiedHyperparameterOptimizer:
     """
     Unified interface for different hyperparameter optimization methods.
-    Supports Bayesian optimization, random search, Optuna, and Population-Based Training.
     """
     
     def __init__(self, model_type, model_name=None, device=None, log_dir="optimization_results"):
@@ -20,14 +19,6 @@ class UnifiedHyperparameterOptimizer:
         self.results = []
         self.best_auc = 0.0  # Track best AUC across all trials
         self.best_accuracy = 0.0  # Track best accuracy across all trials
-        
-        # Create main log directory - use local path if log_dir contains /content
-        if "/content" in self.log_dir:
-            self.log_dir = "optimization_results"
-        # Also check if the path starts with /content
-        if self.log_dir.startswith("/content"):
-            self.log_dir = "optimization_results"
-        os.makedirs(self.log_dir, exist_ok=True)
         
         # Initialize different optimizers
         self.optuna_optimizer = OptunaOptimizer(model_type, model_name, device, f"{log_dir}/optuna")

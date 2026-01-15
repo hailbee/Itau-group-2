@@ -111,66 +111,65 @@ def main():
         print(f"Metrics saved to: {metrics_filepath}")
 
     elif args.mode == 'train':
-        # Single training run
-        from model_utils.models.learning.siamese import SiameseEmbeddingModel
+        if args.optuna == 'True':
+            # OPTUNA TRAINING
+            optimizer = UnifiedHyperparameterOptimizer(
+                'pairwise_contrastive',
+                device=device,
+                log_dir=args.log_dir
+            )
 
-        model = SiameseEmbeddingModel(
-            embedding_dim=768,
-            hidden_dim=256,
-            out_dim=128
-        ).to(device)
+            results = optimizer.optimize(
+                method='optuna',
+                training_filepath=args.training_filepath,
+                test_filepath=args.test_filepath,
+                mode='pair',
+                loss_type='contrastive',
+                epochs=args.epochs,
+                n_trials=args.n_trials,
+                sampler=args.sampler,
+                pruner=args.pruner if args.pruner != 'none' else None,
+                validate_filepath=args.validate_filepath,
+                curriculum=args.curriculum
+            )
 
-        # Get appropriate loss class
-        from model_utils.loss.pair_losses import ContrastiveLoss
-        criterion = ContrastiveLoss(margin=1.0)
+        else:
+            # Single training run
+            from model_utils.models.learning.siamese import SiameseEmbeddingModel
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-        
-        # Create dataloaders
-        import pandas as pd
-        from torch.utils.data import DataLoader
-        
-        # Load training data
-        dataframe = pd.read_parquet(args.training_filepath)
-        
-        # Create appropriate dataset and dataloader based on model type
+            model = SiameseEmbeddingModel(
+                embedding_dim=768,
+                hidden_dim=256,
+                out_dim=128
+            ).to(device)
 
-        from utils.data import EmbeddingPairDataset
-        dataset = EmbeddingPairDataset(dataframe)
-        dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
+            # Get appropriate loss class
+            from model_utils.loss.pair_losses import ContrastiveLoss
+            criterion = ContrastiveLoss(margin=1.0)
 
-        ### here: pass in the model_type
-        trainer = Trainer(model, criterion, optimizer, device, model_type='pair')
-        trainer.train(
-            dataloader=dataloader,
-            mode='pair',
-            epochs=args.epochs,
-            validate_filepath=args.validate_filepath,
-        )
+            optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+            
+            # Create dataloaders
+            import pandas as pd
+            from torch.utils.data import DataLoader
+            
+            # Load training data
+            dataframe = pd.read_parquet(args.training_filepath)
+            
+            # Create appropriate dataset and dataloader based on model type
 
-    elif args.optuna == 'True':
-        # Advanced hyperparameter optimization
-        optimizer = UnifiedHyperparameterOptimizer('pairwise_contrastive', device=device, log_dir=args.log_dir)
-        
-        # Prepare optimization parameters
-        opt_params = {
-            'n_trials': args.n_trials,
-            'sampler': args.sampler,
-            'pruner': args.pruner if args.pruner != 'none' else None,
-            'study_name': args.study_name,
-            'epochs': args.epochs,
-        }
-        
-        results = optimizer.optimize(
-            method='optuna',
-            training_filepath=args.training_filepath,
-            test_filepath=args.test_filepath,
-            mode=args.model_type,
-            loss_type=args.loss_type,
-            curriculum=args.curriculum,
-            **opt_params,
-            validate_filepath=args.validate_filepath
-        )
+            from utils.data import EmbeddingPairDataset
+            dataset = EmbeddingPairDataset(dataframe)
+            dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
+
+            ### here: pass in the model_type
+            trainer = Trainer(model, criterion, optimizer, device, model_type='pair')
+            trainer.train(
+                dataloader=dataloader,
+                mode='pair',
+                epochs=args.epochs,
+                validate_filepath=args.validate_filepath,
+            )
 
 if __name__ == '__main__':
     main() 

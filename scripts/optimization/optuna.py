@@ -21,7 +21,7 @@ class OptunaOptimizer(BaseOptimizer):
     
     def __init__(self, model_type, model_name=None, device=None, log_dir=None):
         # Hardcode log_dir to Google Drive path
-        log_dir = "/content/drive/My Drive/Project_2_Business_Names/Summer 2025/code/optimizer results"
+        log_dir = "./"
         import os
         os.makedirs(log_dir, exist_ok=True)
         super().__init__(model_type, model_name, device, log_dir)
@@ -158,7 +158,7 @@ class OptunaOptimizer(BaseOptimizer):
             )
         
         # Run optimization
-        study.optimize(objective_wrapper, n_trials=n_trials)
+        study.optimize(objective_wrapper, n_trials=50)
         
         # Save results
         self._save_results(study)
