@@ -9,7 +9,20 @@ Index of embedding_767: 770
 Index of real_embedding_0: 771
 Index of real_embedding_767: 1538
 
-salloc -c 4 --mem=8G -t 01:00:00
+salloc -p mit_preemptable \
+  --gres=gpu:h200:1 \
+  -c 8 --mem=64G \
+  -t 02:00:00
+
+salloc -p mit_preemptable \
+  --gres=gpu:h100:1 \
+  -c 8 --mem=64G \
+  -t 02:00:00
+
+salloc -p mit_preemptable \
+  --gres=gpu:a100:1 \
+  -c 8 --mem=64G \
+  -t 02:00:00
 
 conda activate itau
 

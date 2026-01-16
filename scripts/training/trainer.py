@@ -23,6 +23,11 @@ class Trainer:
 
         for i, batch in enumerate(dataloader):
             x1, x2, y = batch
+
+            x1 = x1.to(self.device)
+            x2 = x2.to(self.device)
+            y  = y.to(self.device)
+
             z1, z2 = self.model(x1, x2)
             loss = self.criterion(z1, z2, y)
 
@@ -45,6 +50,11 @@ class Trainer:
         with torch.no_grad():
             for i, batch in enumerate(dataloader):
                 x1, x2, y = batch
+
+                x1 = x1.to(self.device)
+                x2 = x2.to(self.device)
+                y  = y.to(self.device)
+
                 z1, z2 = self.model(x1, x2)
                 loss = self.criterion(z1, z2, y)
                 epoch_loss += loss.item()
