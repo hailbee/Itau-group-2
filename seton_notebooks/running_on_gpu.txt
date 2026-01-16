@@ -11,7 +11,7 @@ Index of real_embedding_767: 1538
 
 salloc -p mit_preemptable \
   --gres=gpu:h200:1 \
-  -c 8 --mem=64G \
+  -c 8 --mem=128G \
   -t 02:00:00
 
 salloc -p mit_preemptable \
@@ -21,17 +21,27 @@ salloc -p mit_preemptable \
 
 salloc -p mit_preemptable \
   --gres=gpu:a100:1 \
-  -c 8 --mem=64G \
+  -c 8 --mem=128G \
   -t 02:00:00
 
-conda activate itau
-
-conda install -c conda-forge libstdcxx-ng -y
-export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+salloc -p mit_preemptable \
+  --gres=gpu:1 \
+  -c 8 --mem=128G \
+  -t 02:00:00
 
 cd ~/Itau-group-2
+
+conda activate itau
 touch scripts/__init__.py
 touch scripts/training/__init__.py
 export PYTHONPATH=$(pwd)
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 python -m main_edited --mode train --optuna True --training_filepath "Downloads/train_pairs_with_siglip_embeddings.parquet" --test_filepath "Downloads/test_pairs_with_siglip_embeddings.parquet" --validate_filepath "Downloads/validate_pairs_with_siglip_embeddings.parquet"
+
+python create_embeddings_run.py \
+  --input test_pairs_all.parquet \
+  --output test_pairs_with_siglip_embeddings.parquet \
+  --batch-size 128
+
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.version.cuda); print(torch.cuda.device_count())"
