@@ -645,7 +645,7 @@ def create_latency_report(metrics_list: List[LatencyMetrics]) -> str:
         model_name = metrics.model_name[:24]
         latency_str = f"{metrics.mean_latency_ms:.2f}±{metrics.std_latency_ms:.2f}"
         throughput_str = f"{metrics.throughput_samples_per_sec:.1f} s/s"
-        gpu_mem_str = f"{metrics.gpu_memory_mb:.1f}" if metrics.gpu_memory_mb else "N/A"
+        gpu_mem_str = f"{metrics.gpu_memory_mb:.1f}" if metrics.gpu_memory_mb is not None else "N/A"
         
         lines.append(f"{model_name:<25} {latency_str:<15} {throughput_str:<15} {gpu_mem_str:<15}")
     

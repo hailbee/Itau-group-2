@@ -21,7 +21,7 @@ def main():
                       help='Mode to run. "baseline" to test VLM models, "image_encoder" to test image encoders on glyphs, "ocr" to test OCR on glyphs, "evaluate_saved" to evaluate a trained Siamese model, "latency" to measure VLM latency')
     parser.add_argument('--test_filepath', type=str, required=True,
                       help='Path to test data (CSV or Parquet with fraudulent_name, real_name, label)')
-    parser.add_argument('--baseline_model', type=str, choices=['clip', 'coca', 'flava', 'siglip', 'all'], default='clip',
+    parser.add_argument('--baseline_model', type=str, choices=['clip', 'coca', 'flava', 'siglip', 'internvl', 'sailv', 'all'], default='clip',
                       help='Baseline model to test (for baseline mode)')
     parser.add_argument('--image_encoder', type=str, 
                       choices=['vit', 'resnet', 'convnext', 'vitmae', 'siglip', 'all'], 
@@ -36,7 +36,7 @@ def main():
                       help='OCR threshold testing mode. "single" uses --fuzzy_threshold, "all" tests predefined thresholds, "custom" takes comma-separated values')
     parser.add_argument('--ocr_custom_thresholds', type=str, default=None,
                       help='Custom OCR thresholds as comma-separated values (e.g., "50,60,70,80")')
-    parser.add_argument('--backbone', type=str, choices=['clip', 'coca', 'flava', 'siglip', 'cogvlm', 'qwenvlm', 'gemma'], default='clip',
+    parser.add_argument('--backbone', type=str, choices=['clip', 'coca', 'flava', 'siglip', 'internvl', 'sailv', 'cogvlm', 'qwenvlm', 'gemma'], default='clip',
                 help='Vision-language backbone to use in Siamese model')
     parser.add_argument('--batch_size', type=int, default=32,
                       help='Batch size for testing')
@@ -78,7 +78,7 @@ def main():
                     metrics_to_print = {k: v for k, v in metrics.items() if k != 'roc_curve'}
                     print(f"{model_type.upper()}: {metrics_to_print}")
 
-        elif args.baseline_model in ['clip', 'coca', 'flava', 'siglip', 'cogvlm', 'qwenvlm', 'gemma']:
+        elif args.baseline_model in ['clip', 'coca', 'flava', 'siglip', 'internvl', 'sailv', 'cogvlm', 'qwenvlm', 'gemma']:
             print(f"Testing {args.baseline_model.upper()} baseline model...")
             tester = BaselineTester(model_type=args.baseline_model, batch_size=args.batch_size, device=args.device)
             _results_df, metrics = tester.test(args.test_filepath, plot_roc=args.plot_roc)
@@ -287,7 +287,7 @@ def main():
         results = []
         
         if args.baseline_model == 'all':
-            model_types = ['clip', 'coca', 'flava', 'siglip']
+            model_types = ['clip', 'coca', 'flava', 'siglip', 'internvl', 'sailv']
         else:
             model_types = [args.baseline_model]
         

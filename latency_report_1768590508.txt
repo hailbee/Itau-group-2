@@ -1,0 +1,32 @@
+================================================================================
+LATENCY COMPARISON REPORT
+================================================================================
+
+Summary (sorted by mean latency):
+--------------------------------------------------------------------------------
+Model                     Latency (ms)    Throughput      GPU Mem (MB)   
+--------------------------------------------------------------------------------
+sentence-transformers/al  48.13±0.00      664.9 s/s       N/A            
+--------------------------------------------------------------------------------
+
+Detailed Results:
+--------------------------------------------------------------------------------
+Model: sentence-transformers/all-MiniLM-L6-v2 (SAILVModelWrapper)
+Batch Size: 32
+
+Runtime Metrics (ms):
+  Mean: 48.13
+  Min: 48.13
+  Max: 48.13
+  Std: 0.00
+
+Memory Metrics (MB):
+  Allocated: 0.00
+  Reserved: 0.00
+  Peak: 0.00
+  CPU: 546.28
+
+Utilization:
+  CPU: 483.0%
+
+Throughput: 664.88 samples/sec

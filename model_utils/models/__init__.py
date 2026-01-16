@@ -9,7 +9,8 @@ from .wrappers import (
     CLIPModelWrapper,
     CoCaModelWrapper,
     FLAVAModelWrapper,
-    SigLIPModelWrapper
+    SigLIPModelWrapper,
+    InternVLModelWrapper
 )
 
 # Import model factory
@@ -30,7 +31,7 @@ def create_model(model_type, model_name=None, device=None):
     Convenience function to create a model wrapper.
     
     Args:
-        model_type: One of 'clip', 'coca', 'flava', 'siglip'
+        model_type: One of 'clip', 'coca', 'flava', 'siglip', 'internvl'
         model_name: Specific model name (optional)
         device: Device to run on (auto-detected if None)
         

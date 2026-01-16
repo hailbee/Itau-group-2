@@ -6,7 +6,7 @@ and baseline vision-language models (VLMs).
 
 The project supports:
 
-* Baseline model evaluation (CLIP, CoCa, FLAVA, SigLIP)
+* Baseline model evaluation (CLIP, CoCa, FLAVA, SigLIP, InternVL)
 * Evaluation of trained Siamese models using embedding similarity
 * ROC/AUC, accuracy, precision, recall metrics
 * Optional plots (ROC, confusion matrix)
@@ -56,12 +56,12 @@ Below are the arguments supported by `main.py` and how they are used:
   * `label`
 
 * **`--baseline_model`** (baseline mode only)
-  Choices: `clip`, `coca`, `flava`, `siglip`, `all`
+  Choices: `clip`, `coca`, `flava`, `siglip`, `internvl`, `all`
   Default: `clip`
   Selects which baseline model(s) to evaluate.
 
 * **`--backbone`** (evaluate_saved mode)
-  Choices: `clip`, `coca`, `flava`, `siglip`
+  Choices: `clip`, `coca`, `flava`, `siglip`, `internvl`
   Default: `clip`
   Backbone used when instantiating the Siamese model for evaluation.
 

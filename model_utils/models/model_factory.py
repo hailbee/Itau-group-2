@@ -3,6 +3,8 @@ from .wrappers import (
     CoCaModelWrapper,
     FLAVAModelWrapper,
     SigLIPModelWrapper,
+    InternVLModelWrapper,
+    SAILVModelWrapper,
 )
 
 class ModelFactory:
@@ -29,6 +31,16 @@ class ModelFactory:
             'default_name': 'google/siglip-base-patch16-224',
             'year': 2023,
         },
+        'internvl': {
+            'class': InternVLModelWrapper,
+            'default_name': 'OpenGVLab/InternVL2-2B',
+            'year': 2024,
+        },
+        'sailv': {
+            'class': SAILVModelWrapper,
+            'default_name': 'BytedanceDouyinContent/SAIL-VL-1d5-2B',
+            'year': 2024,
+        },
     }
     
     @classmethod
@@ -37,7 +49,7 @@ class ModelFactory:
         Create a model wrapper of the specified type.
         
         Args:
-            model_type: One of 'clip', 'coca', 'flava', 'siglip'
+            model_type: One of 'clip', 'coca', 'flava', 'siglip', 'internvl'
             model_name: Specific model name (optional, uses default if not provided)
             device: Device to run on (auto-detected if None)
             
