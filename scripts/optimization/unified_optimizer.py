@@ -14,7 +14,7 @@ class UnifiedHyperparameterOptimizer:
     def __init__(self, model_type, model_name=None, device=None, log_dir="optimization_results"):
         self.model_type = model_type
         self.model_name = model_name
-        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
         self.log_dir = log_dir
         self.results = []
         self.best_auc = 0.0  # Track best AUC across all trials

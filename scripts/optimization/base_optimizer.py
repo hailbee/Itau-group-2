@@ -46,7 +46,7 @@ class BaseOptimizer:
     ):
         self.model_type = model_type
         self.model_name = model_name
-        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
         self.log_dir = log_dir
 
         # embedding info
