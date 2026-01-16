@@ -10,13 +10,14 @@ from scripts.baseline.image_encoder_tester import ImageEncoderTester
 from scripts.baseline.ocr_tester import OCRTester
 from model_utils.models.learning.siamese import SiameseModelPairs
 from scripts.evaluation.evaluator import Evaluator
+from scripts.baseline.string_methods_tester import StringMethodTester
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def main():
     parser = argparse.ArgumentParser(description='VLM-based and Image Encoder text similarity evaluation')
     parser.add_argument('--mode', type=str, 
-                      choices=['baseline', 'image_encoder', 'ocr', 'evaluate_saved', 'latency'], 
+                      choices=['baseline', 'image_encoder', 'ocr', 'evaluate_saved', 'latency', 'string_methods'], 
                       required=True,
                       help='Mode to run. "baseline" to test VLM models, "image_encoder" to test image encoders on glyphs, "ocr" to test OCR on glyphs, "evaluate_saved" to evaluate a trained Siamese model, "latency" to measure VLM latency')
     parser.add_argument('--test_filepath', type=str, required=True,
@@ -27,6 +28,9 @@ def main():
                       choices=['vit', 'resnet', 'convnext', 'vitmae', 'siglip', 'all'], 
                       default='vit',
                       help='Image encoder model to test (for image_encoder mode)')
+    parser.add_argument('--string_method_type', type=str, choices=['token-set', 'levenshtein'],
+                        default='token-sort',
+                        help='String method to test')
     parser.add_argument('--glyph_size', type=int, nargs=2, default=[224, 224],
                       help='Size of generated glyphs (width height)')
     parser.add_argument('--fuzzy_threshold', type=int, default=80,
@@ -330,7 +334,21 @@ def main():
             with open(report_filename, 'w') as f:
                 f.write(report)
             print(f"\nReport saved to: {report_filename}")
-            
+    
+    elif args.mode == 'string_methods':
+        print(f"Testing string method: {args.string_method_type}")
+        tester = StringMethodTester(type = args.string_method_type)
+        
+        metrics = tester.test(
+            test_filepath=args.test_filepath,
+            plot_roc=args.plot_roc
+        )
+
+        print("\nString Method Results Summary:")
+        for k, v in metrics.items():
+            if k != "roc_curve":
+                print(f"{k}: {v}")
+                
     # Save misclassified
     if args.save_misclassified:
 
