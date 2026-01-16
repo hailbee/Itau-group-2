@@ -7,21 +7,7 @@ from datetime import datetime
 from scripts.training.trainer import Trainer
 from scripts.evaluation.evaluator import Evaluator
 from model_utils.models.learning.siamese import SiameseEmbeddingModel
-
-class EmbeddingPairDataset(torch.utils.data.Dataset):
-    def __init__(self, df, fake_slice, real_slice):
-        self.fake = df.iloc[:, fake_slice].values.astype("float32")
-        self.real = df.iloc[:, real_slice].values.astype("float32")
-
-    def __len__(self):
-        return len(self.fake)
-
-    def __getitem__(self, idx):
-        return (
-            torch.from_numpy(self.fake[idx]),
-            torch.from_numpy(self.real[idx]),
-            torch.tensor(1.0)
-        )
+from model_utils.utils.data import EmbeddingPairDataset
 
 # ============================================================
 # BaseOptimizer (PRECOMPUTED EMBEDDINGS VERSION)
@@ -82,18 +68,21 @@ class BaseOptimizer:
     # DATA
     # ------------------------------------------------------------
 
-    def create_dataloader(self, dataframe, batch_size, mode):
-        """
-        Returns embedding tensors instead of text.
-        """
+    def create_dataloader(self, dataframe, batch_size, mode, shuffle):
         if mode != "pair":
             raise ValueError("Only pair mode supported with embeddings")
 
-        dataset = EmbeddingPairDataset(
-            dataframe,
-            self.fake_slice,
-            self.real_slice
+        dataset = EmbeddingPairDataset(dataframe)
+
+        from torch.utils.data import DataLoader
+        return DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=0,   # keep 0 for simplicity; increase later if you want
+            pin_memory=(self.device.type == "cuda")
         )
+
 
         from torch.utils.data import DataLoader
         return DataLoader(
@@ -195,10 +184,10 @@ class BaseOptimizer:
             string = f"_LR={lr:.6f}_Batch={batch_size}_Layer={internal_layer_size}_Opt={params['optimizer']}"
 
             dataframe = pd.read_parquet(training_filepath)
-            dataloader = self.create_dataloader(dataframe, batch_size, mode)
+            dataloader = self.create_dataloader(dataframe, batch_size, mode, shuffle=True)
 
             val_df = pd.read_parquet(validate_filepath)
-            val_dataloader = self.create_dataloader(val_df, batch_size, mode)
+            val_dataloader = self.create_dataloader(val_df, batch_size, mode, shuffle=False)
 
             model = self.create_siamese_model(mode, internal_layer_size).to(self.device)
             optimizer = self.create_optimizer(model, params)

@@ -230,19 +230,19 @@ def main():
         
         # Create appropriate dataset and dataloader based on model type
         if args.model_type == "pair":
-            from utils.data import TextPairDataset
+            from model_utils.utils.data import TextPairDataset
             dataset = TextPairDataset(dataframe)
             dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
         elif args.model_type == "triplet":
-            from utils.data import TripletDataset
+            from model_utils.utils.data import TripletDataset
             dataset = TripletDataset(dataframe)
             dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
         elif args.model_type == "supcon":
-            from utils.data import SupConDataset
+            from model_utils.utils.data import SupConDataset
             dataset = SupConDataset(dataframe)
             dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
         elif args.model_type == "infonce":
-            from utils.data import InfoNCEDataset, infonce_collate_fn
+            from model_utils.utils.data import InfoNCEDataset, infonce_collate_fn
             dataset = InfoNCEDataset(dataframe)
             dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, collate_fn=infonce_collate_fn)
         else:
@@ -256,25 +256,25 @@ def main():
             easy_dataframe = pd.read_parquet(args.easy_filepath)
             
             if args.model_type == "pair":
-                from utils.data import TextPairDataset
+                from model_utils.utils.data import TextPairDataset
                 medium_dataset = TextPairDataset(medium_dataframe)
                 easy_dataset = TextPairDataset(easy_dataframe)
                 medium_loader = DataLoader(medium_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
                 easy_loader = DataLoader(easy_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
             elif args.model_type == "triplet":
-                from utils.data import TripletDataset
+                from model_utils.utils.data import TripletDataset
                 medium_dataset = TripletDataset(medium_dataframe)
                 easy_dataset = TripletDataset(easy_dataframe)
                 medium_loader = DataLoader(medium_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
                 easy_loader = DataLoader(easy_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
             elif args.model_type == "supcon":
-                from utils.data import SupConDataset, supcon_collate_fn
+                from model_utils.utils.data import SupConDataset, supcon_collate_fn
                 medium_dataset = SupConDataset(medium_dataframe)
                 easy_dataset = SupConDataset(easy_dataframe)
                 medium_loader = DataLoader(medium_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, collate_fn=supcon_collate_fn)
                 easy_loader = DataLoader(easy_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, collate_fn=supcon_collate_fn)
             elif args.model_type == "infonce":
-                from utils.data import InfoNCEDataset, infonce_collate_fn
+                from model_utils.utils.data import InfoNCEDataset, infonce_collate_fn
                 medium_dataset = InfoNCEDataset(medium_dataframe)
                 easy_dataset = InfoNCEDataset(easy_dataframe)
                 medium_loader = DataLoader(medium_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, collate_fn=infonce_collate_fn)

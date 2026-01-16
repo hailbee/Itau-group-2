@@ -26,4 +26,8 @@ class ContrastiveLoss(nn.Module):
         pos_loss = y * d.pow(2)
         neg_loss = (1 - y) * torch.clamp(self.margin - d, min=0).pow(2)
 
+        #if self.training:
+         #   assert (y == 0).any(), "No negative pairs in batch"
+          #  assert (y == 1).any(), "No positive pairs in batch"
+
         return (pos_loss + neg_loss).mean()

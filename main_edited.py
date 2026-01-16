@@ -4,6 +4,7 @@ import torch
 from scripts.training.trainer import Trainer
 from scripts.evaluation.evaluator import Evaluator
 from scripts.optimization.unified_optimizer import UnifiedHyperparameterOptimizer
+from model_utils.utils.data import EmbeddingPairDataset
 
 # python3 main_edited.py --mode train --optuna False --training_filepath "/Users/a../Downloads/train_pairs_with_siglip_embeddings.parquet" --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet" 
 # same test/train file but just to see if training works
@@ -56,7 +57,7 @@ def main():
         backbone_module = tester.model_wrapper  # must have .encode_text
         
         # Load your model with matching dimensions
-        model = SiameseModelPairs(embedding_dim=768, projection_dim=768, backbone=backbone_module).to(device)
+        model = SiameseEmbeddingModel(embedding_dim=768, projection_dim=768, backbone=backbone_module).to(device)
 
         # Load saved weights
         state_dict = torch.load(args.log_dir + "/best_model_siglip_pair.pt", map_location=device)
@@ -159,7 +160,6 @@ def main():
             
             # Create appropriate dataset and dataloader based on model type
 
-            from utils.data import EmbeddingPairDataset
             dataset = EmbeddingPairDataset(dataframe)
             dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
 
