@@ -1,0 +1,24 @@
+"/Users/a../Itau-group-2/data/processed/"
+
+python3 main_edited.py --mode train --optuna False --training_filepath "/Users/a../Downloads/train_pairs_with_siglip_embeddings.parquet" --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet"
+
+# python3 main_edited.py --mode train --optuna True --training_filepath "/Users/a../Downloads/train_pairs_with_siglip_embeddings.parquet" --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet" --validate_filepath "/Users/a../Downloads/validate_pairs_with_siglip_embeddings.parquet"
+
+Index of embedding_0: 3
+Index of embedding_767: 770
+Index of real_embedding_0: 771
+Index of real_embedding_767: 1538
+
+salloc -c 4 --mem=8G -t 01:00:00
+
+conda activate itau
+
+conda install -c conda-forge libstdcxx-ng -y
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+
+cd ~/Itau-group-2
+touch scripts/__init__.py
+touch scripts/training/__init__.py
+export PYTHONPATH=$(pwd)
+
+python -m main_edited --mode train --optuna True --training_filepath "Downloads/train_pairs_with_siglip_embeddings.parquet" --test_filepath "Downloads/test_pairs_with_siglip_embeddings.parquet" --validate_filepath "Downloads/validate_pairs_with_siglip_embeddings.parquet"
