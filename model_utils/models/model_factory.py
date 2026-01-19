@@ -38,7 +38,7 @@ class ModelFactory:
         },
         'sailv': {
             'class': SAILVModelWrapper,
-            'default_name': 'BytedanceDouyinContent/SAIL-VL-1d5-2B',
+            'default_name': 'moonshotai/Kimi-VL-A3B-Instruct',
             'year': 2024,
         },
     }

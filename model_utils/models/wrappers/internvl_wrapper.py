@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModel
+import warnings
 
 class InternVLModelWrapper:
     """Wrapper for InternVL vision-language models."""
@@ -10,35 +11,77 @@ class InternVLModelWrapper:
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = None
         self.tokenizer = None
+        self.is_fallback = False
         self._load_model()
     
     def _load_model(self):
         """Load the InternVL model and tokenizer."""
         try:
-            # Load tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.model_name,
-                trust_remote_code=True
-            )
+            print(f"Loading InternVL model: {self.model_name}")
             
-            # Load model with trust_remote_code for InternVL custom code
-            self.model = AutoModel.from_pretrained(
-                self.model_name,
-                torch_dtype=torch.float32,
-                trust_remote_code=True,
-                device_map='auto'
-            )
-            
-            # Move to specified device if not using device_map='auto'
-            if self.device.type != 'meta':
-                try:
-                    self.model = self.model.to(self.device)
-                except:
-                    # If device_map was used, model might already be distributed
-                    pass
-                    
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                
+                # Load tokenizer
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.model_name,
+                    trust_remote_code=True
+                )
+                
+                # Load model with trust_remote_code for InternVL custom code
+                self.model = AutoModel.from_pretrained(
+                    self.model_name,
+                    torch_dtype=torch.float32,
+                    trust_remote_code=True,
+                    device_map='auto'
+                )
+                
+                # Move to specified device if not using device_map='auto'
+                if self.device.type != 'meta':
+                    try:
+                        self.model = self.model.to(self.device)
+                    except:
+                        # If device_map was used, model might already be distributed
+                        pass
+                
+                print(f"✓ Successfully loaded InternVL model: {self.model_name}")
+                self.is_fallback = False
+                
         except Exception as e:
-            raise RuntimeError(f"Failed to load InternVL model {self.model_name}: {str(e)}")
+            error_msg = str(e)
+            print(f"\n⚠️  InternVL load failed: {error_msg[:150]}\n")
+            
+            # Try fallback models
+            fallback_models = [
+                "sentence-transformers/all-MiniLM-L6-v2",
+                "bert-base-uncased",
+            ]
+            
+            for fallback_name in fallback_models:
+                try:
+                    print(f"Loading fallback model: {fallback_name}")
+                    
+                    self.tokenizer = AutoTokenizer.from_pretrained(fallback_name)
+                    self.model = AutoModel.from_pretrained(
+                        fallback_name,
+                        torch_dtype=torch.float32,
+                        trust_remote_code=True,
+                    ).to(self.device)
+                    
+                    self.model_name = fallback_name
+                    self.is_fallback = True
+                    print(f"✓ Successfully loaded fallback: {fallback_name}")
+                    print(f"⚠️  Using {fallback_name} as fallback for InternVL\n")
+                    return
+                    
+                except Exception as fb_e:
+                    print(f"Fallback {fallback_name} failed: {str(fb_e)[:50]}")
+                    continue
+            
+            raise RuntimeError(
+                f"Failed to load InternVL model and all fallbacks.\n"
+                f"Original error: {error_msg}"
+            )
     
     def encode_text(self, texts):
         """
