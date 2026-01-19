@@ -1,4 +1,5 @@
 import torch
+import pandas as pd
 import torch.nn.functional as F
 import pandas as pd
 from sklearn.metrics import roc_curve, precision_score, recall_score, accuracy_score, roc_auc_score
@@ -70,7 +71,7 @@ class Evaluator:
         
         return metrics
 
-    def evaluate(self, test_filepath, plot=False):
+    def evaluate(self, test_filepath, embeddings_flag=True,plot=False):
         """
         Evaluate model on a file of (fraudulent_name, real_name, label) pairs.
         Args:
@@ -79,11 +80,11 @@ class Evaluator:
         Returns:
             tuple: (results_df, metrics)
         """
+        if embeddings_flag:
+            self.create_embeddings(test_filepath)
         return self.test_pairs(test_filepath, plot=plot)
 
     def test_pairs(self, test_filepath, plot=False):
-        import pandas as pd
-        
         if test_filepath.endswith('.csv'):
             df = pd.read_csv(test_filepath)
         else:
@@ -106,4 +107,78 @@ class Evaluator:
         })
         
         metrics = self.compute_metrics(results_df, plot=plot)
-        return results_df, metrics 
+        return results_df, metrics
+    
+    def create_embeddings(self, test_filepath):
+        """
+        Before embeddings are the text embeddings from the backbone encoder
+        After embeddings are the final embeddings produced by VATE training has reshaped the embedding space.
+        """
+
+        if test_filepath.endswith('.csv'):
+            df = pd.read_csv(test_filepath)
+        else:
+            df = pd.read_parquet(test_filepath)
+
+        fraud_names = df['fraudulent_name'].astype(str).tolist()
+        real_names  = df['real_name'].astype(str).tolist()
+        labels      = df['label'].astype(float).tolist()
+
+        self.model.eval()
+
+        before_fraud, before_real = [], []
+        after_fraud, after_real = [], []
+
+        bs = self.batch_size
+
+        with torch.no_grad():
+            for start in range(0, len(df), bs):
+                end = start + bs
+
+                fraud_batch = fraud_names[start:end]
+                real_batch  = real_names[start:end]
+
+                # BEFORE: backbone embeddings
+                f_before = self.model.backbone.encode_text(fraud_batch).detach().cpu()
+                r_before = self.model.backbone.encode_text(real_batch).detach().cpu()
+
+                before_fraud.append(f_before)
+                before_real.append(r_before)
+
+                # AFTER: VA-TE embeddings
+                f_after = self.model.encode(fraud_batch).detach().cpu()
+                r_after = self.model.encode(real_batch).detach().cpu()
+
+                after_fraud.append(f_after)
+                after_real.append(r_after)
+
+        before_fraud = torch.cat(before_fraud).numpy()
+        before_real  = torch.cat(before_real).numpy()
+        after_fraud  = torch.cat(after_fraud).numpy()
+        after_real   = torch.cat(after_real).numpy()
+
+        #before save
+        before_df = pd.DataFrame({
+            'fraudulent_name': fraud_names,
+            'real_name': real_names,
+            'label': labels
+        })
+
+        for i in range(before_fraud.shape[1]):
+            before_df[f'fraud_emb_{i}'] = before_fraud[:, i]
+            before_df[f'real_emb_{i}']  = before_real[:, i]
+
+        before_df.to_csv("embeddings/embeddings_before.csv", index=False)
+
+        #after save
+        after_df = pd.DataFrame({
+            'fraudulent_name': fraud_names,
+            'real_name': real_names,
+            'label': labels
+        })
+
+        for i in range(after_fraud.shape[1]):
+            after_df[f'fraud_emb_{i}'] = after_fraud[:, i]
+            after_df[f'real_emb_{i}']  = after_real[:, i]
+
+        after_df.to_csv("embeddings/embeddings_after.csv", index=False)
