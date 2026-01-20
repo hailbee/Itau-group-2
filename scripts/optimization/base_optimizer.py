@@ -181,7 +181,18 @@ class BaseOptimizer:
                 f"Opt={params['optimizer']}"
             )
 
-            string = f"_LR={lr:.6f}_Batch={batch_size}_Layer={internal_layer_size}_Opt={params['optimizer']}"
+            string = (
+                f"_{self.model_type}"
+                f"_Mode={mode}"
+                f"_Loss={loss_type}"
+                f"_LR={lr:.6f}"
+                f"_WD={float(params['weight_decay']):.2e}"
+                f"_Batch={batch_size}"
+                f"_Layer={internal_layer_size}"
+                f"_Opt={params['optimizer']}"
+                f"_Margin={float(params['margin']):.3f}"
+                f"_Ep={epochs}"
+            )
 
             dataframe = pd.read_parquet(training_filepath)
             dataloader = self.create_dataloader(dataframe, batch_size, mode, shuffle=True)

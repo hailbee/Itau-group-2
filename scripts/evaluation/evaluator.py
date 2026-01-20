@@ -1,63 +1,71 @@
+import os
 import torch
 import torch.nn.functional as F
 import pandas as pd
 import numpy as np
-from sklearn.metrics import roc_curve, precision_score, recall_score, accuracy_score
-from sklearn.metrics import auc
-from utils.evals import (
-    find_best_threshold_youden,
-    plot_roc_curve,
-    plot_confusion_matrix,
-    find_best_threshold_accuracy
-)
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, auc
+
 
 class Evaluator:
     """
-    Evaluation for pairwise Siamese model where model(x1, x2) -> (z1, z2).
-    Computes similarity scores from the MODEL OUTPUTS (not raw embeddings).
+    Threshold-free evaluation for pairwise Siamese model where model(x1, x2) -> (z1, z2).
+    Computes similarity scores in the learned projection space and reports ROC AUC only.
+    Optionally saves ROC curve plot as a PNG.
     """
     def __init__(self, model, batch_size=32, model_type=None):
         self.model = model
         self.batch_size = batch_size
         self.model_type = model_type
 
-    def compute_metrics(self, results_df, plot=False):
-        y_true = results_df["label"].astype(int)
-        y_scores = results_df["similarity"].astype(float)
+    def _save_roc_plot(self, fpr, tpr, roc_auc, save_path, title="ROC Curve"):
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        plt.figure()
+        plt.plot(fpr, tpr, label=f"AUC = {roc_auc:.4f}")
+        plt.plot([0, 1], [0, 1], linestyle="--")
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.title(title)
+        plt.legend(loc="lower right")
+        plt.tight_layout()
+        plt.savefig(save_path)
+        plt.close()
+        print(f"[DEBUG] Saved ROC curve to {save_path}")
 
-        fpr, tpr, thresholds = roc_curve(y_true, y_scores)
-        roc_auc = auc(fpr, tpr)
+    def compute_metrics(self, results_df, plot=False, roc_png_path=None):
+        y_true = results_df["label"].astype(int).to_numpy()
+        y_scores = results_df["similarity"].astype(float).to_numpy()
+
+        fpr, tpr, _thresholds = roc_curve(y_true, y_scores)
+        roc_auc = float(auc(fpr, tpr))
         print(f"ROC AUC: {roc_auc:.4f}")
 
-        youden_thresh = find_best_threshold_youden(fpr, tpr, thresholds)
-        best_acc, best_acc_threshold = find_best_threshold_accuracy(y_true, y_scores, thresholds)
-
-        y_pred = (y_scores > youden_thresh).astype(int)
-
-        metrics = {
-            "accuracy": accuracy_score(y_true, y_pred),
-            "precision": precision_score(y_true, y_pred, zero_division=0),
-            "recall": recall_score(y_true, y_pred, zero_division=0),
-            "threshold": float(youden_thresh),
-            "roc_curve": (fpr, tpr, thresholds),
-            "roc_auc": float(roc_auc),
-            "best_accuracy": float(best_acc),
-            "best_accuracy_threshold": float(best_acc_threshold),
-        }
-
         if plot:
-            plot_roc_curve(results_df)
-            print(f"Plotting confusion matrix at Youden's threshold: {youden_thresh:.3f}")
-            plot_confusion_matrix(y_true, y_scores, youden_thresh)
-            print(f"Best Accuracy: {best_acc:.4f} at Threshold: {best_acc_threshold:.3f}")
-            plot_confusion_matrix(y_true, y_scores, best_acc_threshold)
+            # Default save path if none provided
+            if roc_png_path is None:
+                os.makedirs("images", exist_ok=True)
+                roc_png_path = "images/roc_curve.png"
 
-        return metrics
+            self._save_roc_plot(
+                fpr=fpr,
+                tpr=tpr,
+                roc_auc=roc_auc,
+                save_path=roc_png_path,
+                title="ROC Curve"
+            )
 
-    def evaluate(self, test_filepath, plot=False, max_rows=None):
-        return self.test_pairs(test_filepath, plot=plot, max_rows=max_rows)
+        # Keep metrics small: NO roc arrays, NO thresholds
+        return {"roc_auc": roc_auc}
 
-    def test_pairs(self, test_filepath, plot=False, max_rows=None):
+    def evaluate(self, test_filepath, plot=False, max_rows=None, roc_png_path=None):
+        return self.test_pairs(
+            test_filepath,
+            plot=plot,
+            max_rows=max_rows,
+            roc_png_path=roc_png_path
+        )
+
+    def test_pairs(self, test_filepath, plot=False, max_rows=None, roc_png_path=None):
         # Load data
         if test_filepath.endswith(".csv"):
             df = pd.read_csv(test_filepath)
@@ -67,7 +75,6 @@ class Evaluator:
         if max_rows is not None:
             df = df.head(int(max_rows))
 
-        # Names/labels
         fraud_names = df["fraudulent_name"].astype(str).tolist()
         real_names = df["real_name"].astype(str).tolist()
         labels = df["label"].astype(int).tolist()
@@ -76,36 +83,36 @@ class Evaluator:
         fraud_np = df.iloc[:, 3:771].to_numpy(dtype=np.float32, copy=False)
         real_np  = df.iloc[:, 771:1539].to_numpy(dtype=np.float32, copy=False)
 
-        fraud_embs = torch.from_numpy(fraud_np)  # CPU tensor
-        real_embs  = torch.from_numpy(real_np)   # CPU tensor
+        fraud_embs = torch.from_numpy(fraud_np)
+        real_embs  = torch.from_numpy(real_np)
 
         # Decide device from model
         try:
             device = next(self.model.parameters()).device
         except StopIteration:
-            device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+            device = torch.device(
+                "cuda" if torch.cuda.is_available()
+                else "mps" if torch.backends.mps.is_available()
+                else "cpu"
+            )
 
         self.model.eval()
-
         sims_all = []
         bs = int(self.batch_size)
 
         with torch.no_grad():
             for start in range(0, len(df), bs):
                 end = start + bs
-                x1 = fraud_embs[start:end].to(device, non_blocking=True)
-                x2 = real_embs[start:end].to(device, non_blocking=True)
+                x1 = fraud_embs[start:end].to(device)
+                x2 = real_embs[start:end].to(device)
 
-                # Run model (learned projection space)
                 z1, z2 = self.model(x1, x2)
 
                 # Match training behavior: L2 normalize before comparing
                 z1 = F.normalize(z1, dim=1)
                 z2 = F.normalize(z2, dim=1)
 
-                # Higher similarity => more likely positive (label 1)
                 sims = F.cosine_similarity(z1, z2, dim=1)
-
                 sims_all.append(sims.detach().cpu())
 
         similarities = torch.cat(sims_all, dim=0).numpy()
@@ -117,5 +124,5 @@ class Evaluator:
             "similarity": similarities
         })
 
-        metrics = self.compute_metrics(results_df, plot=plot)
+        metrics = self.compute_metrics(results_df, plot=plot, roc_png_path=roc_png_path)
         return results_df, metrics

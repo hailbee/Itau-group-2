@@ -229,6 +229,6 @@ class OptunaOptimizer(BaseOptimizer):
         if self.results:
             df = pd.DataFrame(self.results)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"{self.log_dir}/optuna_results_{timestamp}.csv"
+            filename = f"{self.log_dir}/results/optuna_results_{timestamp}.csv"
             df.to_csv(filename, index=False)
             print(f"Results saved to {filename}")

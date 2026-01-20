@@ -1,6 +1,7 @@
 from scripts.evaluation.evaluator import Evaluator
 import torch
 import os
+import json
 import matplotlib.pyplot as plt
 
 
@@ -65,6 +66,10 @@ class Trainer:
 
         return epoch_loss / len(dataloader)
 
+    def evaluate(self, test_filepath):
+        self.model.eval()
+        _, metrics = self.evaluator.evaluate(test_filepath)
+        return metrics
 
     def train(
         self,
@@ -97,6 +102,9 @@ class Trainer:
 
             print(f"Epoch {epoch + 1} | Val Loss: {val_loss:.4f}")
 
+        # Ensure output dir exists for plot + metrics
+        os.makedirs("images", exist_ok=True)
+
         # -------- SAVE LOSS GRAPH --------
         plot_path = f"images/loss_curve_trial_{trial_number}{string}.png"
         plt.figure()
@@ -115,8 +123,16 @@ class Trainer:
 
         print(f"[DEBUG] Saved loss curve to {plot_path}")
 
+        # -------- EVALUATE + SAVE ROC CURVE --------
+        test_metrics = None
+        if test_filepath is not None:
+            results_df, test_metrics = self.evaluator.evaluate(
+                test_filepath,
+                plot=True,
+                roc_png_path=f"images/roc_curve_trial_{trial_number}{string}.png"
+            )
+
         return {
             "best_train_loss": best_epoch_loss,
-            "train_loss_history": train_loss_history,
-            "val_loss_history": val_loss_history,
+            "roc_auc": test_metrics["roc_auc"]
         }
