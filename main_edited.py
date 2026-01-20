@@ -29,8 +29,6 @@ def main():
     # Training parameters
     parser.add_argument('--epochs', type=int, default=5,
                       help='Number of training epochs')
-    parser.add_argument('--curriculum', type=str, default=None,
-                      help='Curriculum learning mode')
     parser.add_argument('--log_dir', type=str, default='/content/drive/MyDrive/Project_2_Business_Names/Summer 2025/code',
                       help='Directory to save results')
     
@@ -43,6 +41,16 @@ def main():
                       help='Pruner for Optuna optimization')
     parser.add_argument('--study_name', type=str,
                       help='Study name for Optuna optimization')
+    
+    # Curriculum learning parameters
+    parser.add_argument("--easy_filepath", type=str, default=None,
+                    help="Path to EASY training parquet for curriculum learning")
+    parser.add_argument("--medium_filepath", type=str, default=None,
+                        help="Path to MEDIUM training parquet for curriculum learning")
+    parser.add_argument("--curriculum", type=str, default=None,
+                        choices=[None, "manual", "self", "bandit"],
+                        help="Curriculum strategy: manual | self | bandit")
+
 
     args = parser.parse_args()
 
@@ -132,7 +140,9 @@ def main():
                 sampler=args.sampler,
                 pruner=args.pruner if args.pruner != 'none' else None,
                 validate_filepath=args.validate_filepath,
-                curriculum=args.curriculum
+                curriculum=args.curriculum,
+                easy_filepath=args.easy_filepath,
+                medium_filepath=args.medium_filepath,
             )
 
         else:

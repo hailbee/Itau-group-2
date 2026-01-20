@@ -41,10 +41,10 @@ class OptunaOptimizer(BaseOptimizer):
             float: Objective value (accuracy)
         """
         # Suggest hyperparameters
-        lr = trial.suggest_float("lr", 1e-5, 5e-5, log=True)
-        batch_size = trial.suggest_categorical("batch_size", [64, 128, 256])
-        internal_layer_size = trial.suggest_categorical("internal_layer_size", [512, 768, 1024])
-        
+        lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
+        batch_size = trial.suggest_categorical("batch_size", [64, 128, 256, 512, 1024])
+        internal_layer_size = trial.suggest_categorical("internal_layer_size", [256, 512, 768, 1024])
+        output_dim = trial.suggest_categorical("output_dim", [128, 256, 512])
 
         
         params = {}
@@ -60,16 +60,16 @@ class OptunaOptimizer(BaseOptimizer):
         optimizer_name = trial.suggest_categorical("optimizer", ["adam"])
        
         # Optional: suggest weight decay
-        weight_decay = trial.suggest_float("weight_decay", 1e-5, 1e-5, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-5, 1e-3, log=True)
         
         # Create parameter dictionary
         params.update({
-            'lr': lr,
-            'batch_size': batch_size,
-            'internal_layer_size': internal_layer_size,
-
-            'optimizer': optimizer_name,
-            'weight_decay': weight_decay
+            "lr": lr,
+            "batch_size": batch_size,
+            "internal_layer_size": internal_layer_size,
+            "output_dim": output_dim,
+            "optimizer": optimizer_name,
+            "weight_decay": weight_decay
         })
         try:
             print(f"\n{'='*50}")
@@ -91,6 +91,10 @@ class OptunaOptimizer(BaseOptimizer):
             
             result["trial_number"] = trial.number + 1
             print(f"\nTrial {trial.number + 1} completed.")
+
+
+            # TODO: MODIFY THIS TO AUC ROC
+            
             return result.get('test_accuracy', 0.0)
         
         except Exception as e:
@@ -184,7 +188,15 @@ class OptunaOptimizer(BaseOptimizer):
                 for k, v in best_params.items()
             }
             print(f"[DEBUG] Initial hyperparameters of best model: {rounded_best_params}")
-            model = self.create_siamese_model(mode, int(best_params.get('internal_layer_size', 128))).to(self.device)
+            hidden_dim = int(best_params.get("internal_layer_size", 512))
+            out_dim = int(best_params.get("output_dim", 128))
+
+            model = self.create_siamese_model(
+                mode,
+                hidden_dim=hidden_dim,
+                out_dim=out_dim
+            ).to(self.device)
+
             model.load_state_dict(torch.load(best_model_path, map_location=self.device))
             evaluator = Evaluator(model, batch_size=int(best_params.get('batch_size', 32)), model_type=mode)
             model.eval()

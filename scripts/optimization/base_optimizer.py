@@ -5,7 +5,6 @@ import os
 from datetime import datetime
 
 from scripts.training.trainer import Trainer
-from scripts.evaluation.evaluator import Evaluator
 from model_utils.models.learning.siamese import SiameseEmbeddingModel
 from model_utils.utils.data import EmbeddingPairDataset
 
@@ -32,7 +31,11 @@ class BaseOptimizer:
     ):
         self.model_type = model_type
         self.model_name = model_name
-        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+        self.device = device or torch.device(
+            "cuda" if torch.cuda.is_available()
+            else "mps" if torch.backends.mps.is_available()
+            else "cpu"
+        )
         self.log_dir = log_dir
 
         # embedding info
@@ -54,14 +57,16 @@ class BaseOptimizer:
     # MODEL CREATION
     # ------------------------------------------------------------
 
-    def create_siamese_model(self, mode, projection_dim=128):
+    def create_siamese_model(self, mode, hidden_dim=512, out_dim=128):
+        """
+        Create Siamese model where hidden_dim and out_dim can be tuned independently.
+        """
         if mode == "pair":
             return SiameseEmbeddingModel(
-                embedding_dim=self.embedding_dim,     # 768
-                hidden_dim=projection_dim,             # internal layer size
-                out_dim=projection_dim                 # final projected dim
+                embedding_dim=self.embedding_dim,  # 768
+                hidden_dim=hidden_dim,             # internal layer size
+                out_dim=out_dim                    # output projection dim
             )
-
         raise ValueError(f"Unsupported mode: {mode}")
 
     # ------------------------------------------------------------
@@ -79,18 +84,8 @@ class BaseOptimizer:
             dataset,
             batch_size=batch_size,
             shuffle=shuffle,
-            num_workers=0,   # keep 0 for simplicity; increase later if you want
+            num_workers=0,
             pin_memory=(self.device.type == "cuda")
-        )
-
-
-        from torch.utils.data import DataLoader
-        return DataLoader(
-            dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=4,
-            pin_memory=True
         )
 
     # ------------------------------------------------------------
@@ -98,23 +93,23 @@ class BaseOptimizer:
     # ------------------------------------------------------------
 
     def create_optimizer(self, model, params):
-        if params['optimizer'] == "adam":
+        if params["optimizer"] == "adam":
             return torch.optim.Adam(
                 model.parameters(),
-                lr=params['lr'],
-                weight_decay=params['weight_decay']
+                lr=params["lr"],
+                weight_decay=params["weight_decay"]
             )
-        elif params['optimizer'] == "adamw":
+        elif params["optimizer"] == "adamw":
             return torch.optim.AdamW(
                 model.parameters(),
-                lr=params['lr'],
-                weight_decay=params['weight_decay']
+                lr=params["lr"],
+                weight_decay=params["weight_decay"]
             )
         else:
             return torch.optim.SGD(
                 model.parameters(),
-                lr=params['lr'],
-                weight_decay=params['weight_decay']
+                lr=params["lr"],
+                weight_decay=params["weight_decay"]
             )
 
     # ------------------------------------------------------------
@@ -122,25 +117,34 @@ class BaseOptimizer:
     # ------------------------------------------------------------
 
     def sample_hyperparameters(self, mode, n_samples):
+        """
+        Random-sample hyperparameters (non-Optuna path).
+        Target ranges:
+          lr: 1e-5 to 1e-3
+          batch_size: [64, 128, 256, 512, 1024]
+          internal_layer_size (hidden_dim): [256, 512, 768, 1024]
+          output_dim (out_dim): [128, 256, 512]
+          margin: 0.05 to 0.7
+          weight_decay: 1e-5 to 1e-3
+        """
         samples = []
-
         for _ in range(n_samples):
             samples.append({
-                "lr": float(np.exp(np.random.uniform(np.log(1e-5), np.log(1e-2)))),
-                "batch_size": int(np.random.choice([16, 32, 64, 128])),
-                "internal_layer_size": int(np.random.choice([64, 128, 256, 512])),
+                "lr": float(np.exp(np.random.uniform(np.log(1e-5), np.log(1e-3)))),
+                "batch_size": int(np.random.choice([64, 128, 256, 512, 1024])),
+                "internal_layer_size": int(np.random.choice([256, 512, 768, 1024])),
+                "output_dim": int(np.random.choice([128, 256, 512])),
                 "optimizer": np.random.choice(["adam", "adamw", "sgd"]),
-                "weight_decay": float(np.exp(np.random.uniform(np.log(1e-6), np.log(1e-3)))),
-                "margin": float(np.random.uniform(0.1, 2.0)),
+                "weight_decay": float(np.exp(np.random.uniform(np.log(1e-5), np.log(1e-3)))),
+                "margin": float(np.random.uniform(0.05, 0.7)),
             })
-
         return samples
 
     def sample_initial_hyperparameters(self, mode, n_samples):
         return self.sample_hyperparameters(mode, n_samples)
 
     # ------------------------------------------------------------
-    # EVALUATION (UNCHANGED)
+    # EVALUATION
     # ------------------------------------------------------------
 
     def evaluate_trial(
@@ -171,13 +175,14 @@ class BaseOptimizer:
 
         try:
             batch_size = int(params["batch_size"])
-            internal_layer_size = int(params["internal_layer_size"])
+            hidden_dim = int(params["internal_layer_size"])
+            out_dim = int(params.get("output_dim", 128))
             lr = float(params["lr"])
 
             print(
                 f"Testing params: "
                 f"LR={lr:.6f}, Batch={batch_size}, "
-                f"Layer={internal_layer_size}, "
+                f"Hidden={hidden_dim}, OutDim={out_dim}, "
                 f"Opt={params['optimizer']}"
             )
 
@@ -188,19 +193,48 @@ class BaseOptimizer:
                 f"_LR={lr:.6f}"
                 f"_WD={float(params['weight_decay']):.2e}"
                 f"_Batch={batch_size}"
-                f"_Layer={internal_layer_size}"
+                f"_Hidden={hidden_dim}"
+                f"_OutDim={out_dim}"
                 f"_Opt={params['optimizer']}"
                 f"_Margin={float(params['margin']):.3f}"
                 f"_Ep={epochs}"
             )
+            if curriculum:
+                string += f"_Curr={curriculum}"
 
-            dataframe = pd.read_parquet(training_filepath)
-            dataloader = self.create_dataloader(dataframe, batch_size, mode, shuffle=True)
+            # Ensure output dir exists for plots
+            os.makedirs("images", exist_ok=True)
 
-            val_df = pd.read_parquet(validate_filepath)
-            val_dataloader = self.create_dataloader(val_df, batch_size, mode, shuffle=False)
+            # --- MAIN TRAIN LOADER (HARD) ---
+            train_df = pd.read_parquet(training_filepath)
+            dataloader = self.create_dataloader(train_df, batch_size, mode, shuffle=True)
 
-            model = self.create_siamese_model(mode, internal_layer_size).to(self.device)
+            # --- VALIDATION LOADER ---
+            val_dataloader = None
+            if validate_filepath is not None:
+                val_df = pd.read_parquet(validate_filepath)
+                val_dataloader = self.create_dataloader(val_df, batch_size, mode, shuffle=False)
+
+            # --- CURRICULUM LOADERS (EASY / MEDIUM), IF PROVIDED ---
+            easy_loader = None
+            medium_loader = None
+
+            if easy_filepath:
+                easy_df = pd.read_parquet(easy_filepath)
+                easy_loader = self.create_dataloader(easy_df, batch_size, mode, shuffle=True)
+
+            if medium_filepath:
+                med_df = pd.read_parquet(medium_filepath)
+                medium_loader = self.create_dataloader(med_df, batch_size, mode, shuffle=True)
+
+            if curriculum and (easy_loader is None or medium_loader is None):
+                print(
+                    "[DEBUG] curriculum was set, but easy_loader/medium_loader not fully provided; "
+                    "curriculum may fallback to hard-only or staged behavior."
+                )
+
+            # --- MODEL / OPT / LOSS ---
+            model = self.create_siamese_model(mode, hidden_dim=hidden_dim, out_dim=out_dim).to(self.device)
             optimizer = self.create_optimizer(model, params)
 
             from model_utils.loss.pair_losses import ContrastiveLoss
@@ -214,28 +248,35 @@ class BaseOptimizer:
                 model_type=mode,
             )
 
+            # --- TRAIN (PASSES CURRICULUM + LOADERS) ---
             best_metrics = trainer.train(
                 dataloader=dataloader,
-                test_filepath=test_filepath,
                 trial_number=trial_number,
+                test_filepath=test_filepath,
+                string=string,
                 mode=mode,
                 epochs=epochs,
                 validate_filepath=validate_filepath,
                 validate_dataloader=val_dataloader,
-                string=string
+                easy_loader=easy_loader,
+                medium_loader=medium_loader,
+                curriculum=curriculum,
             )
 
             result = {
                 "timestamp": datetime.now(),
                 "lr": lr,
                 "batch_size": batch_size,
-                "internal_layer_size": internal_layer_size,
+                "internal_layer_size": hidden_dim,
+                "output_dim": out_dim,
                 "optimizer": params["optimizer"],
                 "weight_decay": params["weight_decay"],
+                "margin": float(params["margin"]),
                 "mode": mode,
                 "loss_type": loss_type,
-                "test_auc": best_metrics.get("roc_auc", 0),
-                "test_accuracy": best_metrics.get("accuracy", 0),
+                "curriculum": curriculum,
+                "test_auc": best_metrics.get("roc_auc", 0.0),
+                "test_accuracy": best_metrics.get("accuracy", 0.0),
                 **best_metrics,
             }
 
@@ -246,12 +287,17 @@ class BaseOptimizer:
                 self.best_accuracy = result["test_accuracy"]
 
                 model_id = f"{self.model_type}_{mode}"
+                if curriculum:
+                    model_id += f"_{curriculum}"
+
                 torch.save(
                     model.state_dict(),
                     os.path.join(self.log_dir, f"best_model_{model_id}.pt"),
                 )
                 with open(
-                    os.path.join(self.log_dir, f"best_hparams_{model_id}.json"), "w"
+                    os.path.join(self.log_dir, f"best_hparams_{model_id}.json"),
+                    "w",
+                    encoding="utf-8"
                 ) as f:
                     json.dump(convert_np(params), f)
 
