@@ -162,7 +162,7 @@ class OptunaOptimizer(BaseOptimizer):
             )
         
         # Run optimization
-        study.optimize(objective_wrapper, n_trials=2)
+        study.optimize(objective_wrapper, n_trials=n_trials)
         
         # Save results
         self._save_results(study)
