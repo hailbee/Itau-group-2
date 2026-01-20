@@ -88,6 +88,16 @@ class OptunaOptimizer(BaseOptimizer):
                 validate_filepath=validate_filepath,
                 curriculum=curriculum
             )
+            row = {
+                "trial_number": trial.number + 1,
+                "accuracy": result.get("accuracy"),
+                "roc_auc": result.get("roc_auc"),
+                "youden_j": result.get("youden_j"),
+                "youden_threshold": result.get("youden_threshold"),
+            }
+            row.update(trial.params)
+            self.results.append(row)
+
             
             result["trial_number"] = trial.number + 1
             print(f"\nTrial {trial.number + 1} completed.")
@@ -211,8 +221,8 @@ class OptunaOptimizer(BaseOptimizer):
             print("\n--- FINAL TEST SET METRICS ---")
             if 'youden_j' in metrics_to_print:
                 print(f"Youden's J statistic:         {metrics_to_print['youden_j']:.4f}")
-            if 'top_acc_threshold' in metrics_to_print:
-                print(f"Top Accuracy Threshold:       {metrics_to_print['top_acc_threshold']:.4f}")
+            if 'youden_threshold' in metrics_to_print:
+                print(f"Youden Threshold:             {metrics_to_print['youden_threshold']:.4f}")
             if 'accuracy' in metrics_to_print:
                 print(f"Accuracy:                    {metrics_to_print['accuracy']:.4f}")
             if 'roc_auc' in metrics_to_print:

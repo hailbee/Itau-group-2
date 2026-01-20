@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_curve, auc, accuracy_score
 
 
 class Evaluator:
@@ -36,9 +36,24 @@ class Evaluator:
         y_true = results_df["label"].astype(int).to_numpy()
         y_scores = results_df["similarity"].astype(float).to_numpy()
 
-        fpr, tpr, _thresholds = roc_curve(y_true, y_scores)
+        fpr, tpr, thresholds = roc_curve(y_true, y_scores)
         roc_auc = float(auc(fpr, tpr))
+
+        # -------------------------------
+        # Youden threshold
+        # -------------------------------
+        youden_j = tpr - fpr
+        best_idx = np.argmax(youden_j)
+        youden_threshold = thresholds[best_idx]
+
+        # Predictions using Youden threshold
+        y_pred = (y_scores >= youden_threshold).astype(int)
+
+        accuracy = accuracy_score(y_true, y_pred)
+
         print(f"ROC AUC: {roc_auc:.4f}")
+        print(f"Youden threshold: {youden_threshold:.4f}")
+        print(f"Accuracy (Youden): {accuracy:.4f}")
 
         if plot:
             # Default save path if none provided
@@ -53,9 +68,17 @@ class Evaluator:
                 save_path=roc_png_path,
                 title="ROC Curve"
             )
+        
+        youden_j = tpr - fpr
+        best_idx = np.argmax(youden_j)
+        best_youden_j = youden_j[best_idx]
 
-        # Keep metrics small: NO roc arrays, NO thresholds
-        return {"roc_auc": roc_auc}
+        return {
+            "roc_auc": roc_auc,
+            "youden_j": float(best_youden_j),
+            "youden_threshold": float(youden_threshold),
+            "accuracy": float(accuracy),
+    }
 
     def evaluate(self, test_filepath, plot=False, max_rows=None, roc_png_path=None):
         return self.test_pairs(

@@ -7,6 +7,7 @@ from datetime import datetime
 from scripts.training.trainer import Trainer
 from model_utils.models.learning.siamese import SiameseEmbeddingModel
 from model_utils.utils.data import EmbeddingPairDataset
+from scripts.evaluation.evaluator import Evaluator
 
 # ============================================================
 # BaseOptimizer (PRECOMPUTED EMBEDDINGS VERSION)
@@ -263,7 +264,22 @@ class BaseOptimizer:
                 curriculum=curriculum,
             )
 
+            # --------------------------------------------------
+            # RUN EVALUATOR (THIS WAS MISSING)
+            # --------------------------------------------------
+            evaluator = Evaluator(
+                model=model,
+                batch_size=batch_size,
+                model_type=mode,
+            )
+
+            _, eval_metrics = evaluator.evaluate(test_filepath)
+
+            # Merge metrics (Evaluator wins for test metrics)
+            best_metrics.update(eval_metrics)
+
             result = {
+                # bookkeeping / params
                 "timestamp": datetime.now(),
                 "lr": lr,
                 "batch_size": batch_size,
@@ -275,16 +291,22 @@ class BaseOptimizer:
                 "mode": mode,
                 "loss_type": loss_type,
                 "curriculum": curriculum,
-                "test_auc": best_metrics.get("roc_auc", 0.0),
-                "test_accuracy": best_metrics.get("accuracy", 0.0),
-                **best_metrics,
+
+                # -------- reported metrics ONLY --------
+                "test_roc_auc": best_metrics["roc_auc"],
+                "test_accuracy": best_metrics["accuracy"],
+                "youden_j": best_metrics["youden_j"],
+                "youden_threshold": best_metrics["youden_threshold"],
             }
 
             self.results.append(result)
 
-            if save_best_model and result["test_auc"] > self.best_auc:
-                self.best_auc = result["test_auc"]
-                self.best_accuracy = result["test_accuracy"]
+            test_roc_auc = result["test_roc_auc"]
+            test_accuracy = result["test_accuracy"]
+
+            if save_best_model and test_roc_auc > self.best_auc:
+                self.best_auc = test_roc_auc
+                self.best_accuracy = test_accuracy
 
                 model_id = f"{self.model_type}_{mode}"
                 if curriculum:
@@ -292,10 +314,10 @@ class BaseOptimizer:
 
                 torch.save(
                     model.state_dict(),
-                    os.path.join(self.log_dir, f"best_model_{model_id}.pt"),
+                    os.path.join(self.log_dir, f"results/best_model_{model_id}.pt"),
                 )
                 with open(
-                    os.path.join(self.log_dir, f"best_hparams_{model_id}.json"),
+                    os.path.join(self.log_dir, f"results/best_hparams_{model_id}.json"),
                     "w",
                     encoding="utf-8"
                 ) as f:
@@ -309,6 +331,6 @@ class BaseOptimizer:
             return {
                 "timestamp": datetime.now(),
                 "error": str(e),
-                "test_auc": 0.0,
+                "test_roc_auc": 0.0,
                 "test_accuracy": 0.0,
             }
