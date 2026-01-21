@@ -1,3 +1,5 @@
+# scripts/training/trainer.py
+
 from scripts.evaluation.evaluator import Evaluator
 import torch
 import os
@@ -24,7 +26,7 @@ class Trainer:
     # -------------------------
     # Epoch train/val
     # -------------------------
-    def train_epoch(self, dataloader, mode="pair"):
+    def train_epoch(self, dataloader, mode="pair", grad_clip=1.0):
         self.model.train()
         epoch_loss = 0.0
 
@@ -37,8 +39,16 @@ class Trainer:
             z1, z2 = self.model(x1, x2)
             loss = self.criterion(z1, z2, y)
 
+            # Guard against silent blowups
+            if not torch.isfinite(loss):
+                raise ValueError(f"Non-finite loss detected: {loss.item()}")
+
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
+
+            if grad_clip is not None and grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), grad_clip)
+
             self.optimizer.step()
 
             epoch_loss += loss.item()
@@ -95,7 +105,7 @@ class Trainer:
         """
         Build a ConcatDataset loader using ratios over easy/medium/hard.
         total_samples controls the target dataset size per epoch.
-        If None, uses len(hard_loader.dataset) as baseline.
+        If None, uses len(base_loader.dataset) as baseline.
         """
         if total_samples is None:
             total_samples = len(base_loader.dataset)
@@ -151,12 +161,40 @@ class Trainer:
 
         # plotting
         plot_losses=True,
+
+        # stability knobs
+        grad_clip=1.0,
+
+        # early stopping + saving
+        early_stopping=True,
+        patience=5,
+        min_epochs=20,          # <- NEW: do not early stop before this
+        min_delta=1e-6,         # <- NEW: minimum improvement threshold for "best"
+        save_best=True,
+        save_dir="saved_models",
+
+        # bandit smoothing
+        bandit_ema_alpha=0.3,
     ):
         train_loss_history = []
         val_loss_history = []
         best_epoch_loss = float("inf")
 
         hard_loader = dataloader  # naming clarity
+        epoch_budget = len(dataloader.dataset)  # fixed budget per epoch (keeps mixes comparable)
+
+        # -------------------------
+        # Early stopping state + checkpoint path
+        # -------------------------
+        best_val_loss = float("inf")
+        bad_epochs = 0
+        best_model_path = None
+        if save_best:
+            os.makedirs(save_dir, exist_ok=True)
+            best_model_path = os.path.join(
+                save_dir,
+                f"best_model_by_val_trial_{trial_number}{string}.pt"
+            )
 
         # -------------------------
         # Bandit-over-mixtures setup
@@ -172,24 +210,19 @@ class Trainer:
                 bandit_enabled = False
                 curriculum = "self"
 
-        # Define mixture arms (you can tweak these)
-        # These are intentionally based on your self schedule + a couple useful extras.
+        # Mixture arms (hard capped; removed 30% hard arm)
         mixture_arms = {
             "A_warm":   {"easy": 0.60, "medium": 0.40, "hard": 0.00},
             "B_main":   {"easy": 0.10, "medium": 0.80, "hard": 0.10},
-            "C_late":   {"easy": 0.00, "medium": 0.70, "hard": 0.30},
             "D_medium": {"easy": 0.00, "medium": 1.00, "hard": 0.00},
-            "E_mh":     {"easy": 0.00, "medium": 0.85, "hard": 0.15},
+            "E_mh15":   {"easy": 0.00, "medium": 0.85, "hard": 0.15},
+            "F_mh5":    {"easy": 0.00, "medium": 0.95, "hard": 0.05},
         }
 
         rewards = {k: [] for k in mixture_arms.keys()} if bandit_enabled else None
         pulls = {k: 0 for k in mixture_arms.keys()} if bandit_enabled else None
-        prev_val_loss_per_arm = {k: None for k in mixture_arms.keys()} if bandit_enabled else None
+        ema_val_loss_per_arm = {k: None for k in mixture_arms.keys()} if bandit_enabled else None
         chosen_arm = None
-
-        # Use a fixed epoch budget to make mixtures comparable.
-        # If your easy/med/hard are all ~50k, this is fine.
-        epoch_budget = len(dataloader.dataset)
 
         for epoch in range(epochs):
             # -------------------------
@@ -213,11 +246,10 @@ class Trainer:
                 )
 
             elif bandit_enabled:
-                # bandit knobs
                 reward_window = 5
                 epsilon = max(0.05, 0.20 * (1 - epoch / max(epochs, 1)))  # decay exploration
 
-                # warm-start: pull each arm at least once
+                # warm-start: pull each arm once
                 untried = [k for k, c in pulls.items() if c == 0]
                 if len(untried) > 0:
                     chosen_arm = random.choice(untried)
@@ -252,7 +284,7 @@ class Trainer:
                 )
 
             else:
-                # Manual staged (recommend not doing thirds; but leaving a simple staged default)
+                # Manual staged: 10% easy, 70% medium, 20% hard
                 easy_epochs = max(1, int(0.10 * epochs))
                 med_epochs = max(1, int(0.70 * epochs))
 
@@ -269,7 +301,7 @@ class Trainer:
             # -------------------------
             # TRAIN
             # -------------------------
-            train_loss = self.train_epoch(current_loader, mode=mode)
+            train_loss = self.train_epoch(current_loader, mode=mode, grad_clip=grad_clip)
             train_loss_history.append(train_loss)
             best_epoch_loss = min(best_epoch_loss, train_loss)
             print(f"Epoch {epoch+1} | Train Loss: {train_loss:.6f}")
@@ -282,15 +314,50 @@ class Trainer:
                 val_loss_history.append(val_loss)
                 print(f"Epoch {epoch+1} | Val Loss: {val_loss:.6f}")
 
+                # Save best model by val loss
+                if save_best and val_loss < best_val_loss - min_delta:
+                    best_val_loss = val_loss
+                    bad_epochs = 0
+
+                    # Save a full checkpoint (model+optimizer+epoch)
+                    torch.save(
+                        {
+                            "epoch": epoch + 1,
+                            "model_state": self.model.state_dict(),
+                            "optimizer_state": self.optimizer.state_dict(),
+                            "best_val_loss": best_val_loss,
+                        },
+                        best_model_path
+                    )
+                    print(f"[DEBUG] Saved best checkpoint (val_loss={best_val_loss:.6f}) -> {best_model_path}")
+                else:
+                    bad_epochs += 1
+
+                # Early stopping only after min_epochs
+                if early_stopping and (epoch + 1) >= min_epochs and bad_epochs >= patience:
+                    print(f"[DEBUG] Early stopping at epoch {epoch+1} (best_val_loss={best_val_loss:.6f})")
+                    break
+
             # -------------------------
-            # BANDIT reward update
+            # BANDIT reward update (EMA-smoothed)
             # -------------------------
             if bandit_enabled and chosen_arm is not None and val_loss is not None:
-                prev = prev_val_loss_per_arm[chosen_arm]
-                reward = 0.0 if prev is None else float(prev - val_loss)  # positive = improved
+                old_ema = ema_val_loss_per_arm[chosen_arm]
+                new_ema = val_loss if old_ema is None else (bandit_ema_alpha * val_loss + (1 - bandit_ema_alpha) * old_ema)
+
+                reward = 0.0 if old_ema is None else float(old_ema - new_ema)  # positive = improved
                 rewards[chosen_arm].append(reward)
-                prev_val_loss_per_arm[chosen_arm] = val_loss
+                ema_val_loss_per_arm[chosen_arm] = new_ema
                 pulls[chosen_arm] += 1
+
+        # -------------------------
+        # Restore best checkpoint weights into memory (important!)
+        # -------------------------
+        if save_best and best_model_path is not None and os.path.exists(best_model_path):
+            ckpt = torch.load(best_model_path, map_location=self.device)
+            self.model.load_state_dict(ckpt["model_state"])
+            self.model.to(self.device)
+            print(f"[DEBUG] Restored best model into memory from {best_model_path} (best_val_loss={ckpt.get('best_val_loss')})")
 
         # -------------------------
         # Plot losses
@@ -325,4 +392,6 @@ class Trainer:
             "best_train_loss": best_epoch_loss,
             "final_train_loss": (train_loss_history[-1] if train_loss_history else None),
             "final_val_loss": (val_loss_history[-1] if val_loss_history else None),
+            "best_val_loss": (best_val_loss if best_val_loss < float("inf") else None),
+            "best_model_path": best_model_path,
         }
