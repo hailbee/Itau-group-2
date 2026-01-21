@@ -45,8 +45,7 @@ class BaseOptimizer:
         self.real_slice = slice(real_start, real_end)
 
         self.results = []
-        self.best_auc = 0.0
-        self.best_accuracy = 0.0
+        self.best_val_loss = float("inf")
 
         if "/content" in self.log_dir:
             self.log_dir = "optimization_results"
@@ -309,9 +308,10 @@ class BaseOptimizer:
             test_roc_auc = result["test_roc_auc"]
             test_accuracy = result["test_accuracy"]
 
-            if save_best_model and test_roc_auc > self.best_auc:
-                self.best_auc = test_roc_auc
-                self.best_accuracy = test_accuracy
+            val_loss = result.get("final_val_loss", None)
+
+            if save_best_model and val_loss is not None and val_loss < self.best_val_loss:
+                self.best_val_loss = val_loss
 
                 model_id = f"{self.model_type}_{mode}"
                 if curriculum:

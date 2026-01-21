@@ -57,7 +57,7 @@ class OptunaOptimizer(BaseOptimizer):
             params['margin'] = margin
         
         # Optional: suggest optimizer
-        optimizer_name = trial.suggest_categorical("optimizer", ["adam"])
+        optimizer_name = trial.suggest_categorical("optimizer", ["adam", "adamw", "sgd"])
        
         # Optional: suggest weight decay
         weight_decay = trial.suggest_float("weight_decay", 1e-5, 1e-3, log=True)
