@@ -303,11 +303,6 @@ class BaseOptimizer:
                 "youden_threshold": best_metrics["youden_threshold"],
             }
 
-            self.results.append(result)
-
-            test_roc_auc = result["test_roc_auc"]
-            test_accuracy = result["test_accuracy"]
-
             val_loss = result.get("final_val_loss", None)
 
             if save_best_model and val_loss is not None and val_loss < self.best_val_loss:
