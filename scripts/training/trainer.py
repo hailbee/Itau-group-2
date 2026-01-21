@@ -19,11 +19,12 @@ class Trainer:
 
         self.model.to(device)
         self.evaluator = Evaluator(model, model_type=model_type)
-
         print(f"[DEBUG] Using fixed learning rate: {optimizer.param_groups[0]['lr']:.6f}")
 
+    # -------------------------
+    # Epoch train/val
+    # -------------------------
     def train_epoch(self, dataloader, mode="pair"):
-        """Train for one epoch."""
         self.model.train()
         epoch_loss = 0.0
 
@@ -31,7 +32,7 @@ class Trainer:
             x1, x2, y = batch
             x1 = x1.to(self.device, non_blocking=True)
             x2 = x2.to(self.device, non_blocking=True)
-            y  = y.to(self.device, non_blocking=True)
+            y = y.to(self.device, non_blocking=True)
 
             z1, z2 = self.model(x1, x2)
             loss = self.criterion(z1, z2, y)
@@ -49,7 +50,6 @@ class Trainer:
         return epoch_loss / max(len(dataloader), 1)
 
     def validate_epoch(self, dataloader):
-        """Validate for one epoch (loss only)."""
         if dataloader is None:
             return None
 
@@ -61,7 +61,7 @@ class Trainer:
                 x1, x2, y = batch
                 x1 = x1.to(self.device, non_blocking=True)
                 x2 = x2.to(self.device, non_blocking=True)
-                y  = y.to(self.device, non_blocking=True)
+                y = y.to(self.device, non_blocking=True)
 
                 z1, z2 = self.model(x1, x2)
                 loss = self.criterion(z1, z2, y)
@@ -74,12 +74,13 @@ class Trainer:
         return epoch_loss / max(len(dataloader), 1)
 
     def evaluate(self, test_filepath, plot=False, roc_png_path=None):
-        """Run evaluator on a filepath."""
         self.model.eval()
         return self.evaluator.evaluate(test_filepath, plot=plot, roc_png_path=roc_png_path)
 
+    # -------------------------
+    # Mixing helper
+    # -------------------------
     def _make_loader_from_dataset(self, base_loader, dataset, shuffle=True):
-        """Create a DataLoader that matches base_loader settings as closely as possible."""
         collate_fn = getattr(base_loader, "collate_fn", None)
         return DataLoader(
             dataset,
@@ -87,9 +88,48 @@ class Trainer:
             shuffle=shuffle,
             num_workers=getattr(base_loader, "num_workers", 0),
             pin_memory=getattr(base_loader, "pin_memory", False),
-            collate_fn=collate_fn
+            collate_fn=collate_fn,
         )
 
+    def _make_mixed_loader(self, base_loader, easy_loader, medium_loader, hard_loader, ratios, total_samples=None):
+        """
+        Build a ConcatDataset loader using ratios over easy/medium/hard.
+        total_samples controls the target dataset size per epoch.
+        If None, uses len(hard_loader.dataset) as baseline.
+        """
+        if total_samples is None:
+            total_samples = len(base_loader.dataset)
+
+        easy_n = int(ratios.get("easy", 0.0) * total_samples)
+        medium_n = int(ratios.get("medium", 0.0) * total_samples)
+        hard_n = int(ratios.get("hard", 0.0) * total_samples)
+
+        # Clamp to dataset sizes
+        easy_n = min(easy_n, len(easy_loader.dataset)) if easy_loader is not None else 0
+        medium_n = min(medium_n, len(medium_loader.dataset)) if medium_loader is not None else 0
+        hard_n = min(hard_n, len(hard_loader.dataset)) if hard_loader is not None else 0
+
+        parts = []
+        if easy_n > 0 and easy_loader is not None:
+            idx = np.random.choice(len(easy_loader.dataset), easy_n, replace=False)
+            parts.append(Subset(easy_loader.dataset, idx))
+        if medium_n > 0 and medium_loader is not None:
+            idx = np.random.choice(len(medium_loader.dataset), medium_n, replace=False)
+            parts.append(Subset(medium_loader.dataset, idx))
+        if hard_n > 0 and hard_loader is not None:
+            idx = np.random.choice(len(hard_loader.dataset), hard_n, replace=False)
+            parts.append(Subset(hard_loader.dataset, idx))
+
+        if len(parts) == 0:
+            return base_loader, 0, 0, 0
+
+        mixed_dataset = ConcatDataset(parts)
+        mixed_loader = self._make_loader_from_dataset(base_loader, mixed_dataset, shuffle=True)
+        return mixed_loader, easy_n, medium_n, hard_n
+
+    # -------------------------
+    # Main training loop
+    # -------------------------
     def train(
         self,
         dataloader,
@@ -98,137 +138,133 @@ class Trainer:
         string,
         mode="pair",
         epochs=30,
-        validate_filepath=None,      # kept for compatibility; not used directly here
+        validate_filepath=None,       # kept for compatibility
         validate_dataloader=None,
 
-        # curriculum
+        # curriculum additions
         easy_loader=None,
         medium_loader=None,
         curriculum=None,
 
-        # optional test eval at end of training
+        # optional test eval at end
         want_test=False,
 
         # plotting
-        plot_losses=True
+        plot_losses=True,
     ):
         train_loss_history = []
         val_loss_history = []
         best_epoch_loss = float("inf")
 
-        # -------------------------
-        # Bandit setup (only if requested and feasible)
-        # -------------------------
-        datasets = None
-        rewards = None
-        pulls = None
-        prev_val_loss_per_arm = None
-        chosen = None
+        hard_loader = dataloader  # naming clarity
 
-        if curriculum == "bandit":
+        # -------------------------
+        # Bandit-over-mixtures setup
+        # -------------------------
+        bandit_enabled = (curriculum == "bandit")
+        if bandit_enabled:
             if validate_dataloader is None:
-                print("[WARN][Bandit] validate_dataloader is None -> no reward signal. Falling back to manual.")
-                curriculum = "manual"
-            elif easy_loader is None or medium_loader is None:
-                print("[WARN][Bandit] Bandit needs easy_loader AND medium_loader. Falling back to manual.")
-                curriculum = "manual"
-            else:
-                datasets = {
-                    "easy": easy_loader.dataset,
-                    "medium": medium_loader.dataset,
-                    "hard": dataloader.dataset
-                }
-                rewards = {k: [] for k in datasets.keys()}
-                pulls = {k: 0 for k in datasets.keys()}
-                prev_val_loss_per_arm = {k: None for k in datasets.keys()}
+                print("[WARN][Bandit] validate_dataloader is None -> no reward signal. Falling back to self.")
+                bandit_enabled = False
+                curriculum = "self"
+            if easy_loader is None or medium_loader is None:
+                print("[WARN][Bandit] Need easy_loader and medium_loader. Falling back to self.")
+                bandit_enabled = False
+                curriculum = "self"
+
+        # Define mixture arms (you can tweak these)
+        # These are intentionally based on your self schedule + a couple useful extras.
+        mixture_arms = {
+            "A_warm":   {"easy": 0.60, "medium": 0.40, "hard": 0.00},
+            "B_main":   {"easy": 0.10, "medium": 0.80, "hard": 0.10},
+            "C_late":   {"easy": 0.00, "medium": 0.70, "hard": 0.30},
+            "D_medium": {"easy": 0.00, "medium": 1.00, "hard": 0.00},
+            "E_mh":     {"easy": 0.00, "medium": 0.85, "hard": 0.15},
+        }
+
+        rewards = {k: [] for k in mixture_arms.keys()} if bandit_enabled else None
+        pulls = {k: 0 for k in mixture_arms.keys()} if bandit_enabled else None
+        prev_val_loss_per_arm = {k: None for k in mixture_arms.keys()} if bandit_enabled else None
+        chosen_arm = None
+
+        # Use a fixed epoch budget to make mixtures comparable.
+        # If your easy/med/hard are all ~50k, this is fine.
+        epoch_budget = len(dataloader.dataset)
 
         for epoch in range(epochs):
             # -------------------------
-            # Choose training loader
+            # Choose loader
             # -------------------------
             if curriculum == "self" and easy_loader is not None and medium_loader is not None:
-                print(f"[DEBUG][Self-Paced] Epoch {epoch+1}")
-
                 ratios = get_curriculum_ratios(epoch, epochs)
-
-                total_samples = len(dataloader.dataset)
-                easy_n = int(ratios.get("easy", 0.0) * total_samples)
-                medium_n = int(ratios.get("medium", 0.0) * total_samples)
-                hard_n = int(ratios.get("hard", 1.0) * total_samples)
-
-                easy_n = min(easy_n, len(easy_loader.dataset))
-                medium_n = min(medium_n, len(medium_loader.dataset))
-                hard_n = min(hard_n, len(dataloader.dataset))
-
-                easy_idx = np.random.choice(len(easy_loader.dataset), easy_n, replace=False) if easy_n > 0 else np.array([], dtype=int)
-                med_idx  = np.random.choice(len(medium_loader.dataset), medium_n, replace=False) if medium_n > 0 else np.array([], dtype=int)
-                hard_idx = np.random.choice(len(dataloader.dataset), hard_n, replace=False) if hard_n > 0 else np.array([], dtype=int)
-
-                mixed = []
-                if easy_n > 0:
-                    mixed.append(Subset(easy_loader.dataset, easy_idx))
-                if medium_n > 0:
-                    mixed.append(Subset(medium_loader.dataset, med_idx))
-                if hard_n > 0:
-                    mixed.append(Subset(dataloader.dataset, hard_idx))
-
-                if len(mixed) == 0:
-                    current_loader = dataloader
-                else:
-                    mixed_dataset = ConcatDataset(mixed)
-                    current_loader = self._make_loader_from_dataset(dataloader, mixed_dataset, shuffle=True)
-
+                current_loader, easy_n, med_n, hard_n = self._make_mixed_loader(
+                    base_loader=dataloader,
+                    easy_loader=easy_loader,
+                    medium_loader=medium_loader,
+                    hard_loader=hard_loader,
+                    ratios=ratios,
+                    total_samples=epoch_budget
+                )
                 print(
-                    f"[DEBUG][Self-Paced] Epoch {epoch+1}: "
-                    f"easy={easy_n} (ratio={ratios.get('easy', 0):.3f}), "
-                    f"medium={medium_n} (ratio={ratios.get('medium', 0):.3f}), "
-                    f"hard={hard_n} (ratio={ratios.get('hard', 0):.3f}), "
-                    f"total={easy_n+medium_n+hard_n}"
+                    f"[DEBUG][Self] Epoch {epoch+1}: "
+                    f"easy={easy_n} (r={ratios.get('easy',0):.2f}), "
+                    f"medium={med_n} (r={ratios.get('medium',0):.2f}), "
+                    f"hard={hard_n} (r={ratios.get('hard',0):.2f})"
                 )
 
-            elif curriculum == "bandit" and datasets is not None and rewards is not None:
+            elif bandit_enabled:
                 # bandit knobs
                 reward_window = 5
-                epsilon = max(0.05, 0.20 * (1 - epoch / max(epochs, 1)))  # decay
+                epsilon = max(0.05, 0.20 * (1 - epoch / max(epochs, 1)))  # decay exploration
 
-                # warm-start: try each arm at least once
+                # warm-start: pull each arm at least once
                 untried = [k for k, c in pulls.items() if c == 0]
                 if len(untried) > 0:
-                    chosen = random.choice(untried)
-                    avg_rewards_dbg = {k: float("nan") for k in rewards.keys()}
-                    print(f"[DEBUG][Bandit] Epoch {epoch+1}: chosen='{chosen}', eps={epsilon:.3f} (warm-start)")
+                    chosen_arm = random.choice(untried)
+                    print(f"[DEBUG][BanditMix] Epoch {epoch+1}: chosen='{chosen_arm}', eps={epsilon:.3f} (warm-start)")
                 else:
                     avg_rewards = {
                         k: (float(np.mean(v[-reward_window:])) if len(v) > 0 else -1e9)
                         for k, v in rewards.items()
                     }
-
                     if random.random() < epsilon:
-                        chosen = random.choice(list(datasets.keys()))
+                        chosen_arm = random.choice(list(mixture_arms.keys()))
                     else:
-                        chosen = max(avg_rewards, key=avg_rewards.get)
+                        chosen_arm = max(avg_rewards, key=avg_rewards.get)
 
                     print(
-                        f"[DEBUG][Bandit] Epoch {epoch+1}: chosen='{chosen}', eps={epsilon:.3f}, "
+                        f"[DEBUG][BanditMix] Epoch {epoch+1}: chosen='{chosen_arm}', eps={epsilon:.3f}, "
                         + ", ".join([f"{k}={avg_rewards[k]:.2e}" for k in avg_rewards])
                     )
 
-                current_loader = self._make_loader_from_dataset(dataloader, datasets[chosen], shuffle=True)
+                ratios = mixture_arms[chosen_arm]
+                current_loader, easy_n, med_n, hard_n = self._make_mixed_loader(
+                    base_loader=dataloader,
+                    easy_loader=easy_loader,
+                    medium_loader=medium_loader,
+                    hard_loader=hard_loader,
+                    ratios=ratios,
+                    total_samples=epoch_budget
+                )
+                print(
+                    f"[DEBUG][BanditMix] Epoch {epoch+1}: arm='{chosen_arm}' mix -> "
+                    f"easy={easy_n}, medium={med_n}, hard={hard_n}"
+                )
 
             else:
-                # Manual staged default: easy -> medium -> hard by thirds
-                easy_epochs = max(1, int(0.10 * epochs))   # 10%
-                med_epochs  = max(1, int(0.70 * epochs))   # 70%
+                # Manual staged (recommend not doing thirds; but leaving a simple staged default)
+                easy_epochs = max(1, int(0.10 * epochs))
+                med_epochs = max(1, int(0.70 * epochs))
 
                 if epoch < easy_epochs and easy_loader is not None:
                     current_loader = easy_loader
-                    print(f"[DEBUG][Manual Curriculum] Epoch {epoch+1}: Using EASY dataset")
+                    print(f"[DEBUG][Manual] Epoch {epoch+1}: EASY")
                 elif epoch < easy_epochs + med_epochs and medium_loader is not None:
                     current_loader = medium_loader
-                    print(f"[DEBUG][Manual Curriculum] Epoch {epoch+1}: Using MEDIUM dataset")
+                    print(f"[DEBUG][Manual] Epoch {epoch+1}: MEDIUM")
                 else:
                     current_loader = dataloader
-                    print(f"[DEBUG][Manual Curriculum] Epoch {epoch+1}: Using HARD dataset")
+                    print(f"[DEBUG][Manual] Epoch {epoch+1}: HARD")
 
             # -------------------------
             # TRAIN
@@ -247,14 +283,14 @@ class Trainer:
                 print(f"Epoch {epoch+1} | Val Loss: {val_loss:.6f}")
 
             # -------------------------
-            # BANDIT reward update (per-arm)
+            # BANDIT reward update
             # -------------------------
-            if curriculum == "bandit" and rewards is not None and chosen is not None and val_loss is not None:
-                prev = prev_val_loss_per_arm[chosen]
-                reward = 0.0 if prev is None else float(prev - val_loss)  # positive is good
-                rewards[chosen].append(reward)
-                prev_val_loss_per_arm[chosen] = val_loss
-                pulls[chosen] += 1
+            if bandit_enabled and chosen_arm is not None and val_loss is not None:
+                prev = prev_val_loss_per_arm[chosen_arm]
+                reward = 0.0 if prev is None else float(prev - val_loss)  # positive = improved
+                rewards[chosen_arm].append(reward)
+                prev_val_loss_per_arm[chosen_arm] = val_loss
+                pulls[chosen_arm] += 1
 
         # -------------------------
         # Plot losses
