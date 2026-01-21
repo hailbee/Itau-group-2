@@ -22,40 +22,23 @@ class Trainer:
 
         print(f"[DEBUG] Using fixed learning rate: {optimizer.param_groups[0]['lr']:.6f}")
 
-    def train_epoch(self, dataloader, mode="pair", track_pg=False):
-        """
-        Train for one epoch.
-        If track_pg=True, compute a simple "progress gain" signal:
-        loss_before_step - loss_after_step, averaged across batches.
-        """
+    def train_epoch(self, dataloader, mode="pair"):
+        """Train for one epoch."""
         self.model.train()
         epoch_loss = 0.0
 
-        total_pg = 0.0
-        pg_count = 0
-
         for i, batch in enumerate(dataloader):
             x1, x2, y = batch
-
             x1 = x1.to(self.device, non_blocking=True)
             x2 = x2.to(self.device, non_blocking=True)
             y  = y.to(self.device, non_blocking=True)
 
-            # forward + loss (before update)
             z1, z2 = self.model(x1, x2)
             loss = self.criterion(z1, z2, y)
 
-            self.optimizer.zero_grad()
+            self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
             self.optimizer.step()
-
-            if track_pg:
-                # progress gain: how much the loss decreases after the update
-                with torch.no_grad():
-                    z1a, z2a = self.model(x1, x2)
-                    loss_after = self.criterion(z1a, z2a, y)
-                    total_pg += (loss.item() - loss_after.item())
-                    pg_count += 1
 
             epoch_loss += loss.item()
 
@@ -63,11 +46,10 @@ class Trainer:
                 lr = self.optimizer.param_groups[0]["lr"]
                 print(f"Step {i} / {len(dataloader)} | LR: {lr:.6f}")
 
-        avg_loss = epoch_loss / max(len(dataloader), 1)
-        avg_pg = (total_pg / pg_count) if (track_pg and pg_count > 0) else None
-        return avg_loss, avg_pg
+        return epoch_loss / max(len(dataloader), 1)
 
     def validate_epoch(self, dataloader):
+        """Validate for one epoch (loss only)."""
         if dataloader is None:
             return None
 
@@ -77,7 +59,6 @@ class Trainer:
         with torch.no_grad():
             for i, batch in enumerate(dataloader):
                 x1, x2, y = batch
-
                 x1 = x1.to(self.device, non_blocking=True)
                 x2 = x2.to(self.device, non_blocking=True)
                 y  = y.to(self.device, non_blocking=True)
@@ -88,14 +69,14 @@ class Trainer:
 
                 if i % 100 == 0:
                     lr = self.optimizer.param_groups[0]["lr"]
-                    print(f"Step {i} / {len(dataloader)} | LR: {lr:.6f}")
+                    print(f"Val Step {i} / {len(dataloader)} | LR: {lr:.6f}")
 
         return epoch_loss / max(len(dataloader), 1)
 
-    def evaluate(self, test_filepath):
+    def evaluate(self, test_filepath, plot=False, roc_png_path=None):
+        """Run evaluator on a filepath."""
         self.model.eval()
-        _, metrics = self.evaluator.evaluate(test_filepath)
-        return metrics
+        return self.evaluator.evaluate(test_filepath, plot=plot, roc_png_path=roc_png_path)
 
     def _make_loader_from_dataset(self, base_loader, dataset, shuffle=True):
         """Create a DataLoader that matches base_loader settings as closely as possible."""
@@ -120,39 +101,51 @@ class Trainer:
         validate_filepath=None,      # kept for compatibility; not used directly here
         validate_dataloader=None,
 
-        # --- curriculum additions ---
+        # curriculum
         easy_loader=None,
         medium_loader=None,
         curriculum=None,
 
-        # if you want test metrics for each trial
-        want_test=False
+        # optional test eval at end of training
+        want_test=False,
+
+        # plotting
+        plot_losses=True
     ):
         train_loss_history = []
         val_loss_history = []
-
         best_epoch_loss = float("inf")
 
-        # For bandit curriculum
-        rewards = None
+        # -------------------------
+        # Bandit setup (only if requested and feasible)
+        # -------------------------
         datasets = None
+        rewards = None
+        pulls = None
+        prev_val_loss_per_arm = None
         chosen = None
 
-        if easy_loader is not None and medium_loader is not None:
-            datasets = {
-                "easy": easy_loader.dataset,
-                "medium": medium_loader.dataset,
-                "hard": dataloader.dataset
-            }
-            rewards = {k: [] for k in datasets.keys()}
+        if curriculum == "bandit":
+            if validate_dataloader is None:
+                print("[WARN][Bandit] validate_dataloader is None -> no reward signal. Falling back to manual.")
+                curriculum = "manual"
+            elif easy_loader is None or medium_loader is None:
+                print("[WARN][Bandit] Bandit needs easy_loader AND medium_loader. Falling back to manual.")
+                curriculum = "manual"
+            else:
+                datasets = {
+                    "easy": easy_loader.dataset,
+                    "medium": medium_loader.dataset,
+                    "hard": dataloader.dataset
+                }
+                rewards = {k: [] for k in datasets.keys()}
+                pulls = {k: 0 for k in datasets.keys()}
+                prev_val_loss_per_arm = {k: None for k in datasets.keys()}
 
         for epoch in range(epochs):
             # -------------------------
             # Choose training loader
             # -------------------------
-            track_pg = False
-
-            # Self-paced: mix easy/medium/hard each epoch using ratios
             if curriculum == "self" and easy_loader is not None and medium_loader is not None:
                 print(f"[DEBUG][Self-Paced] Epoch {epoch+1}")
 
@@ -163,7 +156,6 @@ class Trainer:
                 medium_n = int(ratios.get("medium", 0.0) * total_samples)
                 hard_n = int(ratios.get("hard", 1.0) * total_samples)
 
-                # Clamp to dataset sizes (avoid replace=False errors)
                 easy_n = min(easy_n, len(easy_loader.dataset))
                 medium_n = min(medium_n, len(medium_loader.dataset))
                 hard_n = min(hard_n, len(dataloader.dataset))
@@ -194,35 +186,44 @@ class Trainer:
                     f"total={easy_n+medium_n+hard_n}"
                 )
 
-            # Bandit: choose one dataset per epoch based on recent progress gain
             elif curriculum == "bandit" and datasets is not None and rewards is not None:
-                epsilon = 0.2
-                reward_window = 2
-                track_pg = True
+                # bandit knobs
+                reward_window = 5
+                epsilon = max(0.05, 0.20 * (1 - epoch / max(epochs, 1)))  # decay
 
-                avg_rewards = {
-                    k: (float(np.mean(v[-reward_window:])) if len(v) > 0 else 0.0)
-                    for k, v in rewards.items()
-                }
-
-                if random.random() < epsilon:
-                    chosen = random.choice(list(datasets.keys()))
+                # warm-start: try each arm at least once
+                untried = [k for k, c in pulls.items() if c == 0]
+                if len(untried) > 0:
+                    chosen = random.choice(untried)
+                    avg_rewards_dbg = {k: float("nan") for k in rewards.keys()}
+                    print(f"[DEBUG][Bandit] Epoch {epoch+1}: chosen='{chosen}', eps={epsilon:.3f} (warm-start)")
                 else:
-                    chosen = max(avg_rewards, key=avg_rewards.get)
+                    avg_rewards = {
+                        k: (float(np.mean(v[-reward_window:])) if len(v) > 0 else -1e9)
+                        for k, v in rewards.items()
+                    }
+
+                    if random.random() < epsilon:
+                        chosen = random.choice(list(datasets.keys()))
+                    else:
+                        chosen = max(avg_rewards, key=avg_rewards.get)
+
+                    print(
+                        f"[DEBUG][Bandit] Epoch {epoch+1}: chosen='{chosen}', eps={epsilon:.3f}, "
+                        + ", ".join([f"{k}={avg_rewards[k]:.2e}" for k in avg_rewards])
+                    )
 
                 current_loader = self._make_loader_from_dataset(dataloader, datasets[chosen], shuffle=True)
-                print(
-                    f"[DEBUG][Bandit] Epoch {epoch+1}: chosen='{chosen}', "
-                    + ", ".join([f"{k}={avg_rewards[k]:.4f}" for k in avg_rewards])
-                )
 
-            # Manual (staged): easy -> medium -> hard by thirds
             else:
-                phase_len = max(epochs // 3, 1)
-                if epoch < phase_len and easy_loader is not None:
+                # Manual staged default: easy -> medium -> hard by thirds
+                easy_epochs = max(1, int(0.10 * epochs))   # 10%
+                med_epochs  = max(1, int(0.70 * epochs))   # 70%
+
+                if epoch < easy_epochs and easy_loader is not None:
                     current_loader = easy_loader
                     print(f"[DEBUG][Manual Curriculum] Epoch {epoch+1}: Using EASY dataset")
-                elif epoch < 2 * phase_len and medium_loader is not None:
+                elif epoch < easy_epochs + med_epochs and medium_loader is not None:
                     current_loader = medium_loader
                     print(f"[DEBUG][Manual Curriculum] Epoch {epoch+1}: Using MEDIUM dataset")
                 else:
@@ -232,29 +233,34 @@ class Trainer:
             # -------------------------
             # TRAIN
             # -------------------------
-            avg_loss, avg_pg = self.train_epoch(current_loader, mode=mode, track_pg=track_pg)
-            train_loss_history.append(avg_loss)
-            print(f"Epoch {epoch + 1} | Train Loss: {avg_loss:.4f}")
-            best_epoch_loss = min(best_epoch_loss, avg_loss)
-
-            # Store bandit reward
-            if curriculum == "bandit" and avg_pg is not None and rewards is not None and chosen is not None:
-                rewards[chosen].append(avg_pg)
+            train_loss = self.train_epoch(current_loader, mode=mode)
+            train_loss_history.append(train_loss)
+            best_epoch_loss = min(best_epoch_loss, train_loss)
+            print(f"Epoch {epoch+1} | Train Loss: {train_loss:.6f}")
 
             # -------------------------
-            # VALIDATE (loss only)
+            # VALIDATE
             # -------------------------
             val_loss = self.validate_epoch(validate_dataloader)
             if val_loss is not None:
                 val_loss_history.append(val_loss)
-                print(f"Epoch {epoch + 1} | Val Loss: {val_loss:.4f}")
+                print(f"Epoch {epoch+1} | Val Loss: {val_loss:.6f}")
 
-        plot = True
-        if plot == True:
-            # Ensure output dir exists for plots
+            # -------------------------
+            # BANDIT reward update (per-arm)
+            # -------------------------
+            if curriculum == "bandit" and rewards is not None and chosen is not None and val_loss is not None:
+                prev = prev_val_loss_per_arm[chosen]
+                reward = 0.0 if prev is None else float(prev - val_loss)  # positive is good
+                rewards[chosen].append(reward)
+                prev_val_loss_per_arm[chosen] = val_loss
+                pulls[chosen] += 1
+
+        # -------------------------
+        # Plot losses
+        # -------------------------
+        if plot_losses:
             os.makedirs("images", exist_ok=True)
-
-            # -------- SAVE LOSS GRAPH --------
             plot_path = f"images/loss_curve_trial_{trial_number}{string}.png"
             plt.figure()
             plt.plot(train_loss_history, label="Train Loss")
@@ -269,19 +275,18 @@ class Trainer:
             plt.close()
             print(f"[DEBUG] Saved loss curve to {plot_path}")
 
-        # -------- EVALUATE + SAVE ROC CURVE --------
-        test_metrics = None
+        # -------------------------
+        # Optional test eval at end
+        # -------------------------
         if want_test and test_filepath is not None:
-            _, test_metrics = self.evaluator.evaluate(
+            self.evaluate(
                 test_filepath,
                 plot=False,
                 roc_png_path=f"images/roc_curve_trial_{trial_number}{string}.png"
             )
 
-        # Return small dict for Optuna
         return {
             "best_train_loss": best_epoch_loss,
-            "final_train_loss": (train_loss_history[-1] if len(train_loss_history) else None),
-            "final_val_loss": (val_loss_history[-1] if len(val_loss_history) else None),
+            "final_train_loss": (train_loss_history[-1] if train_loss_history else None),
+            "final_val_loss": (val_loss_history[-1] if val_loss_history else None),
         }
-

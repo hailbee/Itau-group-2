@@ -1,28 +1,11 @@
 import numpy as np
 
-def get_curriculum_ratios(epoch, total_epochs):
-    """
-    Return (easy, medium, hard) ratios for self-paced curriculum learning.
+def get_curriculum_ratios(epoch, epochs):
+    t = epoch / max(epochs - 1, 1)
 
-    Args:
-        epoch (int): Current training epoch.
-        total_epochs (int): Total number of training epochs.
-
-    Returns:
-        dict: A dictionary with keys 'easy', 'medium', 'hard' and corresponding float ratios.
-    """
-    # Normalize the current epoch to [0, 1]
-    t = epoch / total_epochs
-
-    # Use smooth cosine interpolation to define the curves
-    easy = 0.5 * (1 + np.cos(np.pi * t)) * (1 - t)
-    hard = 0.5 * (1 + np.cos(np.pi * (1 - t))) * t
-    medium = 1.0 - (easy + hard)
-
-    # Normalize to ensure they sum to 1
-    total = easy + medium + hard
-    return {
-        "easy": easy / total,
-        "medium": medium / total,
-        "hard": hard / total
-    }
+    if t < 0.10:
+        return {"easy": 0.60, "medium": 0.40, "hard": 0.00}
+    elif t < 0.70:
+        return {"easy": 0.10, "medium": 0.80, "hard": 0.10}
+    else:
+        return {"easy": 0.00, "medium": 0.70, "hard": 0.30}
