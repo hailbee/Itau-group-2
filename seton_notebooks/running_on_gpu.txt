@@ -19,9 +19,9 @@ python3 main_edited.py \
 
 python3 main_edited.py \
   --mode train --optuna False \
-  --training_filepath "/Users/a../Downloads/train_hard.parquet" \
-  --easy_filepath "/Users/a../Downloads/train_easy.parquet" \
-  --medium_filepath "/Users/a../Downloads/train_medium.parquet" \
+  --training_filepath "/Users/a../Downloads/train_hard_100k.parquet" \
+  --easy_filepath "/Users/a../Downloads/train_easy_100k.parquet" \
+  --medium_filepath "/Users/a../Downloads/train_medium_100k.parquet" \
   --validate_filepath "/Users/a../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
   --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet" \
   --curriculum self \
@@ -75,7 +75,7 @@ touch scripts/training/__init__.py
 export PYTHONPATH=$(pwd)
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
-python -m main_edited --mode train --optuna True --training_filepath "../Downloads/train_medium_100k.parquet" --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet"
+python -m main_edited
 
 python create_embeddings_run.py \
   --input train_pairs_medium_100k.parquet \
