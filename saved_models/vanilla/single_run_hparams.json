@@ -1,0 +1,10 @@
+{
+  "lr": 0.0001318315943640423,
+  "batch_size": 1024,
+  "internal_layer_size": 1024,
+  "output_dim": 128,
+  "optimizer": "adamw",
+  "weight_decay": 1.0625721497327492e-05,
+  "margin": 0.052073112484723905,
+  "epochs": 50
+}

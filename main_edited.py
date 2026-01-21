@@ -5,6 +5,8 @@ from scripts.training.trainer import Trainer
 from scripts.evaluation.evaluator import Evaluator
 from scripts.optimization.unified_optimizer import UnifiedHyperparameterOptimizer
 from model_utils.utils.data import EmbeddingPairDataset
+from model_utils.models.learning.siamese import SiameseEmbeddingModel
+from torch.utils.data import DataLoader
 
 # python3 main_edited.py --mode train --optuna False --training_filepath "/Users/a../Downloads/train_pairs_with_siglip_embeddings.parquet" --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet" 
 # same test/train file but just to see if training works
@@ -29,8 +31,14 @@ def main():
     # Training parameters
     parser.add_argument('--epochs', type=int, default=5,
                       help='Number of training epochs')
-    parser.add_argument('--log_dir', type=str, default='/content/drive/MyDrive/Project_2_Business_Names/Summer 2025/code',
+    parser.add_argument('--log_dir', type=str, default='saved_models',
                       help='Directory to save results')
+    parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--internal_layer_size', type=int, default=256)
+    parser.add_argument('--output_dim', type=int, default=128)
+    parser.add_argument('--optimizer_name', type=str, choices=['adam', 'adamw', 'sgd'], default='adamw')
+    parser.add_argument('--weight_decay', type=float, default=0.0)
+    parser.add_argument('--margin', type=float, default=1.0)
     
     # Hyperparameter optimization parameters
     parser.add_argument('--n_trials', type=int, default=50,
@@ -57,68 +65,63 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    if args.mode == 'evaluate_saved':
-        print("Loading saved model for evaluation...")
-        # Load backbone
-        from scripts.baseline.baseline_tester import BaselineTester
-        tester = BaselineTester(model_type='siglip', batch_size=1, device=device)
-        backbone_module = tester.model_wrapper  # must have .encode_text
-        
-        # Load your model with matching dimensions
-        model = SiameseEmbeddingModel(embedding_dim=768, projection_dim=768, backbone=backbone_module).to(device)
-
-        # Load saved weights
-        state_dict = torch.load(args.log_dir + "/best_model_siglip_pair.pt", map_location=device)
-        model.load_state_dict(state_dict)
-        model.eval()
-
-        # Evaluate
-        evaluator = Evaluator(model, batch_size=args.batch_size, model_type='pair')
-        results_df, metrics = evaluator.evaluate(args.test_filepath, plot=args.plot)
-
-        print("\n Evaluation complete. Results:")
-        for k, v in metrics.items():
-            if k != 'roc_curve':
-                print(f"{k}: {v}")
-        
-        # Save results_df to computer
+    if args.mode == "evaluate_saved":
+        import os, json
         import pandas as pd
         from datetime import datetime
-        import os
-        
-        # Create output directory if it doesn't exist
-        output_dir = "evaluation_results"
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Generate filename with timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"evaluation_results_{timestamp}.csv"
-        filepath = os.path.join(output_dir, filename)
-        
-        # Save results_df to CSV
-        results_df.to_csv(filepath, index=False)
-        print(f"\nResults saved to: {filepath}")
-        
-        # Also save metrics to a separate file
-        metrics_filename = f"evaluation_metrics_{timestamp}.json"
-        metrics_filepath = os.path.join(output_dir, metrics_filename)
-        
-        import json
-        # Convert numpy types to Python types for JSON serialization
+
+        print("Loading saved model for evaluation...")
+
+        # Save/load directory = saved_models next to main_edited.py
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        save_dir = os.path.join(script_dir, "saved_models")
+        os.makedirs(save_dir, exist_ok=True)
+
+        # ---- Build the SAME model architecture you trained ----
+        model = SiameseEmbeddingModel(
+            embedding_dim=768,
+            hidden_dim=args.internal_layer_size,
+            out_dim=args.output_dim
+        ).to(device)
+
+        # ---- Load checkpoint ----
+        ckpt_path = os.path.join(save_dir, "single_run_model.pt")  # change name if needed
+        state_dict = torch.load(ckpt_path, map_location=device)
+        model.load_state_dict(state_dict)
+        model.eval()
+        print(f"[INFO] Loaded model from: {ckpt_path}")
+
+        # ---- Evaluate ----
+        evaluator = Evaluator(model, batch_size=args.batch_size, model_type="pair")
+        results_df, metrics = evaluator.evaluate(args.test_filepath, plot=args.plot)
+
+        # ---- Print metrics ----
+        print("\nEvaluation complete. Metrics:")
+        for k, v in metrics.items():
+            if k != "roc_curve":
+                print(f"{k}: {v}")
+
+        # ---- Save outputs to saved_models/ ----
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        results_csv_path = os.path.join(save_dir, f"eval_results_{timestamp}.csv")
+        results_df.to_csv(results_csv_path, index=False)
+        print(f"[INFO] Saved eval results CSV to: {results_csv_path}")
+
+        # Convert numpy types for JSON
         def convert_np(obj):
             if isinstance(obj, dict):
                 return {k: convert_np(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
+            if isinstance(obj, list):
                 return [convert_np(v) for v in obj]
-            elif hasattr(obj, 'item') and callable(obj.item):
+            if hasattr(obj, "item") and callable(obj.item):
                 return obj.item()
-            else:
-                return obj
-        
-        metrics_serializable = convert_np(metrics)
-        with open(metrics_filepath, 'w') as f:
-            json.dump(metrics_serializable, f, indent=2)
-        print(f"Metrics saved to: {metrics_filepath}")
+            return obj
+
+        metrics_json_path = os.path.join(save_dir, f"eval_metrics_{timestamp}.json")
+        with open(metrics_json_path, "w", encoding="utf-8") as f:
+            json.dump(convert_np(metrics), f, indent=2)
+        print(f"[INFO] Saved eval metrics JSON to: {metrics_json_path}")
 
     elif args.mode == 'train':
         if args.optuna == 'True':
@@ -146,41 +149,119 @@ def main():
             )
 
         else:
-            # Single training run
-            from model_utils.models.learning.siamese import SiameseEmbeddingModel
+            import pandas as pd
 
             model = SiameseEmbeddingModel(
                 embedding_dim=768,
-                hidden_dim=256,
-                out_dim=128
+                hidden_dim=args.internal_layer_size,
+                out_dim=args.output_dim
             ).to(device)
 
-            # Get appropriate loss class
             from model_utils.loss.pair_losses import ContrastiveLoss
-            criterion = ContrastiveLoss(margin=1.0)
+            criterion = ContrastiveLoss(margin=args.margin)
 
-            optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-            
-            # Create dataloaders
-            import pandas as pd
-            from torch.utils.data import DataLoader
-            
-            # Load training data
-            dataframe = pd.read_parquet(args.training_filepath)
-            
-            # Create appropriate dataset and dataloader based on model type
+            if args.optimizer_name == "adam":
+                optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+            elif args.optimizer_name == "adamw":
+                optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+            else:
+                optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
-            dataset = EmbeddingPairDataset(dataframe)
-            dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
 
-            ### here: pass in the model_type
-            trainer = Trainer(model, criterion, optimizer, device, model_type='pair')
-            trainer.train(
-                dataloader=dataloader,
-                mode='pair',
-                epochs=args.epochs,
-                validate_filepath=args.validate_filepath,
+            train_df = pd.read_parquet(args.training_filepath)
+            train_dataset = EmbeddingPairDataset(train_df)
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=args.batch_size,
+                shuffle=True,
+                num_workers=0
             )
+
+            easy_loader = None
+            medium_loader = None
+
+            if args.easy_filepath is not None:
+                easy_df = pd.read_parquet(args.easy_filepath)
+                easy_dataset = EmbeddingPairDataset(easy_df)
+                easy_loader = DataLoader(
+                    easy_dataset,
+                    batch_size=args.batch_size,
+                    shuffle=True,
+                    num_workers=0
+                )
+
+            if args.medium_filepath is not None:
+                med_df = pd.read_parquet(args.medium_filepath)
+                med_dataset = EmbeddingPairDataset(med_df)
+                medium_loader = DataLoader(
+                    med_dataset,
+                    batch_size=args.batch_size,
+                    shuffle=True,
+                    num_workers=0
+                )
+
+            val_loader = None
+            if args.validate_filepath is not None:
+                val_df = pd.read_parquet(args.validate_filepath)
+                val_dataset = EmbeddingPairDataset(val_df)
+                val_loader = DataLoader(
+                    val_dataset,
+                    batch_size=args.batch_size,
+                    shuffle=False,
+                    num_workers=0
+                )
+
+            # --- trainer ---
+            trainer = Trainer(model, criterion, optimizer, device, model_type="pair")
+
+            metrics = trainer.train(
+                dataloader=train_loader,
+                trial_number=1,                 # any int; used in filenames
+                test_filepath=args.test_filepath,  # you can ignore by setting want_test=False in Trainer if you added that switch
+                string="_single_run",
+                mode="pair",
+                epochs=args.epochs,
+                validate_dataloader=val_loader,
+                curriculum=args.curriculum,
+                easy_loader=easy_loader,
+                medium_loader=medium_loader,
+                want_test=False,                # IMPORTANT: don't eval test every run unless you want it
+            )
+
+            print("Training done. Returned metrics:", metrics)
+
+            # --- optional: evaluate on test once at the end ---
+            evaluator = Evaluator(model, batch_size=args.batch_size, model_type="pair")
+            _, test_metrics = evaluator.evaluate(args.test_filepath, plot=args.plot)
+            print("\n--- FINAL TEST METRICS ---")
+            for k, v in test_metrics.items():
+                if k != "roc_curve":
+                    print(f"{k}: {v}")
+
+            import os, json
+
+            # optional: save the hyperparams too
+            hparams = {
+                "lr": args.lr,
+                "batch_size": args.batch_size,
+                "internal_layer_size": args.internal_layer_size,
+                "output_dim": args.output_dim,
+                "optimizer": args.optimizer_name,
+                "weight_decay": args.weight_decay,
+                "margin": args.margin,
+                "epochs": args.epochs,
+            }
+
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            save_dir = os.path.join(script_dir, "saved_models")
+            os.makedirs(save_dir, exist_ok=True)
+
+            torch.save(model.state_dict(), os.path.join(save_dir, "single_run_model.pt"))
+            print(f"Saved trained model to {os.path.join(save_dir, 'single_run_model.pt')}")
+
+            with open(os.path.join(save_dir, "single_run_hparams.json"), "w", encoding="utf-8") as f:
+                json.dump(hparams, f, indent=2)
+            print(f"Saved hyperparameters to {os.path.join(save_dir, 'single_run_hparams.json')}")
 
 if __name__ == '__main__':
     main() 
