@@ -1,6 +1,6 @@
 "/Users/a../Itau-group-2/data/processed/"
 
-python3 main_edited.py --mode train --optuna True --training_filepath "/Users/a../Downloads/train_hard_100k.parquet" --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet" --validate_filepath "/Users/a../Downloads/validate_pairs_with_siglip_embeddings.parquet"
+python3 main_edited.py --mode train --optuna True --training_filepath "/Users/a../Downloads/train_medium_100k.parquet" --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet" --validate_filepath "/Users/a../Downloads/validate_pairs_with_siglip_embeddings.parquet"
 
 python3 main_edited.py --mode train --optuna True \
   --training_filepath "/Users/a../Downloads/train_pairs_hard_with_siglip_embeddings.parquet" \
@@ -22,7 +22,7 @@ salloc -p mit_preemptable \
 
 salloc -p mit_preemptable \
   --gres=gpu:h100:1 \
-  -c 8 --mem=64G \
+  -c 8 --mem=128G \
   -t 02:00:00
 
 salloc -p mit_preemptable \
@@ -43,7 +43,7 @@ touch scripts/training/__init__.py
 export PYTHONPATH=$(pwd)
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
-python -m main_edited --mode train --optuna True --training_filepath "../Downloads/train_pairs_medium_with_siglip_embeddings.parquet" --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet"
+python -m main_edited --mode train --optuna True --training_filepath "../Downloads/train_medium_100k.parquet" --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet"
 
 python create_embeddings_run.py \
   --input train_pairs_medium_100k.parquet \
