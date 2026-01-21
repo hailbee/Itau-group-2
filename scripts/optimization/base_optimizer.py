@@ -161,6 +161,7 @@ class BaseOptimizer:
         validate_filepath=None,
         save_best_model=True,
         curriculum=None,
+        want_test=False
     ):
         import json
 
@@ -263,22 +264,12 @@ class BaseOptimizer:
                 curriculum=curriculum,
             )
 
-            # --------------------------------------------------
-            # RUN EVALUATOR (THIS WAS MISSING)
-            # --------------------------------------------------
-            evaluator = Evaluator(
-                model=model,
-                batch_size=batch_size,
-                model_type=mode,
-            )
-
-            _, eval_metrics = evaluator.evaluate(test_filepath)
-
-            # Merge metrics (Evaluator wins for test metrics)
-            best_metrics.update(eval_metrics)
+            if want_test and test_filepath is not None:
+                evaluator = Evaluator(model=model, batch_size=batch_size, model_type=mode)
+                _, eval_metrics = evaluator.evaluate(test_filepath)
+                best_metrics.update(eval_metrics)
 
             result = {
-                # params...
                 "timestamp": datetime.now(),
                 "lr": lr,
                 "batch_size": batch_size,
@@ -291,17 +282,20 @@ class BaseOptimizer:
                 "loss_type": loss_type,
                 "curriculum": curriculum,
 
-                # losses (from Trainer.train())
+                # losses (always present)
                 "best_train_loss": best_metrics.get("best_train_loss"),
                 "final_train_loss": best_metrics.get("final_train_loss"),
                 "final_val_loss": best_metrics.get("final_val_loss"),
-
-                # test metrics (from Evaluator.evaluate())
-                "test_roc_auc": best_metrics["roc_auc"],
-                "test_accuracy": best_metrics["accuracy"],
-                "youden_j": best_metrics["youden_j"],
-                "youden_threshold": best_metrics["youden_threshold"],
             }
+
+            # add test metrics ONLY when requested
+            if want_test:
+                result.update({
+                    "test_roc_auc": best_metrics.get("roc_auc"),
+                    "test_accuracy": best_metrics.get("accuracy"),
+                    "youden_j": best_metrics.get("youden_j"),
+                    "youden_threshold": best_metrics.get("youden_threshold"),
+                })
 
             val_loss = result.get("final_val_loss", None)
 

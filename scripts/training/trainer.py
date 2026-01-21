@@ -123,7 +123,10 @@ class Trainer:
         # --- curriculum additions ---
         easy_loader=None,
         medium_loader=None,
-        curriculum=None
+        curriculum=None,
+
+        # if you want test metrics for each trial
+        want_test=False
     ):
         train_loss_history = []
         val_loss_history = []
@@ -268,7 +271,7 @@ class Trainer:
 
         # -------- EVALUATE + SAVE ROC CURVE --------
         test_metrics = None
-        if test_filepath is not None:
+        if want_test and test_filepath is not None:
             _, test_metrics = self.evaluator.evaluate(
                 test_filepath,
                 plot=False,

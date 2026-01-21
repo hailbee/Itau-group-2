@@ -86,16 +86,11 @@ class OptunaOptimizer(BaseOptimizer):
                 epochs=epochs,
                 easy_filepath=easy_filepath,
                 validate_filepath=validate_filepath,
-                curriculum=curriculum
+                curriculum=curriculum,
+                want_test=False
             )
             row = {
                 "trial_number": trial.number + 1,
-
-                "test_accuracy": result.get("test_accuracy"),
-                "test_roc_auc": result.get("test_roc_auc"),
-                "youden_j": result.get("youden_j"),
-                "youden_threshold": result.get("youden_threshold"),
-
                 "best_train_loss": result.get("best_train_loss"),
                 "final_train_loss": result.get("final_train_loss"),
                 "final_val_loss": result.get("final_val_loss"),
@@ -177,7 +172,7 @@ class OptunaOptimizer(BaseOptimizer):
             )
         
         # Run optimization
-        study.optimize(objective_wrapper, n_trials=n_trials)
+        study.optimize(objective_wrapper, n_trials=2)
         
         # Save results
         self._save_results(study)
