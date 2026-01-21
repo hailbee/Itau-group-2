@@ -246,35 +246,39 @@ class Trainer:
                 val_loss_history.append(val_loss)
                 print(f"Epoch {epoch + 1} | Val Loss: {val_loss:.4f}")
 
-        # Ensure output dir exists for plots
-        os.makedirs("images", exist_ok=True)
+        plot = True
+        if plot == True:
+            # Ensure output dir exists for plots
+            os.makedirs("images", exist_ok=True)
 
-        # -------- SAVE LOSS GRAPH --------
-        plot_path = f"images/loss_curve_trial_{trial_number}{string}.png"
-        plt.figure()
-        plt.plot(train_loss_history, label="Train Loss")
-        if len(val_loss_history) > 0:
-            plt.plot(val_loss_history, label="Val Loss")
-        plt.xlabel("Epoch")
-        plt.ylabel("Loss")
-        plt.title("Training / Validation Loss")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(plot_path)
-        plt.close()
-        print(f"[DEBUG] Saved loss curve to {plot_path}")
+            # -------- SAVE LOSS GRAPH --------
+            plot_path = f"images/loss_curve_trial_{trial_number}{string}.png"
+            plt.figure()
+            plt.plot(train_loss_history, label="Train Loss")
+            if len(val_loss_history) > 0:
+                plt.plot(val_loss_history, label="Val Loss")
+            plt.xlabel("Epoch")
+            plt.ylabel("Loss")
+            plt.title("Training / Validation Loss")
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(plot_path)
+            plt.close()
+            print(f"[DEBUG] Saved loss curve to {plot_path}")
 
         # -------- EVALUATE + SAVE ROC CURVE --------
         test_metrics = None
         if test_filepath is not None:
             _, test_metrics = self.evaluator.evaluate(
                 test_filepath,
-                plot=True,
+                plot=False,
                 roc_png_path=f"images/roc_curve_trial_{trial_number}{string}.png"
             )
 
         # Return small dict for Optuna
         return {
             "best_train_loss": best_epoch_loss,
-            "roc_auc": (test_metrics["roc_auc"] if test_metrics and "roc_auc" in test_metrics else None),
+            "final_train_loss": (train_loss_history[-1] if len(train_loss_history) else None),
+            "final_val_loss": (val_loss_history[-1] if len(val_loss_history) else None),
         }
+

@@ -90,10 +90,15 @@ class OptunaOptimizer(BaseOptimizer):
             )
             row = {
                 "trial_number": trial.number + 1,
-                "accuracy": result.get("accuracy"),
-                "roc_auc": result.get("roc_auc"),
+
+                "test_accuracy": result.get("test_accuracy"),
+                "test_roc_auc": result.get("test_roc_auc"),
                 "youden_j": result.get("youden_j"),
                 "youden_threshold": result.get("youden_threshold"),
+
+                "best_train_loss": result.get("best_train_loss"),
+                "final_train_loss": result.get("final_train_loss"),
+                "final_val_loss": result.get("final_val_loss"),
             }
             row.update(trial.params)
             self.results.append(row)
@@ -186,8 +191,8 @@ class OptunaOptimizer(BaseOptimizer):
         # Include curriculum in filename if specified
         if curriculum:
             model_id += f"_{curriculum}"
-        best_model_path = os.path.join(self.log_dir, f'best_model_{model_id}.pt')
-        best_hparams_path = os.path.join(self.log_dir, f'best_hparams_{model_id}.json')
+        best_model_path = os.path.join(self.log_dir, f'results/best_model_{model_id}.pt')
+        best_hparams_path = os.path.join(self.log_dir, f'results/best_hparams_{model_id}.json')
         
         if os.path.exists(best_model_path) and os.path.exists(best_hparams_path):
             with open(best_hparams_path, 'r') as f:

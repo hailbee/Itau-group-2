@@ -279,7 +279,7 @@ class BaseOptimizer:
             best_metrics.update(eval_metrics)
 
             result = {
-                # bookkeeping / params
+                # params...
                 "timestamp": datetime.now(),
                 "lr": lr,
                 "batch_size": batch_size,
@@ -292,7 +292,12 @@ class BaseOptimizer:
                 "loss_type": loss_type,
                 "curriculum": curriculum,
 
-                # -------- reported metrics ONLY --------
+                # losses (from Trainer.train())
+                "best_train_loss": best_metrics.get("best_train_loss"),
+                "final_train_loss": best_metrics.get("final_train_loss"),
+                "final_val_loss": best_metrics.get("final_val_loss"),
+
+                # test metrics (from Evaluator.evaluate())
                 "test_roc_auc": best_metrics["roc_auc"],
                 "test_accuracy": best_metrics["accuracy"],
                 "youden_j": best_metrics["youden_j"],
