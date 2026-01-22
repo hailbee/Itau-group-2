@@ -56,7 +56,7 @@ real_emb = torch.nn.functional.normalize(real_emb, dim=1)
 # Cosine similarity
 # -----------------------------
 with torch.no_grad():
-    cosine_sim = (fake_emb * real_emb).sum(dim=1)
+    cosine_sim = torch.nn.functional.cosine_similarity(fake_emb, real_emb, dim=1)
 
 cosine_sim_cpu = cosine_sim.cpu().numpy()
 df_neg["cosine_similarity"] = cosine_sim_cpu

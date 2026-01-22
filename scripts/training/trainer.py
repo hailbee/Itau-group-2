@@ -138,6 +138,42 @@ class Trainer:
         return mixed_loader, easy_n, medium_n, hard_n
 
     # -------------------------
+    # Grid-arm builder
+    # -------------------------
+    def _build_grid_arms(
+        self,
+        hard_grid,
+        easy_grid,
+        hard_max=0.30,
+        name_prefix="G"
+    ):
+        """
+        Creates a dict of arms -> ratios from a grid of {easy, hard}.
+        medium = 1 - easy - hard
+        Invalid combos are skipped.
+        """
+        arms = {}
+        for e in easy_grid:
+            for h in hard_grid:
+                if h > hard_max:
+                    continue
+                m = 1.0 - e - h
+                if m < 0:
+                    continue
+                # keep some numeric stability / nice printing
+                e_r = float(round(e, 4))
+                m_r = float(round(m, 4))
+                h_r = float(round(h, 4))
+                arm_name = f"{name_prefix}_e{int(e_r*100):02d}_m{int(m_r*100):02d}_h{int(h_r*100):02d}"
+                arms[arm_name] = {"easy": e_r, "medium": m_r, "hard": h_r}
+
+        # Fallback if somehow empty
+        if len(arms) == 0:
+            arms[f"{name_prefix}_fallback"] = {"easy": 0.1, "medium": 0.8, "hard": 0.1}
+
+        return arms
+
+    # -------------------------
     # Main training loop
     # -------------------------
     def train(
@@ -168,20 +204,28 @@ class Trainer:
         # early stopping + saving
         early_stopping=True,
         patience=5,
-        min_epochs=20,          # <- NEW: do not early stop before this
-        min_delta=1e-6,         # <- NEW: minimum improvement threshold for "best"
+        min_epochs=10,
+        min_delta=1e-6,
         save_best=True,
         save_dir="saved_models",
 
         # bandit smoothing
         bandit_ema_alpha=0.3,
+
+        # -------------------------
+        # NEW: grid-bandit knobs
+        # -------------------------
+        bandit_use_grid=True,
+        bandit_hard_grid=(0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30),
+        bandit_easy_grid=(0.00, 0.10),
+        bandit_hard_max=0.30,
     ):
         train_loss_history = []
         val_loss_history = []
         best_epoch_loss = float("inf")
 
         hard_loader = dataloader  # naming clarity
-        epoch_budget = len(dataloader.dataset)  # fixed budget per epoch (keeps mixes comparable)
+        epoch_budget = len(dataloader.dataset)  # fixed budget per epoch
 
         # -------------------------
         # Early stopping state + checkpoint path
@@ -210,19 +254,39 @@ class Trainer:
                 bandit_enabled = False
                 curriculum = "self"
 
-        # Mixture arms (hard capped; removed 30% hard arm)
-        mixture_arms = {
-            "A_warm":   {"easy": 0.60, "medium": 0.40, "hard": 0.00},
-            "B_main":   {"easy": 0.10, "medium": 0.80, "hard": 0.10},
-            "D_medium": {"easy": 0.00, "medium": 1.00, "hard": 0.00},
-            "E_mh15":   {"easy": 0.00, "medium": 0.85, "hard": 0.15},
-            "F_mh5":    {"easy": 0.00, "medium": 0.95, "hard": 0.05},
-        }
+        # -------------------------
+        # Build bandit arms
+        # -------------------------
+        if bandit_enabled:
+            if bandit_use_grid:
+                mixture_arms = self._build_grid_arms(
+                    hard_grid=bandit_hard_grid,
+                    easy_grid=bandit_easy_grid,
+                    hard_max=bandit_hard_max,
+                    name_prefix="GRID"
+                )
+                print(f"[DEBUG][BanditMix] Using GRID arms: {len(mixture_arms)} total")
+            else:
+                # Original hand-picked arms (kept for compatibility)
+                mixture_arms = {
+                    "A_warm":   {"easy": 0.60, "medium": 0.40, "hard": 0.00},
+                    "B_main":   {"easy": 0.10, "medium": 0.80, "hard": 0.10},
+                    "D_medium": {"easy": 0.00, "medium": 1.00, "hard": 0.00},
+                    "E_mh15":   {"easy": 0.00, "medium": 0.85, "hard": 0.15},
+                    "F_mh5":    {"easy": 0.00, "medium": 0.95, "hard": 0.05},
+                }
+                print(f"[DEBUG][BanditMix] Using FIXED arms: {len(mixture_arms)} total")
 
-        rewards = {k: [] for k in mixture_arms.keys()} if bandit_enabled else None
-        pulls = {k: 0 for k in mixture_arms.keys()} if bandit_enabled else None
-        ema_val_loss_per_arm = {k: None for k in mixture_arms.keys()} if bandit_enabled else None
-        chosen_arm = None
+            rewards = {k: [] for k in mixture_arms.keys()}
+            pulls = {k: 0 for k in mixture_arms.keys()}
+            ema_val_loss_per_arm = {k: None for k in mixture_arms.keys()}
+            chosen_arm = None
+        else:
+            mixture_arms = None
+            rewards = None
+            pulls = None
+            ema_val_loss_per_arm = None
+            chosen_arm = None
 
         for epoch in range(epochs):
             # -------------------------
@@ -264,9 +328,12 @@ class Trainer:
                     else:
                         chosen_arm = max(avg_rewards, key=avg_rewards.get)
 
+                    # Print top-5 arms for visibility (grid can be large)
+                    top5 = sorted(avg_rewards.items(), key=lambda kv: kv[1], reverse=True)[:5]
                     print(
                         f"[DEBUG][BanditMix] Epoch {epoch+1}: chosen='{chosen_arm}', eps={epsilon:.3f}, "
-                        + ", ".join([f"{k}={avg_rewards[k]:.2e}" for k in avg_rewards])
+                        + "top5="
+                        + ", ".join([f"{k}:{v:.2e}" for k, v in top5])
                     )
 
                 ratios = mixture_arms[chosen_arm]
@@ -280,7 +347,9 @@ class Trainer:
                 )
                 print(
                     f"[DEBUG][BanditMix] Epoch {epoch+1}: arm='{chosen_arm}' mix -> "
-                    f"easy={easy_n}, medium={med_n}, hard={hard_n}"
+                    f"easy={easy_n} (r={ratios['easy']:.2f}), "
+                    f"medium={med_n} (r={ratios['medium']:.2f}), "
+                    f"hard={hard_n} (r={ratios['hard']:.2f})"
                 )
 
             else:
@@ -319,7 +388,6 @@ class Trainer:
                     best_val_loss = val_loss
                     bad_epochs = 0
 
-                    # Save a full checkpoint (model+optimizer+epoch)
                     torch.save(
                         {
                             "epoch": epoch + 1,
@@ -343,7 +411,9 @@ class Trainer:
             # -------------------------
             if bandit_enabled and chosen_arm is not None and val_loss is not None:
                 old_ema = ema_val_loss_per_arm[chosen_arm]
-                new_ema = val_loss if old_ema is None else (bandit_ema_alpha * val_loss + (1 - bandit_ema_alpha) * old_ema)
+                new_ema = val_loss if old_ema is None else (
+                    bandit_ema_alpha * val_loss + (1 - bandit_ema_alpha) * old_ema
+                )
 
                 reward = 0.0 if old_ema is None else float(old_ema - new_ema)  # positive = improved
                 rewards[chosen_arm].append(reward)
@@ -357,7 +427,10 @@ class Trainer:
             ckpt = torch.load(best_model_path, map_location=self.device)
             self.model.load_state_dict(ckpt["model_state"])
             self.model.to(self.device)
-            print(f"[DEBUG] Restored best model into memory from {best_model_path} (best_val_loss={ckpt.get('best_val_loss')})")
+            print(
+                f"[DEBUG] Restored best model into memory from {best_model_path} "
+                f"(best_val_loss={ckpt.get('best_val_loss')})"
+            )
 
         # -------------------------
         # Plot losses
