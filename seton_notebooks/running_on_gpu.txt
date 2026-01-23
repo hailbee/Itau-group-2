@@ -1,39 +1,5 @@
 "/Users/a../Itau-group-2/data/processed/"
 
-python3 main_edited.py --mode train --optuna True --training_filepath "/Users/a../Downloads/train_medium_100k.parquet" --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet" --validate_filepath "/Users/a../Downloads/validate_pairs_with_siglip_embeddings.parquet"
-
-python3 main_edited.py \
-  --mode train \
-  --optuna False \
-  --training_filepath "/Users/a../Downloads/train_medium_100k.parquet" \
-  --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet" \
-  --validate_filepath "/Users/a../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
-  --epochs 50 \
-  --batch_size 1024 \
-  --lr 0.0001318315943640423 \
-  --internal_layer_size 1024 \
-  --output_dim 128 \
-  --optimizer_name adamw \
-  --weight_decay 1.0625721497327492e-05 \
-  --margin 0.052073112484723905
-
-python3 main_edited.py \
-  --mode train --optuna False \
-  --training_filepath "/Users/a../Downloads/train_hard_100k.parquet" \
-  --easy_filepath "/Users/a../Downloads/train_easy_100k.parquet" \
-  --medium_filepath "/Users/a../Downloads/train_medium_100k.parquet" \
-  --validate_filepath "/Users/a../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
-  --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet" \
-  --curriculum self \
-  --epochs 50 \
-  --batch_size 1024 \
-  --lr 0.0001318315943640423 \
-  --internal_layer_size 1024 \
-  --output_dim 128 \
-  --optimizer_name adamw \
-  --weight_decay 1.0625721497327492e-05 \
-  --margin 0.052073112484723905
-
 python3 main_edited.py \
   --mode evaluate_saved \
   --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet" \
@@ -68,7 +34,6 @@ salloc -p mit_preemptable \
   -t 04:00:00
 
 cd ~/Itau-group-2
-
 conda activate itau
 touch scripts/__init__.py
 touch scripts/training/__init__.py
@@ -77,12 +42,52 @@ export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 python -m main_edited
 
+python -m main_edited \
+  --mode train --optuna False \
+  --training_filepath "../Downloads/train_pairs_with_siglip_embeddings_100k.parquet" \
+  --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
+  --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" \
+  --epochs 50 \
+  --batch_size 1024 \
+  --lr 0.0001 \
+  --internal_layer_size 512 \
+  --output_dim 128 \
+  --optimizer_name adam \
+  --weight_decay 0.0001 \
+  --margin 0.0831
+
+python -m main_edited \
+  --mode train --optuna True \
+  --training_filepath "../Downloads/train_pairs_with_siglip_embeddings_100k.parquet" \
+  --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
+  --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" \
+
+python -m main_edited \
+  --mode evaluate_saved \
+  --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" \
+  --batch_size 1024 \
+  --internal_layer_size 512 \
+  --output_dim 128 \
+  --plot
+
 python create_embeddings_run.py \
   --input train_pairs_medium_100k.parquet \
   --output train_pairs_medium_with_siglip_embeddings.parquet \
   --batch-size 128
 
+python3 scripts/evaluation/baseline_eval.py \
+  --test_filepath "../Downloads/train_pairs_with_siglip_embeddings_100k.parquet" \
+  --plot
+
+
 python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.version.cuda); print(torch.cuda.device_count())"
 
+python create_diff.py
 
-lr: 0.0001318315943640423 batch size: 1024 internal layer size: 1024 output_dim: 128 optimizer: adamw weight decay: 1.0625721497327492e-05	margin: 0.052073112484723905
+Final hyperparameters:
+{'margin': 0.0831, 'lr': 0.0001, 'batch_size': 1024, 'internal_layer_size': 512, 'output_dim': 128, 'optimizer': 'adam', 'weight_decay': 0.0001}
+
+Show you actually did something
+Work on setup for next part
+Would making loss cosine instead of euclidean based do anything
+Let connie know which dataset you are using
