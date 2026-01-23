@@ -26,7 +26,7 @@ class OptunaOptimizer(BaseOptimizer):
         super().__init__(model_type, model_name, device, log_dir)
         
     def objective(self, trial, training_filepath, test_filepath,
-                 mode, loss_type, medium_filepath=None, easy_filepath=None, epochs=5, validate_filepath=None, curriculum=None):
+                 mode, loss_type, epochs=5, validate_filepath=None):
         """
         Objective function for Optuna optimization.
         
@@ -82,11 +82,8 @@ class OptunaOptimizer(BaseOptimizer):
                 test_filepath=test_filepath,
                 mode=mode,
                 loss_type=loss_type,
-                medium_filepath=medium_filepath,
                 epochs=epochs,
-                easy_filepath=easy_filepath,
                 validate_filepath=validate_filepath,
-                curriculum=curriculum,
                 want_test=False
             )
             row = {
@@ -112,9 +109,9 @@ class OptunaOptimizer(BaseOptimizer):
             return 0.0
     
     def optimize(self, training_filepath, test_filepath,
-                mode="pair", loss_type="cosine", medium_filepath=None, easy_filepath=None,
+                mode="pair", loss_type="cosine",
                 epochs=5, n_trials=50, sampler="tpe", 
-                pruner="median", study_name=None, validate_filepath=None, curriculum=None):
+                pruner="median", study_name=None, validate_filepath=None):
         """
         Run Optuna optimization.
         
@@ -168,7 +165,7 @@ class OptunaOptimizer(BaseOptimizer):
         def objective_wrapper(trial):
             return self.objective(
                 trial, training_filepath, test_filepath,
-                mode, loss_type, medium_filepath, easy_filepath, epochs, validate_filepath, curriculum
+                mode, loss_type, epochs, validate_filepath
             )
         
         # Run optimization
@@ -183,9 +180,7 @@ class OptunaOptimizer(BaseOptimizer):
         print("[DEBUG] FINAL COMPARISON: Evaluating best model on test set after all Optuna trials...")
         print("="*60 + "\n")
         model_id = f"{self.model_type}_{mode}"
-        # Include curriculum in filename if specified
-        if curriculum:
-            model_id += f"_{curriculum}"
+
         best_model_path = os.path.join(self.log_dir, f'results/best_model_{model_id}.pt')
         best_hparams_path = os.path.join(self.log_dir, f'results/best_hparams_{model_id}.json')
         

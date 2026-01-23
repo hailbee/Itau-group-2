@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-
 class Trainer:
     def __init__(self, model, criterion, optimizer, device, model_type=None):
         self.model = model
@@ -169,20 +168,6 @@ class Trainer:
         accuracy_eval_every=1,           # evaluate every N epochs (e.g., 5 for faster)
         accuracy_max_train_batches=50,   # limit train batches for accuracy eval (None = full train)
         accuracy_max_val_batches=None,   # limit val batches for accuracy eval (None = full val)
-
-        # -------------------------
-        # Compatibility shim: accepted but ignored
-        # (so old call-sites won't crash)
-        # -------------------------
-        easy_loader=None,
-        medium_loader=None,
-        curriculum=None,
-        bandit_ema_alpha=0.3,
-        bandit_use_grid=True,
-        bandit_hard_grid=(0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30),
-        bandit_easy_grid=(0.00, 0.10),
-        bandit_hard_max=0.30,
-        **kwargs,
     ):
         train_loss_history = []
         val_loss_history = []

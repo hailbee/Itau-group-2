@@ -155,12 +155,9 @@ class BaseOptimizer:
         mode,
         loss_type,
         trial_number,
-        medium_filepath=None,
-        easy_filepath=None,
         epochs=5,
         validate_filepath=None,
         save_best_model=True,
-        curriculum=None,
         want_test=False
     ):
         import json
@@ -200,8 +197,6 @@ class BaseOptimizer:
                 f"_Margin={float(params['margin']):.3f}"
                 f"_Ep={epochs}"
             )
-            if curriculum:
-                string += f"_Curr={curriculum}"
 
             # Ensure output dir exists for plots
             os.makedirs("images", exist_ok=True)
@@ -215,24 +210,6 @@ class BaseOptimizer:
             if validate_filepath is not None:
                 val_df = pd.read_parquet(validate_filepath)
                 val_dataloader = self.create_dataloader(val_df, batch_size, mode, shuffle=False)
-
-            # --- CURRICULUM LOADERS (EASY / MEDIUM), IF PROVIDED ---
-            easy_loader = None
-            medium_loader = None
-
-            if easy_filepath:
-                easy_df = pd.read_parquet(easy_filepath)
-                easy_loader = self.create_dataloader(easy_df, batch_size, mode, shuffle=True)
-
-            if medium_filepath:
-                med_df = pd.read_parquet(medium_filepath)
-                medium_loader = self.create_dataloader(med_df, batch_size, mode, shuffle=True)
-
-            if curriculum and (easy_loader is None or medium_loader is None):
-                print(
-                    "[DEBUG] curriculum was set, but easy_loader/medium_loader not fully provided; "
-                    "curriculum may fallback to hard-only or staged behavior."
-                )
 
             # --- MODEL / OPT / LOSS ---
             model = self.create_siamese_model(mode, hidden_dim=hidden_dim, out_dim=out_dim).to(self.device)
@@ -249,7 +226,7 @@ class BaseOptimizer:
                 model_type=mode,
             )
 
-            # --- TRAIN (PASSES CURRICULUM + LOADERS) ---
+            # --- TRAIN (PASSES LOADERS) ---
             best_metrics = trainer.train(
                 dataloader=dataloader,
                 trial_number=trial_number,
@@ -279,7 +256,6 @@ class BaseOptimizer:
                 "margin": float(params["margin"]),
                 "mode": mode,
                 "loss_type": loss_type,
-                "curriculum": curriculum,
 
                 # losses (always present)
                 "best_train_loss": best_metrics.get("best_train_loss"),
@@ -302,8 +278,6 @@ class BaseOptimizer:
                 self.best_val_loss = val_loss
 
                 model_id = f"{self.model_type}_{mode}"
-                if curriculum:
-                    model_id += f"_{curriculum}"
 
                 torch.save(
                     model.state_dict(),

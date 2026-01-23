@@ -127,7 +127,7 @@ class UnifiedHyperparameterOptimizer:
         return new_params
     
     def optimize(self, method, training_filepath, test_filepath,
-                mode="pair", loss_type="cosine", medium_filepath=None, easy_filepath=None, validate_filepath=None, curriculum=None, **kwargs):
+                mode="pair", loss_type="cosine", validate_filepath=None, **kwargs):
         """
         Run hyperparameter optimization using the specified method.
         """
@@ -137,17 +137,17 @@ class UnifiedHyperparameterOptimizer:
             filtered = {k: kwargs[k] for k in allowed if k in kwargs}
             return self._run_optuna_optimization(
                 training_filepath, test_filepath,
-                mode, loss_type, medium_filepath, easy_filepath, validate_filepath=validate_filepath, curriculum=curriculum, **filtered
+                mode, loss_type, validate_filepath=validate_filepath, **filtered
             )
         else:
             raise ValueError(f"Unknown optimization method: {method}")
     
     def _run_optuna_optimization(self, training_filepath, test_filepath,
-                               mode, loss_type, medium_filepath, easy_filepath, validate_filepath=None, curriculum=None, **kwargs):
+                               mode, loss_type, validate_filepath=None, **kwargs):
         """Run Optuna optimization."""
         return self.optuna_optimizer.optimize(
             training_filepath, test_filepath,
-            mode, loss_type, medium_filepath, easy_filepath, validate_filepath=validate_filepath, curriculum=curriculum, **kwargs
+            mode, loss_type, validate_filepath=validate_filepath, **kwargs
         )
 
     def get_recommended_settings(self, mode, loss_type, dataset_size=None):
