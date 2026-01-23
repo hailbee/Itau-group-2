@@ -2,13 +2,12 @@
 
 from scripts.evaluation.evaluator import Evaluator
 import torch
+import torch.nn.functional as F
 import os
 import matplotlib.pyplot as plt
 
+import pandas as pd
 import numpy as np
-import random
-from torch.utils.data import DataLoader, Subset, ConcatDataset
-from utils.curriculum import get_curriculum_ratios
 
 
 class Trainer:
@@ -24,7 +23,7 @@ class Trainer:
         print(f"[DEBUG] Using fixed learning rate: {optimizer.param_groups[0]['lr']:.6f}")
 
     # -------------------------
-    # Epoch train/val
+    # Epoch train/val (LOSS ONLY, fast)
     # -------------------------
     def train_epoch(self, dataloader, mode="pair", grad_clip=1.0):
         self.model.train()
@@ -39,7 +38,6 @@ class Trainer:
             z1, z2 = self.model(x1, x2)
             loss = self.criterion(z1, z2, y)
 
-            # Guard against silent blowups
             if not torch.isfinite(loss):
                 raise ValueError(f"Non-finite loss detected: {loss.item()}")
 
@@ -50,7 +48,6 @@ class Trainer:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), grad_clip)
 
             self.optimizer.step()
-
             epoch_loss += loss.item()
 
             if i % 100 == 0:
@@ -88,90 +85,51 @@ class Trainer:
         return self.evaluator.evaluate(test_filepath, plot=plot, roc_png_path=roc_png_path)
 
     # -------------------------
-    # Mixing helper
+    # Accuracy evaluation helpers (uses cosine + Evaluator.compute_metrics)
     # -------------------------
-    def _make_loader_from_dataset(self, base_loader, dataset, shuffle=True):
-        collate_fn = getattr(base_loader, "collate_fn", None)
-        return DataLoader(
-            dataset,
-            batch_size=base_loader.batch_size,
-            shuffle=shuffle,
-            num_workers=getattr(base_loader, "num_workers", 0),
-            pin_memory=getattr(base_loader, "pin_memory", False),
-            collate_fn=collate_fn,
-        )
-
-    def _make_mixed_loader(self, base_loader, easy_loader, medium_loader, hard_loader, ratios, total_samples=None):
+    def _scores_from_loader(self, dataloader, max_batches=None):
         """
-        Build a ConcatDataset loader using ratios over easy/medium/hard.
-        total_samples controls the target dataset size per epoch.
-        If None, uses len(base_loader.dataset) as baseline.
+        Collects cosine similarity scores + labels from a dataloader yielding (x1, x2, y).
+        Returns a DataFrame with columns: label, similarity
         """
-        if total_samples is None:
-            total_samples = len(base_loader.dataset)
+        self.model.eval()
 
-        easy_n = int(ratios.get("easy", 0.0) * total_samples)
-        medium_n = int(ratios.get("medium", 0.0) * total_samples)
-        hard_n = int(ratios.get("hard", 0.0) * total_samples)
+        sims_all = []
+        y_all = []
 
-        # Clamp to dataset sizes
-        easy_n = min(easy_n, len(easy_loader.dataset)) if easy_loader is not None else 0
-        medium_n = min(medium_n, len(medium_loader.dataset)) if medium_loader is not None else 0
-        hard_n = min(hard_n, len(hard_loader.dataset)) if hard_loader is not None else 0
+        with torch.no_grad():
+            for i, batch in enumerate(dataloader):
+                if max_batches is not None and i >= int(max_batches):
+                    break
 
-        parts = []
-        if easy_n > 0 and easy_loader is not None:
-            idx = np.random.choice(len(easy_loader.dataset), easy_n, replace=False)
-            parts.append(Subset(easy_loader.dataset, idx))
-        if medium_n > 0 and medium_loader is not None:
-            idx = np.random.choice(len(medium_loader.dataset), medium_n, replace=False)
-            parts.append(Subset(medium_loader.dataset, idx))
-        if hard_n > 0 and hard_loader is not None:
-            idx = np.random.choice(len(hard_loader.dataset), hard_n, replace=False)
-            parts.append(Subset(hard_loader.dataset, idx))
+                x1, x2, y = batch
+                x1 = x1.to(self.device, non_blocking=True)
+                x2 = x2.to(self.device, non_blocking=True)
+                y = y.to(self.device, non_blocking=True)
 
-        if len(parts) == 0:
-            return base_loader, 0, 0, 0
+                z1, z2 = self.model(x1, x2)
 
-        mixed_dataset = ConcatDataset(parts)
-        mixed_loader = self._make_loader_from_dataset(base_loader, mixed_dataset, shuffle=True)
-        return mixed_loader, easy_n, medium_n, hard_n
+                # match eval behavior: normalize then cosine similarity
+                z1 = F.normalize(z1, dim=1)
+                z2 = F.normalize(z2, dim=1)
+                sims = F.cosine_similarity(z1, z2, dim=1)
 
-    # -------------------------
-    # Grid-arm builder
-    # -------------------------
-    def _build_grid_arms(
-        self,
-        hard_grid,
-        easy_grid,
-        hard_max=0.30,
-        name_prefix="G"
-    ):
-        """
-        Creates a dict of arms -> ratios from a grid of {easy, hard}.
-        medium = 1 - easy - hard
-        Invalid combos are skipped.
-        """
-        arms = {}
-        for e in easy_grid:
-            for h in hard_grid:
-                if h > hard_max:
-                    continue
-                m = 1.0 - e - h
-                if m < 0:
-                    continue
-                # keep some numeric stability / nice printing
-                e_r = float(round(e, 4))
-                m_r = float(round(m, 4))
-                h_r = float(round(h, 4))
-                arm_name = f"{name_prefix}_e{int(e_r*100):02d}_m{int(m_r*100):02d}_h{int(h_r*100):02d}"
-                arms[arm_name] = {"easy": e_r, "medium": m_r, "hard": h_r}
+                sims_all.append(sims.detach().cpu())
+                y_all.append(y.detach().cpu())
 
-        # Fallback if somehow empty
-        if len(arms) == 0:
-            arms[f"{name_prefix}_fallback"] = {"easy": 0.1, "medium": 0.8, "hard": 0.1}
+        if len(sims_all) == 0:
+            return pd.DataFrame({"label": [], "similarity": []})
 
-        return arms
+        similarities = torch.cat(sims_all, dim=0).numpy()
+        labels = torch.cat(y_all, dim=0).numpy().astype(int)
+
+        return pd.DataFrame({"label": labels, "similarity": similarities})
+
+    def _accuracy_at_threshold(self, results_df, threshold):
+        y_true = results_df["label"].astype(int).to_numpy()
+        y_scores = results_df["similarity"].astype(float).to_numpy()
+        y_pred = (y_scores >= float(threshold)).astype(int)
+        return float((y_pred == y_true).mean())
 
     # -------------------------
     # Main training loop
@@ -187,15 +145,10 @@ class Trainer:
         validate_filepath=None,       # kept for compatibility
         validate_dataloader=None,
 
-        # curriculum additions
-        easy_loader=None,
-        medium_loader=None,
-        curriculum=None,
-
         # optional test eval at end
         want_test=False,
 
-        # plotting
+        # plotting (loss)
         plot_losses=True,
 
         # stability knobs
@@ -204,28 +157,43 @@ class Trainer:
         # early stopping + saving
         early_stopping=True,
         patience=5,
-        min_epochs=10,
+        min_epochs=50,
         min_delta=1e-6,
         save_best=True,
         save_dir="saved_models",
 
-        # bandit smoothing
-        bandit_ema_alpha=0.3,
+        # -------------------------
+        # QUICK SWITCH (accuracy curves + Youden eval)
+        # -------------------------
+        plot_accuracy=False,             # <- set True to compute + plot acc curves (slower)
+        accuracy_eval_every=1,           # evaluate every N epochs (e.g., 5 for faster)
+        accuracy_max_train_batches=50,   # limit train batches for accuracy eval (None = full train)
+        accuracy_max_val_batches=None,   # limit val batches for accuracy eval (None = full val)
 
         # -------------------------
-        # NEW: grid-bandit knobs
+        # Compatibility shim: accepted but ignored
+        # (so old call-sites won't crash)
         # -------------------------
+        easy_loader=None,
+        medium_loader=None,
+        curriculum=None,
+        bandit_ema_alpha=0.3,
         bandit_use_grid=True,
         bandit_hard_grid=(0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30),
         bandit_easy_grid=(0.00, 0.10),
         bandit_hard_max=0.30,
+        **kwargs,
     ):
         train_loss_history = []
         val_loss_history = []
         best_epoch_loss = float("inf")
 
-        hard_loader = dataloader  # naming clarity
-        epoch_budget = len(dataloader.dataset)  # fixed budget per epoch
+        # accuracy histories (only used when plot_accuracy=True)
+        acc_epochs = []
+        train_acc_history = []
+        val_acc_history = []
+        youden_thr_history = []
+        val_auc_history = []
 
         # -------------------------
         # Early stopping state + checkpoint path
@@ -240,143 +208,17 @@ class Trainer:
                 f"best_model_by_val_trial_{trial_number}{string}.pt"
             )
 
-        # -------------------------
-        # Bandit-over-mixtures setup
-        # -------------------------
-        bandit_enabled = (curriculum == "bandit")
-        if bandit_enabled:
-            if validate_dataloader is None:
-                print("[WARN][Bandit] validate_dataloader is None -> no reward signal. Falling back to self.")
-                bandit_enabled = False
-                curriculum = "self"
-            if easy_loader is None or medium_loader is None:
-                print("[WARN][Bandit] Need easy_loader and medium_loader. Falling back to self.")
-                bandit_enabled = False
-                curriculum = "self"
-
-        # -------------------------
-        # Build bandit arms
-        # -------------------------
-        if bandit_enabled:
-            if bandit_use_grid:
-                mixture_arms = self._build_grid_arms(
-                    hard_grid=bandit_hard_grid,
-                    easy_grid=bandit_easy_grid,
-                    hard_max=bandit_hard_max,
-                    name_prefix="GRID"
-                )
-                print(f"[DEBUG][BanditMix] Using GRID arms: {len(mixture_arms)} total")
-            else:
-                # Original hand-picked arms (kept for compatibility)
-                mixture_arms = {
-                    "A_warm":   {"easy": 0.60, "medium": 0.40, "hard": 0.00},
-                    "B_main":   {"easy": 0.10, "medium": 0.80, "hard": 0.10},
-                    "D_medium": {"easy": 0.00, "medium": 1.00, "hard": 0.00},
-                    "E_mh15":   {"easy": 0.00, "medium": 0.85, "hard": 0.15},
-                    "F_mh5":    {"easy": 0.00, "medium": 0.95, "hard": 0.05},
-                }
-                print(f"[DEBUG][BanditMix] Using FIXED arms: {len(mixture_arms)} total")
-
-            rewards = {k: [] for k in mixture_arms.keys()}
-            pulls = {k: 0 for k in mixture_arms.keys()}
-            ema_val_loss_per_arm = {k: None for k in mixture_arms.keys()}
-            chosen_arm = None
-        else:
-            mixture_arms = None
-            rewards = None
-            pulls = None
-            ema_val_loss_per_arm = None
-            chosen_arm = None
-
         for epoch in range(epochs):
             # -------------------------
-            # Choose loader
+            # TRAIN (loss only)
             # -------------------------
-            if curriculum == "self" and easy_loader is not None and medium_loader is not None:
-                ratios = get_curriculum_ratios(epoch, epochs)
-                current_loader, easy_n, med_n, hard_n = self._make_mixed_loader(
-                    base_loader=dataloader,
-                    easy_loader=easy_loader,
-                    medium_loader=medium_loader,
-                    hard_loader=hard_loader,
-                    ratios=ratios,
-                    total_samples=epoch_budget
-                )
-                print(
-                    f"[DEBUG][Self] Epoch {epoch+1}: "
-                    f"easy={easy_n} (r={ratios.get('easy',0):.2f}), "
-                    f"medium={med_n} (r={ratios.get('medium',0):.2f}), "
-                    f"hard={hard_n} (r={ratios.get('hard',0):.2f})"
-                )
-
-            elif bandit_enabled:
-                reward_window = 5
-                epsilon = max(0.05, 0.20 * (1 - epoch / max(epochs, 1)))  # decay exploration
-
-                # warm-start: pull each arm once
-                untried = [k for k, c in pulls.items() if c == 0]
-                if len(untried) > 0:
-                    chosen_arm = random.choice(untried)
-                    print(f"[DEBUG][BanditMix] Epoch {epoch+1}: chosen='{chosen_arm}', eps={epsilon:.3f} (warm-start)")
-                else:
-                    avg_rewards = {
-                        k: (float(np.mean(v[-reward_window:])) if len(v) > 0 else -1e9)
-                        for k, v in rewards.items()
-                    }
-                    if random.random() < epsilon:
-                        chosen_arm = random.choice(list(mixture_arms.keys()))
-                    else:
-                        chosen_arm = max(avg_rewards, key=avg_rewards.get)
-
-                    # Print top-5 arms for visibility (grid can be large)
-                    top5 = sorted(avg_rewards.items(), key=lambda kv: kv[1], reverse=True)[:5]
-                    print(
-                        f"[DEBUG][BanditMix] Epoch {epoch+1}: chosen='{chosen_arm}', eps={epsilon:.3f}, "
-                        + "top5="
-                        + ", ".join([f"{k}:{v:.2e}" for k, v in top5])
-                    )
-
-                ratios = mixture_arms[chosen_arm]
-                current_loader, easy_n, med_n, hard_n = self._make_mixed_loader(
-                    base_loader=dataloader,
-                    easy_loader=easy_loader,
-                    medium_loader=medium_loader,
-                    hard_loader=hard_loader,
-                    ratios=ratios,
-                    total_samples=epoch_budget
-                )
-                print(
-                    f"[DEBUG][BanditMix] Epoch {epoch+1}: arm='{chosen_arm}' mix -> "
-                    f"easy={easy_n} (r={ratios['easy']:.2f}), "
-                    f"medium={med_n} (r={ratios['medium']:.2f}), "
-                    f"hard={hard_n} (r={ratios['hard']:.2f})"
-                )
-
-            else:
-                # Manual staged: 10% easy, 70% medium, 20% hard
-                easy_epochs = max(1, int(0.10 * epochs))
-                med_epochs = max(1, int(0.70 * epochs))
-
-                if epoch < easy_epochs and easy_loader is not None:
-                    current_loader = easy_loader
-                    print(f"[DEBUG][Manual] Epoch {epoch+1}: EASY")
-                elif epoch < easy_epochs + med_epochs and medium_loader is not None:
-                    current_loader = medium_loader
-                    print(f"[DEBUG][Manual] Epoch {epoch+1}: MEDIUM")
-                else:
-                    current_loader = dataloader
-                    print(f"[DEBUG][Manual] Epoch {epoch+1}: HARD")
-
-            # -------------------------
-            # TRAIN
-            # -------------------------
-            train_loss = self.train_epoch(current_loader, mode=mode, grad_clip=grad_clip)
+            train_loss = self.train_epoch(dataloader, mode=mode, grad_clip=grad_clip)
             train_loss_history.append(train_loss)
             best_epoch_loss = min(best_epoch_loss, train_loss)
             print(f"Epoch {epoch+1} | Train Loss: {train_loss:.6f}")
 
             # -------------------------
-            # VALIDATE
+            # VALIDATE (loss only)
             # -------------------------
             val_loss = self.validate_epoch(validate_dataloader)
             if val_loss is not None:
@@ -407,21 +249,46 @@ class Trainer:
                     break
 
             # -------------------------
-            # BANDIT reward update (EMA-smoothed)
+            # OPTIONAL: Accuracy/ROC tracking (slower)
+            # Uses Youden threshold from VAL each time,
+            # then applies that threshold to TRAIN for a fair comparison.
             # -------------------------
-            if bandit_enabled and chosen_arm is not None and val_loss is not None:
-                old_ema = ema_val_loss_per_arm[chosen_arm]
-                new_ema = val_loss if old_ema is None else (
-                    bandit_ema_alpha * val_loss + (1 - bandit_ema_alpha) * old_ema
-                )
+            if (
+                plot_accuracy
+                and validate_dataloader is not None
+                and (epoch + 1) % int(max(1, accuracy_eval_every)) == 0
+            ):
+                # VAL: compute Youden threshold + acc + auc using existing evaluator logic
+                val_df = self._scores_from_loader(validate_dataloader, max_batches=accuracy_max_val_batches)
+                if len(val_df) > 0:
+                    val_metrics = self.evaluator.compute_metrics(val_df, plot=False)
+                    youden_thr = val_metrics["youden_threshold"]
+                    val_acc = val_metrics["accuracy"]
+                    val_auc = val_metrics["roc_auc"]
 
-                reward = 0.0 if old_ema is None else float(old_ema - new_ema)  # positive = improved
-                rewards[chosen_arm].append(reward)
-                ema_val_loss_per_arm[chosen_arm] = new_ema
-                pulls[chosen_arm] += 1
+                    # TRAIN: compute acc using the SAME youden threshold (from val)
+                    train_df = self._scores_from_loader(dataloader, max_batches=accuracy_max_train_batches)
+                    train_acc = self._accuracy_at_threshold(train_df, youden_thr) if len(train_df) > 0 else None
+
+                    acc_epochs.append(epoch + 1)
+                    train_acc_history.append(train_acc)
+                    val_acc_history.append(val_acc)
+                    youden_thr_history.append(youden_thr)
+                    val_auc_history.append(val_auc)
+
+                    if train_acc is not None:
+                        print(
+                            f"[ACC] Epoch {epoch+1} | Train Acc (Youden@val): {train_acc:.4f} | "
+                            f"Val Acc (Youden): {val_acc:.4f} | Thr: {youden_thr:.4f} | AUC: {val_auc:.4f}"
+                        )
+                    else:
+                        print(
+                            f"[ACC] Epoch {epoch+1} | Val Acc (Youden): {val_acc:.4f} | "
+                            f"Thr: {youden_thr:.4f} | AUC: {val_auc:.4f}"
+                        )
 
         # -------------------------
-        # Restore best checkpoint weights into memory (important!)
+        # Restore best checkpoint weights into memory
         # -------------------------
         if save_best and best_model_path is not None and os.path.exists(best_model_path):
             ckpt = torch.load(best_model_path, map_location=self.device)
@@ -452,6 +319,25 @@ class Trainer:
             print(f"[DEBUG] Saved loss curve to {plot_path}")
 
         # -------------------------
+        # Plot accuracies (optional)
+        # -------------------------
+        if plot_accuracy and len(acc_epochs) > 0:
+            os.makedirs("images", exist_ok=True)
+            acc_plot_path = f"images/acc_curve_trial_{trial_number}{string}.png"
+            plt.figure()
+            if any(v is not None for v in train_acc_history):
+                plt.plot(acc_epochs, train_acc_history, label="Train Acc (Youden@val)")
+            plt.plot(acc_epochs, val_acc_history, label="Val Acc (Youden)")
+            plt.xlabel("Epoch")
+            plt.ylabel("Accuracy")
+            plt.title("Training / Validation Accuracy")
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(acc_plot_path)
+            plt.close()
+            print(f"[DEBUG] Saved accuracy curve to {acc_plot_path}")
+
+        # -------------------------
         # Optional test eval at end
         # -------------------------
         if want_test and test_filepath is not None:
@@ -467,4 +353,10 @@ class Trainer:
             "final_val_loss": (val_loss_history[-1] if val_loss_history else None),
             "best_val_loss": (best_val_loss if best_val_loss < float("inf") else None),
             "best_model_path": best_model_path,
+
+            # Optional accuracy outputs (only populated if plot_accuracy=True)
+            "final_train_acc_youden_at_val": (train_acc_history[-1] if train_acc_history else None),
+            "final_val_acc_youden": (val_acc_history[-1] if val_acc_history else None),
+            "final_val_youden_threshold": (youden_thr_history[-1] if youden_thr_history else None),
+            "final_val_roc_auc": (val_auc_history[-1] if val_auc_history else None),
         }

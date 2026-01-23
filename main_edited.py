@@ -222,10 +222,7 @@ def main():
                 mode="pair",
                 epochs=args.epochs,
                 validate_dataloader=val_loader,
-                curriculum=args.curriculum,
-                easy_loader=easy_loader,
-                medium_loader=medium_loader,
-                want_test=False,                # IMPORTANT: don't eval test every run unless you want it
+                want_test=False                # IMPORTANT: don't eval test every run unless you want it
             )
 
             print("Training done. Returned metrics:", metrics)

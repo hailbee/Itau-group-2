@@ -4,8 +4,7 @@ import torch.nn.functional as F
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.metrics import roc_curve, auc, accuracy_score
-
+from sklearn.metrics import roc_curve, auc, accuracy_score, confusion_matrix
 
 class Evaluator:
     """
@@ -32,53 +31,131 @@ class Evaluator:
         plt.close()
         print(f"[DEBUG] Saved ROC curve to {save_path}")
 
-    def compute_metrics(self, results_df, plot=False, roc_png_path=None):
-        y_true = results_df["label"].astype(int).to_numpy()
-        y_scores = results_df["similarity"].astype(float).to_numpy()
+        def compute_metrics(
+            self,
+            results_df,
+            plot=False,
+            roc_png_path=None,
+            acc_curve_png_path=None,
+            cm_png_path=None,
+            title_prefix="Test",
+        ):
+            y_true = results_df["label"].astype(int).to_numpy()
+            y_scores = results_df["similarity"].astype(float).to_numpy()
 
-        fpr, tpr, thresholds = roc_curve(y_true, y_scores)
-        roc_auc = float(auc(fpr, tpr))
+            fpr, tpr, thresholds = roc_curve(y_true, y_scores)
+            roc_auc = float(auc(fpr, tpr))
 
-        # -------------------------------
-        # Youden threshold
-        # -------------------------------
-        youden_j = tpr - fpr
-        best_idx = np.argmax(youden_j)
-        youden_threshold = thresholds[best_idx]
+            # -------------------------------
+            # Youden threshold
+            # -------------------------------
+            youden_j = tpr - fpr
+            youden_best_idx = int(np.argmax(youden_j))
+            youden_threshold = float(thresholds[youden_best_idx])
 
-        # Predictions using Youden threshold
-        y_pred = (y_scores >= youden_threshold).astype(int)
+            y_pred_youden = (y_scores >= youden_threshold).astype(int)
+            accuracy_youden = float(accuracy_score(y_true, y_pred_youden))
+            cm_youden = confusion_matrix(y_true, y_pred_youden)
 
-        accuracy = accuracy_score(y_true, y_pred)
+            # -------------------------------
+            # Best-accuracy threshold (NOT necessarily Youden)
+            # -------------------------------
+            # roc_curve can include inf as a threshold; ignore non-finite thresholds
+            finite_mask = np.isfinite(thresholds)
+            finite_thresholds = thresholds[finite_mask]
 
-        print(f"ROC AUC: {roc_auc:.4f}")
-        print(f"Youden threshold: {youden_threshold:.4f}")
-        print(f"Accuracy (Youden): {accuracy:.4f}")
+            # Compute accuracy at each threshold
+            accs = []
+            for thr in finite_thresholds:
+                y_pred = (y_scores >= thr).astype(int)
+                accs.append(accuracy_score(y_true, y_pred))
+            accs = np.asarray(accs, dtype=float)
 
-        if plot:
-            # Default save path if none provided
-            if roc_png_path is None:
-                os.makedirs("images", exist_ok=True)
-                roc_png_path = "images/roc_curve.png"
+            best_acc_idx = int(np.argmax(accs))
+            best_acc_threshold = float(finite_thresholds[best_acc_idx])
+            best_accuracy = float(accs[best_acc_idx])
 
-            self._save_roc_plot(
-                fpr=fpr,
-                tpr=tpr,
-                roc_auc=roc_auc,
-                save_path=roc_png_path,
-                title="ROC Curve"
-            )
-        
-        youden_j = tpr - fpr
-        best_idx = np.argmax(youden_j)
-        best_youden_j = youden_j[best_idx]
+            # -------------------------------
+            # Prints
+            # -------------------------------
+            print(f"ROC AUC: {roc_auc:.4f}")
+            print(f"Youden threshold: {youden_threshold:.4f}")
+            print(f"Accuracy (Youden): {accuracy_youden:.4f}")
+            print(f"Best-Acc threshold: {best_acc_threshold:.4f}")
+            print(f"Best Accuracy: {best_accuracy:.4f}")
 
-        return {
-            "roc_auc": roc_auc,
-            "youden_j": float(best_youden_j),
-            "youden_threshold": float(youden_threshold),
-            "accuracy": float(accuracy),
-    }
+            # -------------------------------
+            # Plots
+            # -------------------------------
+            if plot:
+                # ROC plot (existing behavior)
+                if roc_png_path is None:
+                    os.makedirs("images", exist_ok=True)
+                    roc_png_path = "images/roc_curve.png"
+                self._save_roc_plot(
+                    fpr=fpr, tpr=tpr, roc_auc=roc_auc,
+                    save_path=roc_png_path,
+                    title=f"{title_prefix} ROC Curve"
+                )
+
+                # Accuracy vs threshold plot (shows best and Youden)
+                if acc_curve_png_path is None:
+                    os.makedirs("images", exist_ok=True)
+                    acc_curve_png_path = "images/accuracy_vs_threshold.png"
+
+                os.makedirs(os.path.dirname(acc_curve_png_path) or ".", exist_ok=True)
+                plt.figure()
+                plt.plot(finite_thresholds, accs, label="Accuracy")
+                plt.axvline(youden_threshold, linestyle="--", label=f"Youden thr={youden_threshold:.4f}")
+                plt.axvline(best_acc_threshold, linestyle="--", label=f"Best-Acc thr={best_acc_threshold:.4f}")
+                plt.xlabel("Threshold (cosine similarity)")
+                plt.ylabel("Accuracy")
+                plt.title(f"{title_prefix} Accuracy vs Threshold")
+                plt.legend()
+                plt.tight_layout()
+                plt.savefig(acc_curve_png_path)
+                plt.close()
+                print(f"[DEBUG] Saved accuracy-vs-threshold curve to {acc_curve_png_path}")
+
+                # Confusion matrix plot (at Youden threshold)
+                if cm_png_path is None:
+                    os.makedirs("images", exist_ok=True)
+                    cm_png_path = "images/confusion_matrix_youden.png"
+
+                os.makedirs(os.path.dirname(cm_png_path) or ".", exist_ok=True)
+                plt.figure()
+                plt.imshow(cm_youden, interpolation="nearest")
+                plt.title(f"{title_prefix} Confusion Matrix (Youden)")
+                plt.colorbar()
+                tick_marks = np.arange(2)
+                plt.xticks(tick_marks, ["Pred 0", "Pred 1"])
+                plt.yticks(tick_marks, ["True 0", "True 1"])
+
+                for i in range(2):
+                    for j in range(2):
+                        plt.text(j, i, str(cm_youden[i, j]), ha="center", va="center")
+
+                plt.ylabel("True label")
+                plt.xlabel("Predicted label")
+                plt.tight_layout()
+                plt.savefig(cm_png_path)
+                plt.close()
+                print(f"[DEBUG] Saved confusion matrix to {cm_png_path}")
+
+            # Youden J best value
+            best_youden_j = float(youden_j[youden_best_idx])
+
+            return {
+                "roc_auc": roc_auc,
+
+                "youden_j": best_youden_j,
+                "youden_threshold": youden_threshold,
+                "accuracy_youden": accuracy_youden,
+                "confusion_matrix_youden": cm_youden.tolist(),
+
+                "best_accuracy": best_accuracy,
+                "best_accuracy_threshold": best_acc_threshold,
+            }
 
     def evaluate(self, test_filepath, plot=False, max_rows=None, roc_png_path=None):
         return self.test_pairs(

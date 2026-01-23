@@ -259,9 +259,8 @@ class BaseOptimizer:
                 epochs=epochs,
                 validate_filepath=validate_filepath,
                 validate_dataloader=val_dataloader,
-                easy_loader=easy_loader,
-                medium_loader=medium_loader,
-                curriculum=curriculum,
+                save_best=False,
+                plot_losses=False
             )
 
             if want_test and test_filepath is not None:
