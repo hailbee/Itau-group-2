@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import Dataset
 import numpy as np
-
+import pandas as pd
 
 class EmbeddingPairDataset(Dataset):
     """
@@ -29,30 +29,6 @@ class EmbeddingPairDataset(Dataset):
         return self.fake_emb[idx], self.real_emb[idx], self.labels[idx]
 
 
-class TextPairDataset(Dataset):
-    """
-    Kept for compatibility (raw text pairs).
-    """
-    def __init__(self, dataframe):
-        if 'fraudulent_name' in dataframe.columns and 'real_name' in dataframe.columns:
-            self.name1 = dataframe['fraudulent_name'].tolist()
-            self.name2 = dataframe['real_name'].tolist()
-        elif 'name1' in dataframe.columns and 'name2' in dataframe.columns:
-            self.name1 = dataframe['name1'].tolist()
-            self.name2 = dataframe['name2'].tolist()
-        else:
-            raise ValueError("DataFrame must have either (fraudulent_name, real_name) or (name1, name2) columns")
-        if 'label' not in dataframe.columns:
-            raise ValueError("DataFrame must have a 'label' column")
-        self.label = dataframe['label'].tolist()
-
-    def __len__(self):
-        return len(self.name1)
-
-    def __getitem__(self, idx):
-        return self.name1[idx], self.name2[idx], torch.tensor(self.label[idx], dtype=torch.float32)
-
-
 class Text2ImgDistillDataset(Dataset):
     """
     CASE 2:
@@ -61,7 +37,7 @@ class Text2ImgDistillDataset(Dataset):
     Expected layout by COLUMN POSITION:
       0: fraudulent_name
       1: real_name
-      2: label  (optional for distill loss, used for ROC/AUC monitoring)
+      2: label  (optional for monitoring)
 
       3..770:     fraud_img_spoofaware_0..767    (teacher target)
       771..1538:  real_img_spoofaware_0..767     (teacher target)
@@ -74,9 +50,12 @@ class Text2ImgDistillDataset(Dataset):
                  real_img_slice=slice(771, 1539),
                  fraud_txt_slice=slice(1539, 2307),
                  real_txt_slice=slice(2307, 3075),
-                 label_col=2):
+                 label_col=2,
+                 real_name_col="real_name"):
+        # labels (optional, but you already use them)
         self.labels = torch.tensor(df.iloc[:, int(label_col)].values, dtype=torch.float32)
 
+        # teacher targets
         self.fraud_teacher = torch.from_numpy(
             df.iloc[:, fraud_img_slice].to_numpy(dtype=np.float32, copy=False)
         )
@@ -84,12 +63,20 @@ class Text2ImgDistillDataset(Dataset):
             df.iloc[:, real_img_slice].to_numpy(dtype=np.float32, copy=False)
         )
 
+        # student inputs
         self.fraud_txt = torch.from_numpy(
             df.iloc[:, fraud_txt_slice].to_numpy(dtype=np.float32, copy=False)
         )
         self.real_txt = torch.from_numpy(
             df.iloc[:, real_txt_slice].to_numpy(dtype=np.float32, copy=False)
         )
+
+        # --- NEW: brand_id for multi-positive contrastive loss ---
+        if real_name_col not in df.columns:
+            raise ValueError(f"Text2ImgDistillDataset needs column '{real_name_col}' to build brand_id.")
+        # factorize gives stable int IDs for identical strings
+        brand_ids, _ = pd.factorize(df[real_name_col].astype(str), sort=False)
+        self.brand_id = torch.tensor(brand_ids.astype(np.int64), dtype=torch.long)
 
     def __len__(self):
         return self.labels.shape[0]
@@ -101,4 +88,5 @@ class Text2ImgDistillDataset(Dataset):
             self.fraud_teacher[idx],
             self.real_teacher[idx],
             self.labels[idx],
+            self.brand_id[idx],   # <-- NEW
         )

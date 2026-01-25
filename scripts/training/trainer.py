@@ -44,17 +44,16 @@ class Trainer:
                 loss = self.criterion(z1, z2, y)
 
             elif mode == "text2img":
-                fraud_txt, real_txt, fraud_teacher, real_teacher, _y = batch
+                fraud_txt, real_txt, fraud_teacher, real_teacher, y, brand_id = batch
+                brand_id = brand_id.to(self.device, non_blocking=True)
                 fraud_txt = fraud_txt.to(self.device, non_blocking=True)
                 real_txt = real_txt.to(self.device, non_blocking=True)
                 fraud_teacher = fraud_teacher.to(self.device, non_blocking=True)
                 real_teacher = real_teacher.to(self.device, non_blocking=True)
 
                 pred_fraud, pred_real = self.model(fraud_txt, real_txt)
-                loss = 0.5 * (
-                    self.criterion(pred_fraud, fraud_teacher) +
-                    self.criterion(pred_real, real_teacher)
-                )
+                loss = self.criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, brand_id)
+
             else:
                 raise ValueError(f"Unsupported mode: {mode}")
 
@@ -95,17 +94,16 @@ class Trainer:
                     loss = self.criterion(z1, z2, y)
 
                 elif mode == "text2img":
-                    fraud_txt, real_txt, fraud_teacher, real_teacher, _y = batch
+                    fraud_txt, real_txt, fraud_teacher, real_teacher, y, brand_id = batch
+                    brand_id = brand_id.to(self.device, non_blocking=True)
                     fraud_txt = fraud_txt.to(self.device, non_blocking=True)
                     real_txt = real_txt.to(self.device, non_blocking=True)
                     fraud_teacher = fraud_teacher.to(self.device, non_blocking=True)
                     real_teacher = real_teacher.to(self.device, non_blocking=True)
 
                     pred_fraud, pred_real = self.model(fraud_txt, real_txt)
-                    loss = 0.5 * (
-                        self.criterion(pred_fraud, fraud_teacher) +
-                        self.criterion(pred_real, real_teacher)
-                    )
+                    loss = self.criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, brand_id)
+
                 else:
                     raise ValueError(f"Unsupported mode: {mode}")
 

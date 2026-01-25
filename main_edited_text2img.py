@@ -11,8 +11,7 @@ from scripts.evaluation.evaluator2 import Evaluator2, EvalConfig
 
 from model_utils.models.learning.siamese import SiameseEmbeddingModel
 from model_utils.utils.data import Text2ImgDistillDataset
-from model_utils.loss.distill_losses import CosineDistillLoss
-
+from model_utils.loss.distill_losses import MultiPositiveInfoNCEDistillLoss
 
 # -------------------------
 # Utils
@@ -175,7 +174,7 @@ def main():
             out_dim=768,
         ).to(device)
 
-        criterion = CosineDistillLoss()
+        criterion = MultiPositiveInfoNCEDistillLoss(alpha=1.0, beta=0.05, temperature=0.1)
         optimizer = build_optimizer(args.optimizer, model, args.lr, args.weight_decay)
 
         trainer = Trainer(
