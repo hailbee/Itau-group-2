@@ -8,10 +8,10 @@ python3 main_edited.py \
   --output_dim 128 \
   --plot
 
-Index of embedding_0: 3
-Index of embedding_767: 770
-Index of real_embedding_0: 771
-Index of real_embedding_767: 1538
+fraud image: 3..770
+real image: 771..1538
+fraud text: 1539..2306
+real text: 2307..3074
 
 salloc -p mit_preemptable \
   --gres=gpu:h200:1 \
@@ -79,7 +79,6 @@ python3 scripts/evaluation/baseline_eval.py \
   --test_filepath "../Downloads/train_pairs_with_siglip_embeddings_100k.parquet" \
   --plot
 
-
 python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.version.cuda); print(torch.cuda.device_count())"
 
 python create_diff.py
@@ -87,7 +86,31 @@ python create_diff.py
 Final hyperparameters:
 {'margin': 0.0831, 'lr': 0.0001, 'batch_size': 1024, 'internal_layer_size': 512, 'output_dim': 128, 'optimizer': 'adam', 'weight_decay': 0.0001}
 
-Show you actually did something
-Work on setup for next part
-Would making loss cosine instead of euclidean based do anything
-Let connie know which dataset you are using
+so in my original code i have fraud and real text and a label saying 1 if actual spoof attempt or 0 if not. i turned these into image encodings using siglip. i then used a siamese mlp model and contrastive pairwise loss to get "better" embeddings that are "spoof aware" because spoofs are closer, non-spoofs are farther. now the next goal is to turn the fraud and real text into the siglip text embeddings and then learn a space where the text embeddings are mapped to image embeddings because although image embeddings have more rich information, they are also more expensive to compute so essentially i want to "translate" the information.
+
+main_edited, optuna, base_optimizer, unified optimizer, pair_losses, data, trainer, evaluator, siamese
+
+Track two things during experiments:
+Alignment: mean cosine(student(s), teacher(s))
+Spoof pair ROC-AUC: cosine(student(fraud), student(real)) vs label
+If alignment improves but ROC-AUC drops, it usually means either: the student is matching teacher globally but distorting pair geometry relevant to your task, or your teacher spoof-aware space is doing something that your text embedding can’t fully predict At that point you’d consider (optional) geometry-preserving distillation — but you don’t need to jump there yet.
+
+Figure out getting VATE output
+If “go from one space to the other” means preserve neighborhoods / similarity structure, pointwise cosine loss can sometimes be “correct on average” but slightly off on local structure.
+A really strong improvement (with zero extra trainable parameters) is to add relational distillation
+
+During the file creation process, keep the columns and just add in the columns for text embeddings afterwards (to avoid keeping 2 of everything)
+
+python main_edited_text2img.py \
+  --mode train --optuna True \
+  --training_filepath '../train_pairs_with_img_and_txt_embs.parquet' \
+  --validate_filepath '../validate_pairs_with_img_and_txt_embs.parquet' \
+  --test_filepath '../test_pairs_with_img_and_txt_embs.parquet' \
+  --epochs 5 --n_trials 2
+
+python main_edited_text2img.py \
+  --mode train --optuna False \
+  --training_filepath '../train_pairs_with_img_and_txt_embs.parquet' \
+  --validate_filepath '../validate_pairs_with_img_and_txt_embs.parquet' \
+  --test_filepath '../test_pairs_with_img_and_txt_embs.parquet' \
+  --epochs 50 --batch_size 64 --lr 4.3284502212938785e-05 --internal_layer_size 256 --optimizer adam --weight_decay 3.5113563139704077e-06

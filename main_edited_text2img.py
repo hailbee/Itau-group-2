@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 
 from scripts.training.trainer import Trainer
 from scripts.optimization.unified_optimizer import UnifiedHyperparameterOptimizer
+from scripts.evaluation.evaluator2 import Evaluator2, EvalConfig
 
 from model_utils.models.learning.siamese import SiameseEmbeddingModel
 from model_utils.utils.data import Text2ImgDistillDataset
@@ -63,7 +64,7 @@ def main():
     # saved model eval
     parser.add_argument("--model_path", type=str, default=None)
 
-    # embedding slices (your known layout)
+    # embedding slices
     parser.add_argument("--fake_start", type=int, default=3)
     parser.add_argument("--fake_end", type=int, default=771)
     parser.add_argument("--real_start", type=int, default=771)
@@ -74,19 +75,13 @@ def main():
     parser.add_argument("--real_text_start", type=int, default=2307)
     parser.add_argument("--real_text_end", type=int, default=3075)
 
-    # training hyperparams (single-run)
+    # training hyperparams
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--internal_layer_size", type=int, default=512)
-    parser.add_argument(
-        "--optimizer",
-        type=str,
-        default="adamw",
-        choices=["adam", "adamw", "sgd"],
-        help="Optimizer for single-run mode (ignored when --optuna True)",
-    )
+    parser.add_argument("--optimizer", type=str, default="adamw", choices=["adam", "adamw", "sgd"])
 
     # optuna
     parser.add_argument("--n_trials", type=int, default=50)
@@ -98,7 +93,6 @@ def main():
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--save_dir", type=str, default="saved_models")
     parser.add_argument("--log_dir", type=str, default="optimization_results")
-    parser.add_argument("--plot_accuracy", type=str, choices=["True", "False"], default="False")
 
     args = parser.parse_args()
 
@@ -150,11 +144,11 @@ def main():
             real_txt_slice=slice(args.real_text_start, args.real_text_end),
             label_col=2,
         )
+
         train_loader = DataLoader(
             train_ds,
             batch_size=args.batch_size,
             shuffle=True,
-            num_workers=0,
             pin_memory=(device.type == "cuda"),
         )
 
@@ -172,7 +166,6 @@ def main():
                 val_ds,
                 batch_size=args.batch_size,
                 shuffle=False,
-                num_workers=0,
                 pin_memory=(device.type == "cuda"),
             )
 
@@ -183,9 +176,7 @@ def main():
         ).to(device)
 
         criterion = CosineDistillLoss()
-        optimizer = build_optimizer(
-            args.optimizer, model, lr=args.lr, weight_decay=args.weight_decay
-        )
+        optimizer = build_optimizer(args.optimizer, model, args.lr, args.weight_decay)
 
         trainer = Trainer(
             model,
@@ -195,32 +186,46 @@ def main():
             model_type="text2img",
         )
 
-        run_string = (
-            f"_text2img_lr{args.lr:.2e}"
-            f"_bs{args.batch_size}"
-            f"_h{args.internal_layer_size}"
-            f"_opt{args.optimizer}"
-            f"_ep{args.epochs}"
-        )
-
-        metrics = trainer.train(
+        trainer.train(
             dataloader=train_loader,
             trial_number=0,
             test_filepath=args.test_filepath,
-            string=run_string,
+            string="_text2img",
             mode="text2img",
             epochs=args.epochs,
             validate_dataloader=val_loader,
             plot_losses=True,
-            plot_accuracy=(args.plot_accuracy == "True"),
+            plot_accuracy=False,
             save_best=True,
             save_dir=args.save_dir,
             early_stopping=False,
             min_epochs=1,
         )
 
-        print("[INFO] Training finished")
-        print(metrics)
+        # -------- FINAL TEST EVAL (CORRECT & FAST ENOUGH) --------
+        print("\n[INFO] Running final test evaluation...")
+
+        evaluator = Evaluator2(
+            model,
+            EvalConfig(
+                batch_size=1024,
+                fraud_txt_slice=(args.fraud_text_start, args.fraud_text_end),
+                real_txt_slice=(args.real_text_start, args.real_text_end),
+            ),
+        )
+        
+        test_metrics = evaluator.evaluate(args.test_filepath)
+        
+        print("\n[INFO] Final test metrics:")
+        
+        print("Alignment metrics:")
+        for k, v in test_metrics["alignment"].items():
+            print(f"  {k}: {v}")
+        
+        print("\nRetrieval metrics:")
+        for k, v in test_metrics["retrieval"].items():
+            print(f"  {k}: {v}")
+
         return
 
     # -------------------------
@@ -242,27 +247,30 @@ def main():
         model.load_state_dict(state)
         model.eval()
 
-        dummy_opt = torch.optim.AdamW(model.parameters(), lr=1e-4)
-        trainer = Trainer(
+        evaluator = Evaluator2(
             model,
-            CosineDistillLoss(),
-            dummy_opt,
-            device,
-            model_type="text2img",
+            EvalConfig(
+                batch_size=1024,
+                fraud_txt_slice=(args.fraud_text_start, args.fraud_text_end),
+                real_txt_slice=(args.real_text_start, args.real_text_end),
+            ),
         )
 
-        _, metrics = trainer.evaluate(
-            args.test_filepath,
-            plot=True,
-            roc_png_path="images/text2img_roc.png",
-            cm_png_path="images/text2img_cm.png",
-        )
+        print("\n[INFO] Running final test evaluation...")
+        
+        test_metrics = evaluator.evaluate(args.test_filepath)
+        
+        print("\n[INFO] Final test metrics:")
+        
+        print("Alignment metrics:")
+        for k, v in test_metrics["alignment"].items():
+            print(f"  {k}: {v}")
+        
+        print("\nRetrieval metrics:")
+        for k, v in test_metrics["retrieval"].items():
+            print(f"  {k}: {v}")
 
-        print("[INFO] Evaluation metrics:")
-        print(metrics)
         return
-
-    raise ValueError(f"Unknown mode: {args.mode}")
 
 
 if __name__ == "__main__":
