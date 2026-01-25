@@ -6,16 +6,15 @@ from datetime import datetime
 
 from scripts.training.trainer import Trainer
 from model_utils.models.learning.siamese import SiameseEmbeddingModel
-from model_utils.utils.data import EmbeddingPairDataset
-from scripts.evaluation.evaluator import Evaluator
+from model_utils.utils.data import EmbeddingPairDataset, Text2ImgDistillDataset
 
-# ============================================================
-# BaseOptimizer (PRECOMPUTED EMBEDDINGS VERSION)
-# ============================================================
 
 class BaseOptimizer:
     """
     Hyperparameter optimization using PRECOMPUTED EMBEDDINGS.
+    Supports:
+      - mode="pair"
+      - mode="text2img" (case 2 distillation; output_dim fixed to 768)
     """
 
     def __init__(
@@ -25,127 +24,94 @@ class BaseOptimizer:
         device=None,
         log_dir="optimization_results",
         embedding_dim=768,
+
         fake_start=3,
         fake_end=771,
         real_start=771,
         real_end=1539,
+
+        fraud_text_start=1539,
+        fraud_text_end=2307,
+        real_text_start=2307,
+        real_text_end=3075,
     ):
         self.model_type = model_type
         self.model_name = model_name
         self.device = device or torch.device(
             "cuda" if torch.cuda.is_available()
-            else "mps" if torch.backends.mps.is_available()
+            else "mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
             else "cpu"
         )
         self.log_dir = log_dir
+        self.embedding_dim = int(embedding_dim)
 
-        # embedding info
-        self.embedding_dim = embedding_dim
-        self.fake_slice = slice(fake_start, fake_end)
-        self.real_slice = slice(real_start, real_end)
+        self.fake_slice = slice(int(fake_start), int(fake_end))
+        self.real_slice = slice(int(real_start), int(real_end))
+        self.fraud_text_slice = slice(int(fraud_text_start), int(fraud_text_end))
+        self.real_text_slice = slice(int(real_text_start), int(real_text_end))
 
-        self.results = []
         self.best_val_loss = float("inf")
 
-        if "/content" in self.log_dir:
-            self.log_dir = "optimization_results"
         os.makedirs(self.log_dir, exist_ok=True)
+        os.makedirs(os.path.join(self.log_dir, "results"), exist_ok=True)
+        os.makedirs("images", exist_ok=True)
 
         print(f"[INFO] Using precomputed embeddings (dim={self.embedding_dim})")
+        print(f"[INFO] fake_slice={self.fake_slice}, real_slice={self.real_slice}")
+        print(f"[INFO] fraud_text_slice={self.fraud_text_slice}, real_text_slice={self.real_text_slice}")
 
-    # ------------------------------------------------------------
-    # MODEL CREATION
-    # ------------------------------------------------------------
+    def create_siamese_model(self, mode, hidden_dim=512, out_dim=None):
+        hidden_dim = int(hidden_dim)
 
-    def create_siamese_model(self, mode, hidden_dim=512, out_dim=128):
-        """
-        Create Siamese model where hidden_dim and out_dim can be tuned independently.
-        """
         if mode == "pair":
-            return SiameseEmbeddingModel(
-                embedding_dim=self.embedding_dim,  # 768
-                hidden_dim=hidden_dim,             # internal layer size
-                out_dim=out_dim                    # output projection dim
-            )
+            out_dim = int(out_dim if out_dim is not None else 128)
+            return SiameseEmbeddingModel(embedding_dim=self.embedding_dim, hidden_dim=hidden_dim, out_dim=out_dim)
+
+        if mode == "text2img":
+            out_dim = int(out_dim if out_dim is not None else self.embedding_dim)
+            if out_dim != self.embedding_dim:
+                raise ValueError(f"text2img requires out_dim == {self.embedding_dim}, got {out_dim}")
+            return SiameseEmbeddingModel(embedding_dim=self.embedding_dim, hidden_dim=hidden_dim, out_dim=out_dim)
+
         raise ValueError(f"Unsupported mode: {mode}")
 
-    # ------------------------------------------------------------
-    # DATA
-    # ------------------------------------------------------------
-
     def create_dataloader(self, dataframe, batch_size, mode, shuffle):
-        if mode != "pair":
-            raise ValueError("Only pair mode supported with embeddings")
-
-        dataset = EmbeddingPairDataset(dataframe)
-
         from torch.utils.data import DataLoader
+
+        batch_size = int(batch_size)
+
+        if mode == "pair":
+            dataset = EmbeddingPairDataset(dataframe, fraud_slice=self.fake_slice, real_slice=self.real_slice, label_col=2)
+        elif mode == "text2img":
+            dataset = Text2ImgDistillDataset(
+                dataframe,
+                fraud_img_slice=self.fake_slice,
+                real_img_slice=self.real_slice,
+                fraud_txt_slice=self.fraud_text_slice,
+                real_txt_slice=self.real_text_slice,
+                label_col=2,
+            )
+        else:
+            raise ValueError(f"Unsupported mode: {mode}")
+
         return DataLoader(
             dataset,
             batch_size=batch_size,
-            shuffle=shuffle,
+            shuffle=bool(shuffle),
             num_workers=0,
-            pin_memory=(self.device.type == "cuda")
+            pin_memory=(self.device.type == "cuda"),
         )
 
-    # ------------------------------------------------------------
-    # OPTIMIZER
-    # ------------------------------------------------------------
-
     def create_optimizer(self, model, params):
-        if params["optimizer"] == "adam":
-            return torch.optim.Adam(
-                model.parameters(),
-                lr=params["lr"],
-                weight_decay=params["weight_decay"]
-            )
-        elif params["optimizer"] == "adamw":
-            return torch.optim.AdamW(
-                model.parameters(),
-                lr=params["lr"],
-                weight_decay=params["weight_decay"]
-            )
-        else:
-            return torch.optim.SGD(
-                model.parameters(),
-                lr=params["lr"],
-                weight_decay=params["weight_decay"]
-            )
+        opt = str(params.get("optimizer", "adamw")).lower()
+        lr = float(params["lr"])
+        wd = float(params.get("weight_decay", 0.0))
 
-    # ------------------------------------------------------------
-    # HYPERPARAMETER SAMPLING
-    # ------------------------------------------------------------
-
-    def sample_hyperparameters(self, mode, n_samples):
-        """
-        Random-sample hyperparameters (non-Optuna path).
-        Target ranges:
-          lr: 1e-5 to 1e-3
-          batch_size: [64, 128, 256, 512, 1024]
-          internal_layer_size (hidden_dim): [256, 512, 768, 1024]
-          output_dim (out_dim): [128, 256, 512]
-          margin: 0.05 to 0.7
-          weight_decay: 1e-5 to 1e-3
-        """
-        samples = []
-        for _ in range(n_samples):
-            samples.append({
-                "lr": float(np.exp(np.random.uniform(np.log(1e-5), np.log(1e-3)))),
-                "batch_size": int(np.random.choice([64, 128, 256, 512, 1024])),
-                "internal_layer_size": int(np.random.choice([256, 512, 768, 1024])),
-                "output_dim": int(np.random.choice([128, 256, 512])),
-                "optimizer": np.random.choice(["adam", "adamw", "sgd"]),
-                "weight_decay": float(np.exp(np.random.uniform(np.log(1e-5), np.log(1e-3)))),
-                "margin": float(np.random.uniform(0.05, 0.7)),
-            })
-        return samples
-
-    def sample_initial_hyperparameters(self, mode, n_samples):
-        return self.sample_hyperparameters(mode, n_samples)
-
-    # ------------------------------------------------------------
-    # EVALUATION
-    # ------------------------------------------------------------
+        if opt == "adam":
+            return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+        if opt == "adamw":
+            return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
+        return torch.optim.SGD(model.parameters(), lr=lr, weight_decay=wd)
 
     def evaluate_trial(
         self,
@@ -165,23 +131,28 @@ class BaseOptimizer:
         def convert_np(obj):
             if isinstance(obj, dict):
                 return {k: convert_np(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
+            if isinstance(obj, list):
                 return [convert_np(v) for v in obj]
-            elif hasattr(obj, "item"):
+            if hasattr(obj, "item"):
                 return obj.item()
             return obj
 
         try:
             batch_size = int(params["batch_size"])
             hidden_dim = int(params["internal_layer_size"])
-            out_dim = int(params.get("output_dim", 128))
             lr = float(params["lr"])
 
+            if mode == "pair":
+                out_dim = int(params.get("output_dim", 128))
+            elif mode == "text2img":
+                out_dim = self.embedding_dim
+                params["output_dim"] = out_dim
+            else:
+                raise ValueError(f"Unsupported mode: {mode}")
+
             print(
-                f"Testing params: "
-                f"LR={lr:.6f}, Batch={batch_size}, "
-                f"Hidden={hidden_dim}, OutDim={out_dim}, "
-                f"Opt={params['optimizer']}"
+                f"Testing params: LR={lr:.6f}, Batch={batch_size}, Hidden={hidden_dim}, "
+                f"OutDim={out_dim}, Opt={params.get('optimizer')}"
             )
 
             string = (
@@ -189,61 +160,49 @@ class BaseOptimizer:
                 f"_Mode={mode}"
                 f"_Loss={loss_type}"
                 f"_LR={lr:.6f}"
-                f"_WD={float(params['weight_decay']):.2e}"
+                f"_WD={float(params.get('weight_decay', 0.0)):.2e}"
                 f"_Batch={batch_size}"
                 f"_Hidden={hidden_dim}"
                 f"_OutDim={out_dim}"
-                f"_Opt={params['optimizer']}"
-                f"_Margin={float(params['margin']):.3f}"
-                f"_Ep={epochs}"
+                f"_Opt={params.get('optimizer')}"
+                f"_Ep={int(epochs)}"
             )
+            if mode == "pair":
+                string += f"_Margin={float(params.get('margin', 0.0)):.3f}"
 
-            # Ensure output dir exists for plots
-            os.makedirs("images", exist_ok=True)
-
-            # --- MAIN TRAIN LOADER (HARD) ---
             train_df = pd.read_parquet(training_filepath)
             dataloader = self.create_dataloader(train_df, batch_size, mode, shuffle=True)
 
-            # --- VALIDATION LOADER ---
             val_dataloader = None
             if validate_filepath is not None:
                 val_df = pd.read_parquet(validate_filepath)
                 val_dataloader = self.create_dataloader(val_df, batch_size, mode, shuffle=False)
 
-            # --- MODEL / OPT / LOSS ---
             model = self.create_siamese_model(mode, hidden_dim=hidden_dim, out_dim=out_dim).to(self.device)
             optimizer = self.create_optimizer(model, params)
 
-            from model_utils.loss.pair_losses import ContrastiveLoss
-            criterion = ContrastiveLoss(margin=float(params["margin"]))
+            if mode == "pair":
+                from model_utils.loss.pair_losses import ContrastiveLoss
+                criterion = ContrastiveLoss(margin=float(params.get("margin", 1.0)))
+            else:
+                from model_utils.loss.distill_losses import CosineDistillLoss
+                criterion = CosineDistillLoss()
 
-            trainer = Trainer(
-                model=model,
-                criterion=criterion,
-                optimizer=optimizer,
-                device=self.device,
-                model_type=mode,
-            )
+            trainer = Trainer(model, criterion, optimizer, self.device, model_type=mode)
 
-            # --- TRAIN (PASSES LOADERS) ---
             best_metrics = trainer.train(
                 dataloader=dataloader,
                 trial_number=trial_number,
                 test_filepath=test_filepath,
                 string=string,
                 mode=mode,
-                epochs=epochs,
+                epochs=int(epochs),
                 validate_filepath=validate_filepath,
                 validate_dataloader=val_dataloader,
                 save_best=False,
-                plot_losses=False
+                plot_losses=False,
+                want_test=False,
             )
-
-            if want_test and test_filepath is not None:
-                evaluator = Evaluator(model=model, batch_size=batch_size, model_type=mode)
-                _, eval_metrics = evaluator.evaluate(test_filepath)
-                best_metrics.update(eval_metrics)
 
             result = {
                 "timestamp": datetime.now(),
@@ -251,53 +210,35 @@ class BaseOptimizer:
                 "batch_size": batch_size,
                 "internal_layer_size": hidden_dim,
                 "output_dim": out_dim,
-                "optimizer": params["optimizer"],
-                "weight_decay": params["weight_decay"],
-                "margin": float(params["margin"]),
+                "optimizer": params.get("optimizer"),
+                "weight_decay": float(params.get("weight_decay", 0.0)),
                 "mode": mode,
                 "loss_type": loss_type,
-
-                # losses (always present)
                 "best_train_loss": best_metrics.get("best_train_loss"),
                 "final_train_loss": best_metrics.get("final_train_loss"),
                 "final_val_loss": best_metrics.get("final_val_loss"),
+                "best_val_loss": best_metrics.get("best_val_loss"),
             }
+            if mode == "pair":
+                result["margin"] = float(params.get("margin", 0.0))
 
-            # add test metrics ONLY when requested
-            if want_test:
-                result.update({
-                    "test_roc_auc": best_metrics.get("roc_auc"),
-                    "test_accuracy": best_metrics.get("accuracy"),
-                    "youden_j": best_metrics.get("youden_j"),
-                    "youden_threshold": best_metrics.get("youden_threshold"),
-                })
-
-            val_loss = result.get("final_val_loss", None)
-
-            if save_best_model and val_loss is not None and val_loss < self.best_val_loss:
-                self.best_val_loss = val_loss
+            val_loss = result.get("best_val_loss") or result.get("final_val_loss")
+            if save_best_model and val_loss is not None and float(val_loss) < float(self.best_val_loss):
+                self.best_val_loss = float(val_loss)
 
                 model_id = f"{self.model_type}_{mode}"
+                results_dir = os.path.join(self.log_dir, "results")
+                os.makedirs(results_dir, exist_ok=True)
 
-                torch.save(
-                    model.state_dict(),
-                    os.path.join(self.log_dir, f"results/best_model_{model_id}.pt"),
-                )
-                with open(
-                    os.path.join(self.log_dir, f"results/best_hparams_{model_id}.json"),
-                    "w",
-                    encoding="utf-8"
-                ) as f:
-                    json.dump(convert_np(params), f)
+                torch.save(model.state_dict(), os.path.join(results_dir, f"best_model_{model_id}.pt"))
+                with open(os.path.join(results_dir, f"best_hparams_{model_id}.json"), "w", encoding="utf-8") as f:
+                    json.dump(convert_np(params), f, indent=2)
+
+                print(f"[DEBUG] Saved new best model (val_loss={self.best_val_loss:.6f}) -> best_model_{model_id}.pt")
 
             return result
 
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return {
-                "timestamp": datetime.now(),
-                "error": str(e),
-                "test_roc_auc": 0.0,
-                "test_accuracy": 0.0,
-            }
+            return {"timestamp": datetime.now(), "error": str(e)}
