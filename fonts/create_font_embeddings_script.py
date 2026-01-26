@@ -48,37 +48,6 @@ import sys
 
 import time
 
-# Task ID and total tasks passed from SLURM
-my_task_id = int(sys.argv[1])
-num_tasks = int(sys.argv[2])
-
-# Define fonts and corresponding output names
-fonts = ["Tahoma", "Comic Sans MS","Caveat", "Helvetica", "Kristi", "calibri", "Pacifico", "Nanum Brush Script", "Source Code Pro", "Roboto"]
-output_parquets = ["tahoma_validate_pairs_ref_10k.parquet", 
-                   "comicsans_validate_pairs_ref_10k.parquet",
-                   "caveat_validate_pairs_ref_10k.parquet",
-                   "helvetica_validate_pairs_ref_10k.parquet",
-                   "kristi_validate_pairs_ref_10k.parquet",
-                   "calibri_validate_pairs_ref_10k.parquet",
-                   "pacifico_validate_pairs_ref_10k.parquet",
-                   "nanum_validate_pairs_ref_10k.parquet",
-                   "sourcecodepro_validate_pairs_ref_10k.parquet",
-                   "roboto_validate_pairs_ref_10k.parquet"]
-output_embeddings = ["tahoma_embed_validate_pairs_ref_10k.npz", 
-                   "comicsans_embed_validate_pairs_ref_10k.npz",
-                   "caveat_embed_validate_pairs_ref_10k.npz",
-                   "helvetica_embed_validate_pairs_ref_10k.npz",
-                   "kristi_embed_validate_pairs_ref_10k.npz",
-                   "calibri_embed_validate_pairs_ref_10k.npz",
-                   "pacifico_embed_validate_pairs_ref_10k.npz",
-                   "nanum_embed_validate_pairs_ref_10k.npz",
-                   "sourcecodepro_embed_validate_pairs_ref_10k.npz",
-                   "roboto_embed_validate_pairs_ref_10k.npz"]
-
-# Assign the font/output for this task
-font = fonts[my_task_id]
-output_parquet = output_parquets[my_task_id]
-output_npz = output_embeddings[my_task_id]
 
 def upload_fonts(path):
     font_dirs = [path]
@@ -95,7 +64,7 @@ def heartbeat(last, every=30):
     return last
 
 
-def _get_unicode_font(font_size: int = 14, font: str = 'DejaVu Sans') -> ImageFont.FreeTypeFont:
+def _get_unicode_font(font: str, font_size: int = 14) -> ImageFont.FreeTypeFont:
     """Return a font that supports a wide range of Unicode (cached)."""
     try:
         path = font_manager.findfont(font, fallback_to_default=True)
@@ -106,9 +75,9 @@ def _get_unicode_font(font_size: int = 14, font: str = 'DejaVu Sans') -> ImageFo
 
 def generate_glyph_image(
     text: str,
+    font: str,
     image_size: Tuple[int, int] = (224, 224),
     font_size: int = 14,
-    font: str = 'DejaVu Sans'
 ) -> Image.Image:
     """Convert text into a centered glyph image."""
     text = unicodedata.normalize("NFC", str(text))
@@ -184,7 +153,7 @@ def embed_unique_names(
 
     # First batch: infer D
     first_chunk = uniq_names[: min(batch_size, n)]
-    first_imgs = [generate_glyph_image(name, font_size=font_size, font= font) for name in first_chunk]
+    first_imgs = [generate_glyph_image(name, font = font, font_size=font_size) for name in first_chunk]
     first_batch = processor(images=first_imgs, return_tensors="pt")
     first_batch = {k: v.to(device, non_blocking=True) for k, v in first_batch.items()}
 
@@ -217,7 +186,7 @@ def embed_unique_names(
         
             chunk = uniq_names[start : start + batch_size]
         
-            imgs = [generate_glyph_image(name, font_size=font_size) for name in chunk]
+            imgs = [generate_glyph_image(name, font=font, font_size=font_size) for name in chunk]
         
             batch = processor(images=imgs, return_tensors="pt")
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -233,9 +202,9 @@ def embed_unique_names(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create SigLIP glyph embeddings and merge into a pairs file")
     parser.add_argument("--input", required=True, help="Input CSV/Parquet containing name pairs")
-    # parser.add_argument("--output", required=True, help="Output Parquet/CSV path")
-    # parser.add_argument("--output-embeddings", required=True, help="Output NPZ path")
-    # parser.add_argument("--font", default="DejaVu Sans", help="Font Type")
+    parser.add_argument("--output", required=True, help="Output Parquet/CSV path")
+    parser.add_argument("--output-embeddings", required=True, help="Output NPZ path")
+    parser.add_argument("--font", default="DejaVu Sans", help="Font Type")
     parser.add_argument("--batch-size", type=int, default=128, help="Embedding batch size")
     parser.add_argument("--model", default="google/siglip-base-patch16-224", help="HuggingFace model name")
     parser.add_argument("--device", default=None, help='Override device: "cuda", "cpu", or "mps"')
@@ -247,7 +216,7 @@ def main() -> None:
     args = parser.parse_args()
     
     # Upload fonts to font manager
-    font_dirs = ["/Users/valeriexin/IAP_2026_urop/font_files"] 
+    font_dirs = ["/home/valxin/IAP_2026_urop_cop/font_files"] 
     font_files = font_manager.findSystemFonts(fontpaths=font_dirs)
 
     for font_file in font_files:
@@ -332,7 +301,7 @@ def main() -> None:
         device=device,
         batch_size=int(args.batch_size),
         font_size=int(args.font_size),
-        font=font,
+        font=args.font,
         memmap_path=args.memmap_path,
     )
     if backing_path:
@@ -350,10 +319,12 @@ def main() -> None:
     fraud_embs = np.asarray(emb_mat[fraud_idx], dtype=np.float32)
     real_embs = np.asarray(emb_mat[real_idx], dtype=np.float32)
     
+    # Calculate cosine similarity and save to new table
     cosine_sim = np.sum(fraud_embs * real_embs, axis=-1)
-    save_table(df, output_parquet, cosine_sim)
-    print(f"[INFO] Wrote new table to {output_parquet}")
+    save_table(df, args.output, cosine_sim)
+    print(f"[INFO] Wrote new table to {args.output}")
     
+    # Print cosine threshold and ROC-AUC Score
     if "label" in df.columns:
         y_true = df["label"].to_numpy(dtype=np.int32)
 
@@ -367,12 +338,13 @@ def main() -> None:
     else:
         print("[INFO] No label column found; skipping threshold computation")
     
+    # Save embeddings to npz file
     np.savez_compressed(
-        output_npz,
+        args.output_embeddings,
         names=np.array(uniq_names, dtype=object),
         embeddings=np.asarray(emb_mat, dtype=np.float32),
     )
-    print(f"Embeddings saved to {output_npz}")
+    print(f"Embeddings saved to {args.output_embeddings}")
 
 if __name__ == "__main__":
     main()
