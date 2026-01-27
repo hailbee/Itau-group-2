@@ -46,13 +46,13 @@ class Evaluator2:
       - cos_align_real_to_img:  cosine(pred_real,  real_img_teacher)
 
     Optionally includes:
-      - sim_raw_text:  cosine(raw_fraud_txt, raw_real_txt)  (baseline you said you can compute separately)
-      - sim_teacher_img: cosine(fraud_img_teacher, real_img_teacher) (reference / upper bound-ish)
+      - sim_raw_text:  cosine(raw_fraud_txt, raw_real_txt)
+      - sim_teacher_img: cosine(fraud_img_teacher, real_img_teacher)
 
     And reports metrics in the same format as scripts/evaluation/evaluator.py:
       - ROC AUC
       - Youden threshold + accuracy + confusion matrix
-      - Best-accuracy threshold + best accuracy
+      - Best-accuracy threshold + best accuracy  (FAST O(N log N), tie-aware)
       - Optional ROC + CM plots
     """
 
@@ -125,10 +125,13 @@ class Evaluator2:
         y_true = results_df["label"].astype(int).to_numpy()
         y_scores = results_df[score_col].astype(float).to_numpy()
 
+        # ROC + thresholds
         fpr, tpr, thresholds = roc_curve(y_true, y_scores)
         roc_auc = float(auc(fpr, tpr))
 
+        # -------------------------------
         # Youden threshold (maximize TPR - FPR)
+        # -------------------------------
         youden_j = tpr - fpr
         youden_best_idx = int(np.argmax(youden_j))
         youden_threshold = float(thresholds[youden_best_idx])
@@ -138,28 +141,61 @@ class Evaluator2:
         accuracy_youden = float(accuracy_score(y_true, y_pred_youden))
         cm_youden = confusion_matrix(y_true, y_pred_youden)
 
-        # Best-accuracy threshold (maximize accuracy)
-        finite_mask = np.isfinite(thresholds)
-        finite_thresholds = thresholds[finite_mask]
+        # -------------------------------
+        # Best-accuracy threshold (FAST, tie-aware: O(N log N))
+        # -------------------------------
+        finite = np.isfinite(y_scores) & np.isfinite(y_true)
+        ys = y_true[finite].astype(int, copy=False)
+        ss = y_scores[finite].astype(float, copy=False)
 
-        accs = []
-        for thr in finite_thresholds:
-            y_pred = (y_scores >= thr).astype(int)
-            accs.append(accuracy_score(y_true, y_pred))
-        accs = np.asarray(accs, dtype=float)
+        if ss.size == 0:
+            best_accuracy_threshold = float("nan")
+            best_accuracy = float("nan")
+        else:
+            # Sort by decreasing score (stable for tie handling)
+            order = np.argsort(-ss, kind="mergesort")
+            ss_sorted = ss[order]
+            ys_sorted = ys[order]
 
-        best_acc_idx = int(np.argmax(accs))
-        best_accuracy_threshold = float(finite_thresholds[best_acc_idx])
-        best_accuracy = float(accs[best_acc_idx])
+            pos = (ys_sorted == 1).astype(np.int64)
+            neg = (ys_sorted == 0).astype(np.int64)
 
+            tp_cum = np.cumsum(pos)
+            fp_cum = np.cumsum(neg)
+
+            P = int(tp_cum[-1])
+            Nn = int(fp_cum[-1])
+            total = P + Nn
+
+            # Evaluate accuracy only at score-change boundaries (tie-aware)
+            # boundary indices include last index
+            changes = np.where(np.diff(ss_sorted) != 0)[0]
+            boundaries = np.concatenate([changes, np.array([ss_sorted.size - 1])], axis=0)
+
+            tp_b = tp_cum[boundaries]
+            fp_b = fp_cum[boundaries]
+            tn_b = Nn - fp_b
+
+            acc_b = (tp_b + tn_b) / float(total)
+
+            best_b = int(np.argmax(acc_b))
+            best_idx = int(boundaries[best_b])
+
+            best_accuracy = float(acc_b[best_b])
+            best_accuracy_threshold = float(ss_sorted[best_idx])
+
+        # -------------------------------
         # Logging
+        # -------------------------------
         print(f"[{title_prefix}] ROC AUC ({score_col}): {roc_auc:.4f}")
         print(f"[{title_prefix}] Youden threshold: {youden_threshold:.4f}")
         print(f"[{title_prefix}] Accuracy (Youden): {accuracy_youden:.4f}")
         print(f"[{title_prefix}] Best-Acc threshold: {best_accuracy_threshold:.4f}")
         print(f"[{title_prefix}] Best Accuracy: {best_accuracy:.4f}")
 
+        # -------------------------------
         # Plots
+        # -------------------------------
         if plot:
             if roc_png_path is None:
                 os.makedirs("images", exist_ok=True)
@@ -213,7 +249,7 @@ class Evaluator2:
             cm_png_path=cm_png_path,
         )
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def test_pairs(
         self,
         test_filepath,
@@ -271,7 +307,7 @@ class Evaluator2:
 
         self.model.eval()
 
-        # Baseline/reference scores computed on CPU (fast and avoids GPU mem)
+        # Baseline/reference scores computed on CPU
         fraud_txt_n = F.normalize(fraud_txt, dim=1)
         real_txt_n  = F.normalize(real_txt,  dim=1)
         sim_raw_text = F.cosine_similarity(fraud_txt_n, real_txt_n, dim=1).numpy()
@@ -321,9 +357,9 @@ class Evaluator2:
             "label": labels.astype(int),
 
             # Scores you care about:
-            "sim_aligned": sim_aligned,           # main KPI space
-            "sim_raw_text": sim_raw_text,         # baseline (optional)
-            "sim_teacher_img": sim_teacher_img,   # reference (optional)
+            "sim_aligned": sim_aligned,
+            "sim_raw_text": sim_raw_text,
+            "sim_teacher_img": sim_teacher_img,
 
             # Alignment debug:
             "cos_align_fraud_to_img": cos_align_fraud_to_img,
