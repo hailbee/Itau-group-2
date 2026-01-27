@@ -11,6 +11,26 @@ import numpy as np
 
 
 class Trainer:
+    """
+    Supports:
+      - mode="pair":    batch = (x1, x2, y)
+                        model(x1,x2)->(z1,z2)
+                        loss = criterion(z1,z2,y)
+
+      - mode="text2img": batch = (fraud_txt, real_txt, fraud_teacher, real_teacher, y, brand_id)
+                         model(fraud_txt, real_txt)->(pred_fraud,pred_real)
+
+        IMPORTANT: different losses want different extra args:
+          - New label-aware losses: criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, y)
+          - Some losses want both:  criterion(..., y, brand_id)
+          - Old prototype losses:   criterion(..., brand_id)
+
+        So we try these in order:
+          (1) y, brand_id
+          (2) y
+          (3) brand_id
+    """
+
     def __init__(self, model, criterion, optimizer, device, model_type=None):
         self.model = model
         self.criterion = criterion
@@ -29,6 +49,29 @@ class Trainer:
 
         print(f"[DEBUG] Using fixed learning rate: {optimizer.param_groups[0]['lr']:.6f}")
 
+    def _call_text2img_criterion(self, pred_fraud, pred_real, fraud_teacher, real_teacher, y, brand_id):
+        """
+        Try calling the criterion with progressively simpler signatures.
+
+        This prevents a common silent failure where:
+          - the loss expects (.., label)
+          - but trainer passes (.., brand_id) and the loss interprets brand_id as label
+        """
+        # (1) label + brand_id
+        try:
+            return self.criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, y, brand_id)
+        except TypeError:
+            pass
+
+        # (2) label only
+        try:
+            return self.criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, y)
+        except TypeError:
+            pass
+
+        # (3) brand_id only (older prototype / NCE variants)
+        return self.criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, brand_id)
+
     def train_epoch(self, dataloader, mode="pair", grad_clip=1.0):
         self.model.train()
         epoch_loss = 0.0
@@ -44,15 +87,22 @@ class Trainer:
                 loss = self.criterion(z1, z2, y)
 
             elif mode == "text2img":
+                # Dataset must return 6 items:
+                # fraud_txt, real_txt, fraud_teacher, real_teacher, y, brand_id
                 fraud_txt, real_txt, fraud_teacher, real_teacher, y, brand_id = batch
-                brand_id = brand_id.to(self.device, non_blocking=True)
+
                 fraud_txt = fraud_txt.to(self.device, non_blocking=True)
                 real_txt = real_txt.to(self.device, non_blocking=True)
                 fraud_teacher = fraud_teacher.to(self.device, non_blocking=True)
                 real_teacher = real_teacher.to(self.device, non_blocking=True)
+                y = y.to(self.device, non_blocking=True)
+                brand_id = brand_id.to(self.device, non_blocking=True)
 
                 pred_fraud, pred_real = self.model(fraud_txt, real_txt)
-                loss = self.criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, brand_id)
+
+                loss = self._call_text2img_criterion(
+                    pred_fraud, pred_real, fraud_teacher, real_teacher, y, brand_id
+                )
 
             else:
                 raise ValueError(f"Unsupported mode: {mode}")
@@ -95,14 +145,19 @@ class Trainer:
 
                 elif mode == "text2img":
                     fraud_txt, real_txt, fraud_teacher, real_teacher, y, brand_id = batch
-                    brand_id = brand_id.to(self.device, non_blocking=True)
+
                     fraud_txt = fraud_txt.to(self.device, non_blocking=True)
                     real_txt = real_txt.to(self.device, non_blocking=True)
                     fraud_teacher = fraud_teacher.to(self.device, non_blocking=True)
                     real_teacher = real_teacher.to(self.device, non_blocking=True)
+                    y = y.to(self.device, non_blocking=True)
+                    brand_id = brand_id.to(self.device, non_blocking=True)
 
                     pred_fraud, pred_real = self.model(fraud_txt, real_txt)
-                    loss = self.criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, brand_id)
+
+                    loss = self._call_text2img_criterion(
+                        pred_fraud, pred_real, fraud_teacher, real_teacher, y, brand_id
+                    )
 
                 else:
                     raise ValueError(f"Unsupported mode: {mode}")
@@ -117,9 +172,17 @@ class Trainer:
 
     def evaluate(self, test_filepath, plot=False, roc_png_path=None, cm_png_path=None):
         self.model.eval()
-        return self.evaluator.evaluate(test_filepath, plot=plot, roc_png_path=roc_png_path, cm_png_path=cm_png_path)
+        return self.evaluator.evaluate(
+            test_filepath, plot=plot, roc_png_path=roc_png_path, cm_png_path=cm_png_path
+        )
 
     def _scores_from_loader(self, dataloader, max_batches=None, mode="pair"):
+        """
+        Utility for optional train/val metric logging during training.
+        Returns DF with columns: label, similarity where similarity = cos(z1,z2).
+
+        In text2img mode: similarity = cos(pred_fraud, pred_real).
+        """
         self.model.eval()
         sims_all = []
         y_all = []
@@ -131,8 +194,11 @@ class Trainer:
 
                 if mode == "pair":
                     x1, x2, y = batch
+
                 elif mode == "text2img":
-                    x1, x2, _t1, _t2, y = batch
+                    # Dataset returns 6 items; we only need fraud_txt, real_txt, y
+                    x1, x2, _t1, _t2, y, _brand_id = batch
+
                 else:
                     raise ValueError(f"Unsupported mode: {mode}")
 
@@ -242,7 +308,7 @@ class Trainer:
                 if len(val_df) > 0:
                     val_metrics = self.evaluator.compute_metrics(val_df, plot=False)
                     youden_thr = val_metrics.get("youden_threshold")
-                    val_acc = val_metrics.get("accuracy")
+                    val_acc = val_metrics.get("accuracy_youden")
                     val_auc = val_metrics.get("roc_auc")
 
                     train_df = self._scores_from_loader(dataloader, max_batches=accuracy_max_train_batches, mode=mode)

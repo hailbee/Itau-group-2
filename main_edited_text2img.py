@@ -11,7 +11,10 @@ from scripts.evaluation.evaluator2 import Evaluator2, EvalConfig
 
 from model_utils.models.learning.siamese import SiameseEmbeddingModel
 from model_utils.utils.data import Text2ImgDistillDataset
-from model_utils.loss.distill_losses import MultiPositiveInfoNCEDistillLoss
+
+# ✅ NEW: loss that matches your objective (distill + pair-geometry transfer)
+from model_utils.loss.distill_losses import DistillPlusLabelPairLoss
+
 
 # -------------------------
 # Utils
@@ -32,14 +35,14 @@ def load_table(path: str) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 
-def build_optimizer(name, model, lr, weight_decay):
+def build_optimizer(name, params, lr, weight_decay):
     name = name.lower()
     if name == "adam":
-        return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+        return torch.optim.Adam(params, lr=lr, weight_decay=weight_decay)
     if name == "adamw":
-        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        return torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
     if name == "sgd":
-        return torch.optim.SGD(model.parameters(), lr=lr, weight_decay=weight_decay)
+        return torch.optim.SGD(params, lr=lr, weight_decay=weight_decay)
     raise ValueError(f"Unknown optimizer: {name}")
 
 
@@ -53,7 +56,8 @@ def main():
 
     # mode
     parser.add_argument("--mode", type=str, choices=["train", "evaluate_saved"], required=True)
-    parser.add_argument("--optuna", type=str, choices=["True", "False"], default="True")
+    # Default to False so you don't accidentally run legacy optuna flow
+    parser.add_argument("--optuna", type=str, choices=["True", "False"], default="False")
 
     # data
     parser.add_argument("--training_filepath", type=str)
@@ -82,6 +86,12 @@ def main():
     parser.add_argument("--internal_layer_size", type=int, default=512)
     parser.add_argument("--optimizer", type=str, default="adamw", choices=["adam", "adamw", "sgd"])
 
+    # loss weights (kept minimal; defaults chosen to be stable)
+    # Recommended starting point: distill + teacher-pair transfer, no BCE.
+    parser.add_argument("--w_distill", type=float, default=1.0)
+    parser.add_argument("--w_bce", type=float, default=0.0)
+    parser.add_argument("--w_pair_teacher", type=float, default=1.0)
+
     # optuna
     parser.add_argument("--n_trials", type=int, default=50)
     parser.add_argument("--sampler", type=str, default="tpe", choices=["tpe", "random", "cmaes"])
@@ -92,6 +102,10 @@ def main():
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--save_dir", type=str, default="saved_models")
     parser.add_argument("--log_dir", type=str, default="optimization_results")
+
+    # eval speed
+    parser.add_argument("--eval_batch_size", type=int, default=2048)
+    parser.add_argument("--eval_max_rows", type=int, default=None)
 
     args = parser.parse_args()
 
@@ -105,8 +119,12 @@ def main():
         if args.training_filepath is None:
             raise ValueError("--training_filepath is required for training")
 
-        # ---------- OPTUNA ----------
+        # ---------- OPTUNA (legacy flow) ----------
         if args.optuna == "True":
+            print(
+                "[WARN] Optuna flow uses the legacy optimizer plumbing/loss_type strings. "
+                "If you want the new loss, run with --optuna False."
+            )
             optimizer = UnifiedHyperparameterOptimizer(
                 model_type="text2img_distill",
                 device=device,
@@ -119,7 +137,7 @@ def main():
                 test_filepath=args.test_filepath,
                 validate_filepath=args.validate_filepath,
                 mode="text2img",
-                loss_type="cosine_distill",
+                loss_type="cosine_distill",  # legacy
                 epochs=args.epochs,
                 n_trials=args.n_trials,
                 sampler=args.sampler,
@@ -174,8 +192,16 @@ def main():
             out_dim=768,
         ).to(device)
 
-        criterion = MultiPositiveInfoNCEDistillLoss(alpha=1.0, beta=0.05, temperature=0.1)
-        optimizer = build_optimizer(args.optimizer, model, args.lr, args.weight_decay)
+        # ✅ New criterion (distill + teacher pair geometry; optional BCE)
+        criterion = DistillPlusLabelPairLoss(
+            w_distill=args.w_distill,
+            w_bce=args.w_bce,
+            w_pair_teacher=args.w_pair_teacher,
+        ).to(device)
+
+        # ✅ IMPORTANT: include criterion params (logit_scale) even if w_bce=0 (harmless)
+        optim_params = list(model.parameters()) + list(criterion.parameters())
+        optimizer = build_optimizer(args.optimizer, optim_params, args.lr, args.weight_decay)
 
         trainer = Trainer(
             model,
@@ -201,29 +227,37 @@ def main():
             min_epochs=1,
         )
 
-        # -------- FINAL TEST EVAL (CORRECT & FAST ENOUGH) --------
+        # -------- FINAL TEST EVAL --------
         print("\n[INFO] Running final test evaluation...")
 
         evaluator = Evaluator2(
             model,
             EvalConfig(
-                batch_size=1024,
+                batch_size=args.eval_batch_size,
+                fraud_img_slice=(args.fake_start, args.fake_end),
+                real_img_slice=(args.real_start, args.real_end),
                 fraud_txt_slice=(args.fraud_text_start, args.fraud_text_end),
                 real_txt_slice=(args.real_text_start, args.real_text_end),
             ),
         )
-        
-        test_metrics = evaluator.evaluate(args.test_filepath)
-        
+
+        results_df, test_metrics = evaluator.evaluate(args.test_filepath, max_rows=args.eval_max_rows)
+
         print("\n[INFO] Final test metrics:")
-        
-        print("Alignment metrics:")
-        for k, v in test_metrics["alignment"].items():
-            print(f"  {k}: {v}")
-        
-        print("\nRetrieval metrics:")
-        for k, v in test_metrics["retrieval"].items():
-            print(f"  {k}: {v}")
+        print("\nAlignment debug:")
+        print(test_metrics["alignment_debug"])
+
+        print("\nSpoof decision (ALIGNED space):")
+        print(test_metrics["aligned_text_space"])
+
+        print("\nSpoof decision (RAW TEXT space):")
+        print(test_metrics["raw_text_space"])
+
+        print("\nSpoof decision (TEACHER IMG space):")
+        print(test_metrics["teacher_image_space"])
+
+        print("\nDeltas:")
+        print(test_metrics["deltas"])
 
         return
 
@@ -249,25 +283,33 @@ def main():
         evaluator = Evaluator2(
             model,
             EvalConfig(
-                batch_size=1024,
+                batch_size=args.eval_batch_size,
+                fraud_img_slice=(args.fake_start, args.fake_end),
+                real_img_slice=(args.real_start, args.real_end),
                 fraud_txt_slice=(args.fraud_text_start, args.fraud_text_end),
                 real_txt_slice=(args.real_text_start, args.real_text_end),
             ),
         )
 
         print("\n[INFO] Running final test evaluation...")
-        
-        test_metrics = evaluator.evaluate(args.test_filepath)
-        
+
+        results_df, test_metrics = evaluator.evaluate(args.test_filepath, max_rows=args.eval_max_rows)
+
         print("\n[INFO] Final test metrics:")
-        
-        print("Alignment metrics:")
-        for k, v in test_metrics["alignment"].items():
-            print(f"  {k}: {v}")
-        
-        print("\nRetrieval metrics:")
-        for k, v in test_metrics["retrieval"].items():
-            print(f"  {k}: {v}")
+        print("\nAlignment debug:")
+        print(test_metrics["alignment_debug"])
+
+        print("\nSpoof decision (ALIGNED space):")
+        print(test_metrics["aligned_text_space"])
+
+        print("\nSpoof decision (RAW TEXT space):")
+        print(test_metrics["raw_text_space"])
+
+        print("\nSpoof decision (TEACHER IMG space):")
+        print(test_metrics["teacher_image_space"])
+
+        print("\nDeltas:")
+        print(test_metrics["deltas"])
 
         return
 

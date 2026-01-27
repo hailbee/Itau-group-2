@@ -3,103 +3,51 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class CosineDistillLoss(nn.Module):
+class DistillPlusLabelPairLoss(nn.Module):
     """
-    Parameter-free cosine distillation:
-      L = mean(1 - cos(normalize(student), normalize(teacher)))
+    Goal: transfer spoof-aware structure from image embeddings into text-mapped embeddings
+    while directly optimizing the ROC-AUC score you use at eval time:
+        score = cos(pred_fraud, pred_real)
+
+    Terms:
+      (A) pointwise distillation: pred_fraud ~ fraud_teacher, pred_real ~ real_teacher
+      (B) label-aware pair loss: push score up if label=1, down if label=0 (BCE on cosine)
+      (C) optional teacher-pair distill: match cos(pred_fraud,pred_real) to cos(teacher_fraud,teacher_real)
+
+    Minimal hyperparams: weights (can start with all 1.0) + learnable logit_scale.
+
+    If you want the absolute minimum tuning, start with w_distill=1.0, w_bce=1.0, w_pair_teacher=0.0 (skip C), and only add w_pair_teacher if you see alignment improve but ROC-AUC stall.
     """
-    def __init__(self, eps: float = 1e-8):
+    def __init__(self, w_distill: float = 1.0, w_bce: float = 1.0, w_pair_teacher: float = 0.5, eps: float = 1e-8):
         super().__init__()
+        self.w_distill = float(w_distill)
+        self.w_bce = float(w_bce)
+        self.w_pair_teacher = float(w_pair_teacher)
         self.eps = float(eps)
 
-    def forward(self, student: torch.Tensor, teacher: torch.Tensor) -> torch.Tensor:
-        student = F.normalize(student, dim=1, eps=self.eps)
-        teacher = F.normalize(teacher, dim=1, eps=self.eps)
-        cos = (student * teacher).sum(dim=1)
-        return (1.0 - cos).mean()
+        # Learnable scale = avoids you tuning temperature; helps calibration
+        self.logit_scale = nn.Parameter(torch.tensor(10.0))
 
+    def forward(self, pred_fraud, pred_real, fraud_teacher, real_teacher, label):
+        # normalize everything
+        pred_fraud = F.normalize(pred_fraud, dim=1, eps=self.eps)
+        pred_real  = F.normalize(pred_real,  dim=1, eps=self.eps)
+        fraud_teacher = F.normalize(fraud_teacher, dim=1, eps=self.eps)
+        real_teacher  = F.normalize(real_teacher,  dim=1, eps=self.eps)
 
-class Text2ImgDistillInfoNCELoss(nn.Module):
-    """
-    Combines:
-      - pointwise cosine distillation (your current objective)
-      - in-batch InfoNCE (ranking objective): pred_fraud should match real_teacher (same row)
-        better than other real_teacher in the batch.
-
-    No extra model parameters. Temperature is a fixed scalar hyperparam.
-    """
-    def __init__(self, alpha: float = 0.5, temperature: float = 0.07):
-        super().__init__()
-        self.alpha = float(alpha)
-        self.temperature = float(temperature)
-
-    def forward(self, pred_fraud, pred_real, fraud_teacher, real_teacher):
-        # normalize everything (safe, improves stability)
-        pred_fraud = F.normalize(pred_fraud, dim=1)
-        pred_real  = F.normalize(pred_real, dim=1)
-        fraud_teacher = F.normalize(fraud_teacher, dim=1)
-        real_teacher  = F.normalize(real_teacher, dim=1)
-
-        # -------------------------
-        # (A) pointwise cosine distill (as you had)
-        # maximize cosine => minimize (1 - cosine)
-        # -------------------------
+        # (A) pointwise cosine distill (transfer image-space info)
         distill_f = 1.0 - (pred_fraud * fraud_teacher).sum(dim=1).mean()
         distill_r = 1.0 - (pred_real  * real_teacher ).sum(dim=1).mean()
         distill = 0.5 * (distill_f + distill_r)
 
-        # -------------------------
-        # (B) InfoNCE in-batch ranking (diagonal positives)
-        # query: pred_fraud
-        # keys:  real_teacher
-        # positive for row i is key i
-        # -------------------------
-        logits = (pred_fraud @ real_teacher.T) / self.temperature  # (B,B)
-        targets = torch.arange(logits.size(0), device=logits.device)
-        nce = F.cross_entropy(logits, targets)
+        # (B) label-aware pair similarity objective (matches your ROC-AUC scoring)
+        # score = cos(pred_fraud, pred_real)
+        score = (pred_fraud * pred_real).sum(dim=1)
+        logits = self.logit_scale * score
+        bce = F.binary_cross_entropy_with_logits(logits, label.float())
 
-        # combine
-        return self.alpha * distill + (1.0 - self.alpha) * nce
+        # (C) optional: distill the teacher's fraud↔real similarity geometry
+        teacher_score = (fraud_teacher * real_teacher).sum(dim=1).detach()
+        pair_teacher = F.mse_loss(score, teacher_score)
 
-class MultiPositiveInfoNCEDistillLoss(nn.Module):
-    def __init__(self, alpha: float = 0.5, beta: float = 0.5, temperature: float = 0.07):
-        super().__init__()
-        self.alpha = float(alpha)      # pointwise distill weight
-        self.beta = float(beta)        # prototype NCE weight
-        self.temperature = float(temperature)
-
-    def forward(self, pred_fraud, pred_real, fraud_teacher, real_teacher, brand_id):
-        # normalize
-        pred_fraud = F.normalize(pred_fraud, dim=1)
-        pred_real  = F.normalize(pred_real,  dim=1)
-        fraud_teacher = F.normalize(fraud_teacher, dim=1)
-        real_teacher  = F.normalize(real_teacher,  dim=1)
-
-        # (A) pointwise cosine distill (keep this)
-        distill_f = 1.0 - (pred_fraud * fraud_teacher).sum(dim=1).mean()
-        distill_r = 1.0 - (pred_real  * real_teacher ).sum(dim=1).mean()
-        distill = 0.5 * (distill_f + distill_r)
-
-        # (B) prototype InfoNCE (brand prototypes as keys)
-        # build prototypes from real_teacher
-        brand_id = brand_id.to(real_teacher.device)
-        unique_ids = torch.unique(brand_id)
-
-        # prototypes: (M, D)
-        protos = []
-        for b in unique_ids:
-            protos.append(real_teacher[brand_id == b].mean(dim=0))
-        protos = torch.stack(protos, dim=0)              # (M,D)
-        protos = F.normalize(protos, dim=1)
-
-        # targets: map each sample's brand_id -> prototype index in [0..M-1]
-        # build a lookup dict on GPU
-        # (cheap because M <= batch size)
-        id_to_index = {int(b.item()): i for i, b in enumerate(unique_ids)}
-        targets = torch.tensor([id_to_index[int(b.item())] for b in brand_id], device=brand_id.device)
-
-        # logits: (B,M)
-        logits = (pred_fraud @ protos.T) / self.temperature
-        proto_nce = F.cross_entropy(logits, targets)
-
-        return self.alpha * distill + self.beta * proto_nce
+        return self.w_distill * distill + self.w_bce * bce + self.w_pair_teacher * pair_teacher

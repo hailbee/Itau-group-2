@@ -8,6 +8,9 @@ python3 main_edited.py \
   --output_dim 128 \
   --plot
 
+real name: 0
+fraudulent_name: 1
+label: 0/1 (non-spoof vs spoof)
 fraud image: 3..770
 real image: 771..1538
 fraud text: 1539..2306
@@ -113,4 +116,18 @@ python main_edited_text2img.py \
   --training_filepath '../train_pairs_with_img_and_txt_embs.parquet' \
   --validate_filepath '../validate_pairs_with_img_and_txt_embs.parquet' \
   --test_filepath '../test_pairs_with_img_and_txt_embs.parquet' \
-  --epochs 50 --batch_size 64 --lr 4.3284502212938785e-05 --internal_layer_size 256 --optimizer adam --weight_decay 3.5113563139704077e-06
+  --epochs 10 --batch_size 64 --lr 4.3284502212938785e-05 --internal_layer_size 256 --optimizer adam --weight_decay 3.5113563139704077e-06
+
+
+label = 0 means not actually no matter how similar, label = 1 means spoof attempt. what loss to choose and why? answer in a paragraph? and by the way the task is to just make the embedding spaces align. they have the same real name, fake name, and label just different embeddings (obviously)
+
+i'm gonna measure roc auc at the end using the "aligned" embedding vs the raw text embedding. the strategy is, if you aren't aware, is to base it on similarity between fake and real and in a perfect space, the spoofs are close and non-spoofs are far apart. trying to see if that rocauc score improves in the aligned space with the information from image embeddings. what loss function? answer in a paragraph.
+
+
+If both spaces are already spoof-aware and your goal is mainly to make the text embeddings usable in the same “decision geometry” as the image embeddings (so your fake–real similarity ROC-AUC improves or at least doesn’t regress), the best low-tuning choice is a two-term objective: (1) pointwise cosine distillation to align each mapped text vector to its paired image vector (keeps you in the same coordinate system), plus (2) a label-aware similarity term on the mapped text pair cos(pred_fraud, pred_real) trained with BCEWithLogitsLoss (so label=1 pushes that similarity up and label=0 pushes it down), because the first term handles “space alignment” while the second directly optimizes the exact separation your ROC-AUC is computed from; you can keep the distillation weight modest and avoid extra hyperparameters by using a learnable logit scale (instead of tuning temperature) for the BCE term. No — it’s not the only strategy that can do both. “Align spaces” + “preserve/improve spoof separation” can also be done with (a) two-stage training (first pure alignment, then a light label-supervised similarity tuning while freezing most layers), (b) teacher-behavior distillation that matches the teacher’s fake–real similarity score (or its score distribution over candidates) instead of matching vectors, (c) relational distillation (match neighborhood structure / similarity matrix) which often preserves spoof-aware geometry better than pointwise matching, or (d) architecture constraints (orthogonal/low-rank/residual projector) that make alignment happen with minimal distortion. Do the objectives contradict? They can if there’s any mismatch between “what it means to be close in the teacher space” and “what your label wants the fake–real similarity to do” under your text-only mapping (e.g., label=0 pairs that are genuinely similar strings but should be “not a spoof,” or mapping errors that systematically shrink/expand distances); then the label loss will try to warp the mapped space away from strict pointwise alignment. If your image and text spaces are truly consistent and “spoof-aware” in the same sense, they’re mostly compatible—distillation keeps you in the teacher coordinate system, and the label term just nudges the decision boundary—but it’s normal for them to partially conflict, which is why people either (1) gate/weight the label term lightly, (2) do two-stage with freezing, or (3) distill the teacher’s scores rather than forcing exact vector matches.
+
+
+Get auc roc implemented in evaluator file
+Remove the Top k things for now
+Get other metrics in that file
+Find a way to reliably test the other things you are trying? Maybe just upload to GitHub and save
