@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import pandas as pd
 import numpy as np
@@ -6,12 +7,11 @@ import torch.nn.functional as F
 from sklearn.metrics import roc_curve, auc, accuracy_score, confusion_matrix
 
 """
-
-python3 golden_eval.py \
-  --input Golden/golden_embeddings_test.parquet \
-  --space aligned
-
-"""
+# Golden / spoof-aware image embeddings
+python text_to_image/golden_eval.py \
+  --input Golden_and_Text/test_pairs_with_img_and_txt_embs.parquet \
+  --space aligned_img
+  """
 
 def compute_metrics(y_true, y_scores):
     fpr, tpr, thresholds = roc_curve(y_true, y_scores)
@@ -33,20 +33,42 @@ def compute_metrics(y_true, y_scores):
     }
 
 
+def get_sorted_cols(df, prefix):
+    cols = [c for c in df.columns if c.startswith(prefix)]
+    if len(cols) == 0:
+        raise ValueError(f"No columns found with prefix '{prefix}'")
+
+    # sort by numeric suffix
+    cols = sorted(cols, key=lambda c: int(c.split("_")[-1]))
+    return cols
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--input", required=True)
-    p.add_argument("--space", choices=["raw", "aligned"], default="raw")
+    p.add_argument(
+        "--space",
+        choices=["raw_img", "aligned_img", "raw_text"],
+        default="aligned_img",
+        help="Which space to evaluate",
+    )
     args = p.parse_args()
 
     df = pd.read_parquet(args.input)
 
-    if args.space == "raw":
-        fraud_cols = [c for c in df.columns if c.startswith("fraud_raw_")]
-        real_cols  = [c for c in df.columns if c.startswith("real_raw_")]
+    if args.space == "raw_img":
+        fraud_cols = get_sorted_cols(df, "fraud_raw_")
+        real_cols  = get_sorted_cols(df, "real_raw_")
+    elif args.space == "aligned_img":
+        fraud_cols = get_sorted_cols(df, "fraud_aligned_")
+        real_cols  = get_sorted_cols(df, "real_aligned_")
+    elif args.space == "raw_text":
+        fraud_cols = get_sorted_cols(df, "fraud_txt_emb_")
+        real_cols  = get_sorted_cols(df, "real_txt_emb_")
     else:
-        fraud_cols = [c for c in df.columns if c.startswith("fraud_aligned_")]
-        real_cols  = [c for c in df.columns if c.startswith("real_aligned_")]
+        raise ValueError(args.space)
+
+    assert len(fraud_cols) == len(real_cols), "Fraud/real dim mismatch"
 
     fraud = torch.tensor(df[fraud_cols].to_numpy(np.float32))
     real  = torch.tensor(df[real_cols].to_numpy(np.float32))
@@ -58,7 +80,7 @@ def main():
 
     metrics = compute_metrics(labels, sims)
 
-    print(f"[{args.space.upper()} BASELINE]")
+    print(f"\n[{args.space.upper()} BASELINE]")
     for k, v in metrics.items():
         print(f"{k}: {v}")
 

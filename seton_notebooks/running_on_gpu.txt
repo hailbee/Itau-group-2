@@ -164,3 +164,6 @@ Ctrl-b then d
 
 ssh orcd-login
 tmux attach -t gpu
+
+git config --global user.name "Seton Liu"
+git config --global user.email "setliu22@mit.edu"
