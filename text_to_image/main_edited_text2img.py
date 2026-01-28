@@ -6,13 +6,12 @@ from torch.utils.data import DataLoader
 
 from scripts.training.trainer import Trainer
 from scripts.optimization.unified_optimizer import UnifiedHyperparameterOptimizer
-from scripts.evaluation.evaluator2 import Evaluator2, EvalConfig
+from evaluator2 import Evaluator2, EvalConfig
 
-from model_utils.models.learning.siamese import SiameseEmbeddingModel
-from model_utils.utils.data import Text2ImgDistillDataset
+from siamese import SiameseEmbeddingModel
+from data import Text2TeacherDistillDataset
 
-from model_utils.loss.distill_losses import TeacherScoreDistillBCELoss
-
+from distill_losses import TeacherScoreDistillBCELoss
 
 # -------------------------
 # Utils
@@ -148,7 +147,7 @@ def main():
         train_df = load_table(args.training_filepath)
         val_df = load_table(args.validate_filepath) if args.validate_filepath else None
 
-        train_ds = Text2ImgDistillDataset(
+        train_ds = Text2TeacherDistillDataset(
             train_df,
             fraud_img=slice(args.fake_start, args.fake_end),
             real_img=slice(args.real_start, args.real_end),
@@ -167,7 +166,7 @@ def main():
 
         val_loader = None
         if val_df is not None:
-            val_ds = Text2ImgDistillDataset(
+            val_ds = Text2TeacherDistillDataset(
                 val_df,
                 fraud_img=slice(args.fake_start, args.fake_end),
                 real_img=slice(args.real_start, args.real_end),
