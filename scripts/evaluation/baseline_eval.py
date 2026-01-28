@@ -4,8 +4,12 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from scripts.evaluation.evaluator import Evaluator
+from evaluator import Evaluator
 
+"""
+run:
+python3 ../scripts/evaluation/baseline_eval.py --test_filepath ../../Downloads/golden_embeddings_test.parquet --out_dir ../../Downloads --name_prefix baseline_test --plot
+"""
 
 def baseline_eval(
     test_filepath: str,

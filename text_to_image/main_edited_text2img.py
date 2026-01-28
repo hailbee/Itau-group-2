@@ -4,14 +4,13 @@ import torch
 import pandas as pd
 from torch.utils.data import DataLoader
 
-from scripts.training.trainer import Trainer
-from scripts.optimization.unified_optimizer import UnifiedHyperparameterOptimizer
+from trainer import Trainer
 from evaluator2 import Evaluator2, EvalConfig
 
 from siamese import SiameseEmbeddingModel
 from data import Text2TeacherDistillDataset
-
 from distill_losses import TeacherScoreDistillBCELoss
+
 
 # -------------------------
 # Utils
@@ -43,12 +42,19 @@ def build_optimizer(name, params, lr, weight_decay):
     raise ValueError(f"Unknown optimizer: {name}")
 
 
+def infer_dim_from_prefix(df: pd.DataFrame, prefix: str) -> int:
+    cols = [c for c in df.columns if isinstance(c, str) and c.startswith(prefix)]
+    if not cols:
+        raise ValueError(f"Could not infer dim: no columns with prefix '{prefix}'")
+    return len(cols)
+
+
 # -------------------------
 # Main
 # -------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="Text → spoof-aware image embedding distillation (teacher-score BCE, single-term)"
+        description="Text → spoof-aware (golden) embedding distillation (teacher-score BCE, single-term)"
     )
 
     # mode
@@ -64,18 +70,7 @@ def main():
 
     # saved model eval
     parser.add_argument("--model_path", type=str, default=None)
-
-    # embedding slices (wide format)
-    parser.add_argument("--fake_start", type=int, default=3)
-    parser.add_argument("--fake_end", type=int, default=771)
-    parser.add_argument("--real_start", type=int, default=771)
-    parser.add_argument("--real_end", type=int, default=1539)
-
-    parser.add_argument("--fraud_text_start", type=int, default=1539)
-    parser.add_argument("--fraud_text_end", type=int, default=2307)
-    parser.add_argument("--real_text_start", type=int, default=2307)
-    parser.add_argument("--real_text_end", type=int, default=3075)
-
+    
     # training hyperparams
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch_size", type=int, default=256)
@@ -83,12 +78,6 @@ def main():
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--internal_layer_size", type=int, default=512)
     parser.add_argument("--optimizer", type=str, default="adamw", choices=["adam", "adamw", "sgd"])
-
-    # optuna
-    parser.add_argument("--n_trials", type=int, default=50)
-    parser.add_argument("--sampler", type=str, default="tpe", choices=["tpe", "random", "cmaes"])
-    parser.add_argument("--pruner", type=str, default="median", choices=["median", "hyperband", "none"])
-    parser.add_argument("--study_name", type=str, default=None)
 
     # misc
     parser.add_argument("--device", type=str, default=None)
@@ -111,50 +100,23 @@ def main():
         if args.training_filepath is None:
             raise ValueError("--training_filepath is required for training")
 
-        # ---------- OPTUNA (legacy flow) ----------
         if args.optuna == "True":
-            print(
-                "[WARN] Your Optuna plumbing uses legacy loss_type strings. "
-                "It will NOT use TeacherScoreDistillBCELoss unless you also update the optimizer code. "
-                "Run with --optuna False to train with the teacher-score BCE loss."
+            raise RuntimeError(
+                "Optuna path is legacy and not wired to the new prefix-based datasets/evaluator. "
+                "Run with --optuna False."
             )
 
-            optimizer = UnifiedHyperparameterOptimizer(
-                model_type="text2img_distill",
-                device=device,
-                log_dir=args.log_dir,
-            )
-
-            best = optimizer.optimize(
-                method="optuna",
-                training_filepath=args.training_filepath,
-                test_filepath=args.test_filepath,
-                validate_filepath=args.validate_filepath,
-                mode="text2img",
-                loss_type="cosine_distill",  # legacy
-                epochs=args.epochs,
-                n_trials=args.n_trials,
-                sampler=args.sampler,
-                pruner=args.pruner,
-                study_name=args.study_name,
-            )
-
-            print("[INFO] Optuna finished. Best params:")
-            print(best)
-            return
-
-        # ---------- SINGLE RUN ----------
         train_df = load_table(args.training_filepath)
         val_df = load_table(args.validate_filepath) if args.validate_filepath else None
 
+        # Prefix-based dataset (your schema)
         train_ds = Text2TeacherDistillDataset(
             train_df,
-            fraud_img=slice(args.fake_start, args.fake_end),
-            real_img=slice(args.real_start, args.real_end),
-            fraud_txt=slice(args.fraud_text_start, args.fraud_text_end),
-            real_txt=slice(args.real_text_start, args.real_text_end),
+            fraud_txt_prefix="fraud_txt_",
+            real_txt_prefix="real_txt_",
+            fraud_teacher_prefix="fraud_aligned_",
+            real_teacher_prefix="real_aligned_",
             label_col="label",
-            fallback_label_idx=2,
         )
 
         train_loader = DataLoader(
@@ -168,12 +130,11 @@ def main():
         if val_df is not None:
             val_ds = Text2TeacherDistillDataset(
                 val_df,
-                fraud_img=slice(args.fake_start, args.fake_end),
-                real_img=slice(args.real_start, args.real_end),
-                fraud_txt=slice(args.fraud_text_start, args.fraud_text_end),
-                real_txt=slice(args.real_text_start, args.real_text_end),
+                fraud_txt_prefix="fraud_txt_",
+                real_txt_prefix="real_txt_",
+                fraud_teacher_prefix="fraud_aligned_",
+                real_teacher_prefix="real_aligned_",
                 label_col="label",
-                fallback_label_idx=2,
             )
             val_loader = DataLoader(
                 val_ds,
@@ -182,41 +143,35 @@ def main():
                 pin_memory=(device.type == "cuda"),
             )
 
+        # ✅ Infer dims from dataframe to avoid teacher-dim mistakes
+        text_dim = infer_dim_from_prefix(train_df, "fraud_txt_")
+        teacher_dim = infer_dim_from_prefix(train_df, "fraud_aligned_")
+
+        print(f"[INFO] text_dim={text_dim} | teacher_dim={teacher_dim}")
+
+        # ✅ IMPORTANT FIX:
+        # student outputs MUST match teacher_dim (128), not 768
         model = SiameseEmbeddingModel(
-            embedding_dim=768,
+            embedding_dim=text_dim,
             hidden_dim=args.internal_layer_size,
-            out_dim=768,
+            out_dim=teacher_dim,
         ).to(device)
 
-        # ✅ Single-term loss (NO hybrid)
         criterion = TeacherScoreDistillBCELoss().to(device)
-
-        # ✅ Include criterion params (it learns a few scalar calibration params)
         optim_params = list(model.parameters()) + list(criterion.parameters())
         optimizer = build_optimizer(args.optimizer, optim_params, args.lr, args.weight_decay)
 
-        trainer = Trainer(
-            model,
-            criterion,
-            optimizer,
-            device,
-            model_type="text2img",
-        )
+        trainer = Trainer(model, criterion, optimizer, device)
 
         trainer.train(
             dataloader=train_loader,
-            trial_number=0,
-            test_filepath=args.test_filepath,
-            string="_text2img",
-            mode="text2img",
-            epochs=args.epochs,
             validate_dataloader=val_loader,
-            plot_losses=True,
-            plot_accuracy=False,
-            save_best=True,
+            test_filepath=args.test_filepath,
+            string="_distill",
+            trial_number=1,
+            epochs=args.epochs,
+            eval_every=1,
             save_dir=args.save_dir,
-            early_stopping=False,
-            min_epochs=1,
         )
 
         # -------- FINAL TEST EVAL --------
@@ -226,10 +181,11 @@ def main():
             model,
             EvalConfig(
                 batch_size=args.eval_batch_size,
-                fraud_img_slice=(args.fake_start, args.fake_end),
-                real_img_slice=(args.real_start, args.real_end),
-                fraud_txt_slice=(args.fraud_text_start, args.fraud_text_end),
-                real_txt_slice=(args.real_text_start, args.real_text_end),
+                fraud_txt_prefix="fraud_txt_",
+                real_txt_prefix="real_txt_",
+                fraud_teacher_prefix="fraud_aligned_",
+                real_teacher_prefix="real_aligned_",
+                label_col="label",
             ),
         )
 
@@ -239,14 +195,14 @@ def main():
         print("\nAlignment debug:")
         print(test_metrics["alignment_debug"])
 
-        print("\nSpoof decision (ALIGNED space):")
-        print(test_metrics["aligned_text_space"])
+        print("\nSpoof decision (TEACHER / GOLDEN space):")
+        print(test_metrics["teacher"])
 
         print("\nSpoof decision (RAW TEXT space):")
-        print(test_metrics["raw_text_space"])
+        print(test_metrics["raw_text"])
 
-        print("\nSpoof decision (TEACHER IMG space):")
-        print(test_metrics["teacher_image_space"])
+        print("\nSpoof decision (STUDENT space):")
+        print(test_metrics["student"])
 
         print("\nDeltas:")
         print(test_metrics["deltas"])
@@ -260,10 +216,15 @@ def main():
         if args.model_path is None:
             raise ValueError("--model_path is required for evaluate_saved")
 
+        # We infer dims from test file so you don't hardcode 768/128 incorrectly
+        test_df = load_table(args.test_filepath)
+        text_dim = infer_dim_from_prefix(test_df, "fraud_txt_")
+        teacher_dim = infer_dim_from_prefix(test_df, "fraud_aligned_")
+
         model = SiameseEmbeddingModel(
-            embedding_dim=768,
+            embedding_dim=text_dim,
             hidden_dim=args.internal_layer_size,
-            out_dim=768,
+            out_dim=teacher_dim,
         ).to(device)
 
         state = torch.load(args.model_path, map_location=device)
@@ -276,29 +237,29 @@ def main():
             model,
             EvalConfig(
                 batch_size=args.eval_batch_size,
-                fraud_img_slice=(args.fake_start, args.fake_end),
-                real_img_slice=(args.real_start, args.real_end),
-                fraud_txt_slice=(args.fraud_text_start, args.fraud_text_end),
-                real_txt_slice=(args.real_text_start, args.real_text_end),
+                fraud_txt_prefix="fraud_txt_",
+                real_txt_prefix="real_txt_",
+                fraud_teacher_prefix="fraud_aligned_",
+                real_teacher_prefix="real_aligned_",
+                label_col="label",
             ),
         )
 
         print("\n[INFO] Running final test evaluation...")
-
         results_df, test_metrics = evaluator.evaluate(args.test_filepath, max_rows=args.eval_max_rows)
 
         print("\n[INFO] Final test metrics:")
         print("\nAlignment debug:")
         print(test_metrics["alignment_debug"])
 
-        print("\nSpoof decision (ALIGNED space):")
-        print(test_metrics["aligned_text_space"])
+        print("\nSpoof decision (TEACHER / GOLDEN space):")
+        print(test_metrics["teacher"])
 
         print("\nSpoof decision (RAW TEXT space):")
-        print(test_metrics["raw_text_space"])
+        print(test_metrics["raw_text"])
 
-        print("\nSpoof decision (TEACHER IMG space):")
-        print(test_metrics["teacher_image_space"])
+        print("\nSpoof decision (STUDENT space):")
+        print(test_metrics["student"])
 
         print("\nDeltas:")
         print(test_metrics["deltas"])

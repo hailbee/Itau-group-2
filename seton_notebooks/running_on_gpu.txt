@@ -108,7 +108,7 @@ python main_edited_text2img.py \
   --training_filepath 'Golden_and_Text/train_pairs_with_img_and_txt_embs.parquet' \
   --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_txt_embs.parquet' \
   --test_filepath 'Golden_and_Text/test_pairs_with_img_and_txt_embs.parquet' \
-  --epochs 10 --batch_size 64 --lr 4.3284502212938785e-05 --internal_layer_size 256 --optimizer adam --weight_decay 3.5113563139704077e-06
+  --epochs 50 --batch_size 64 --lr 4.3284502212938785e-05 --internal_layer_size 256 --optimizer adam --weight_decay 3.5113563139704077e-06
 
 python main_edited_text2img.py \
   --mode train --optuna False \
