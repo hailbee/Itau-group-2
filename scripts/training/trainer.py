@@ -1,13 +1,11 @@
 # scripts/training/trainer.py
 
-from scripts.evaluation.evaluator import Evaluator
+import os
 import torch
 import torch.nn.functional as F
-import os
 import matplotlib.pyplot as plt
 
 import pandas as pd
-import numpy as np
 
 
 class Trainer:
@@ -17,18 +15,11 @@ class Trainer:
                         model(x1,x2)->(z1,z2)
                         loss = criterion(z1,z2,y)
 
-      - mode="text2img": batch = (fraud_txt, real_txt, fraud_teacher, real_teacher, y, brand_id)
+      - mode="text2img": batch = (fraud_txt, real_txt, fraud_teacher, real_teacher, y)
                          model(fraud_txt, real_txt)->(pred_fraud,pred_real)
+                         loss = criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, y)
 
-        IMPORTANT: different losses want different extra args:
-          - New label-aware losses: criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, y)
-          - Some losses want both:  criterion(..., y, brand_id)
-          - Old prototype losses:   criterion(..., brand_id)
-
-        So we try these in order:
-          (1) y, brand_id
-          (2) y
-          (3) brand_id
+    NOTE: NO brand_id anywhere.
     """
 
     def __init__(self, model, criterion, optimizer, device, model_type=None):
@@ -39,41 +30,25 @@ class Trainer:
         self.model_type = model_type
 
         self.model.to(device)
+        self.criterion.to(device)
 
-        # Old evaluator for old task; Evaluator2 for text2img
+        # Evaluator selection
         if model_type == "text2img":
             from scripts.evaluation.evaluator2 import Evaluator2, EvalConfig
             self.evaluator = Evaluator2(model, cfg=EvalConfig(batch_size=256))
         else:
+            from scripts.evaluation.evaluator import Evaluator
             self.evaluator = Evaluator(model, model_type=model_type)
 
-        print(f"[DEBUG] Using fixed learning rate: {optimizer.param_groups[0]['lr']:.6f}")
+        lr = self.optimizer.param_groups[0]["lr"]
+        print(f"[DEBUG] Using fixed learning rate: {lr:.6f}")
 
-    def _call_text2img_criterion(self, pred_fraud, pred_real, fraud_teacher, real_teacher, y, brand_id):
-        """
-        Try calling the criterion with progressively simpler signatures.
-
-        This prevents a common silent failure where:
-          - the loss expects (.., label)
-          - but trainer passes (.., brand_id) and the loss interprets brand_id as label
-        """
-        # (1) label + brand_id
-        try:
-            return self.criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, y, brand_id)
-        except TypeError:
-            pass
-
-        # (2) label only
-        try:
-            return self.criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, y)
-        except TypeError:
-            pass
-
-        # (3) brand_id only (older prototype / NCE variants)
-        return self.criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, brand_id)
-
+    # -------------------------
+    # Epoch loops
+    # -------------------------
     def train_epoch(self, dataloader, mode="pair", grad_clip=1.0):
         self.model.train()
+        self.criterion.train()
         epoch_loss = 0.0
 
         for i, batch in enumerate(dataloader):
@@ -87,22 +62,19 @@ class Trainer:
                 loss = self.criterion(z1, z2, y)
 
             elif mode == "text2img":
-                # Dataset must return 6 items:
-                # fraud_txt, real_txt, fraud_teacher, real_teacher, y, brand_id
-                fraud_txt, real_txt, fraud_teacher, real_teacher, y, brand_id = batch
+                # Expect 5 items (NO brand_id)
+                fraud_txt, real_txt, fraud_teacher, real_teacher, y = batch
 
                 fraud_txt = fraud_txt.to(self.device, non_blocking=True)
                 real_txt = real_txt.to(self.device, non_blocking=True)
                 fraud_teacher = fraud_teacher.to(self.device, non_blocking=True)
                 real_teacher = real_teacher.to(self.device, non_blocking=True)
                 y = y.to(self.device, non_blocking=True)
-                brand_id = brand_id.to(self.device, non_blocking=True)
 
                 pred_fraud, pred_real = self.model(fraud_txt, real_txt)
 
-                loss = self._call_text2img_criterion(
-                    pred_fraud, pred_real, fraud_teacher, real_teacher, y, brand_id
-                )
+                # TeacherScoreDistillBCELoss ignores label (optional arg)
+                loss = self.criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, y)
 
             else:
                 raise ValueError(f"Unsupported mode: {mode}")
@@ -114,10 +86,13 @@ class Trainer:
             loss.backward()
 
             if grad_clip is not None and grad_clip > 0:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), grad_clip)
+                torch.nn.utils.clip_grad_norm_(
+                    list(self.model.parameters()) + list(self.criterion.parameters()),
+                    grad_clip
+                )
 
             self.optimizer.step()
-            epoch_loss += loss.item()
+            epoch_loss += float(loss.item())
 
             if i % 100 == 0:
                 lr = self.optimizer.param_groups[0]["lr"]
@@ -130,6 +105,7 @@ class Trainer:
             return None
 
         self.model.eval()
+        self.criterion.eval()
         epoch_loss = 0.0
 
         with torch.no_grad():
@@ -144,25 +120,21 @@ class Trainer:
                     loss = self.criterion(z1, z2, y)
 
                 elif mode == "text2img":
-                    fraud_txt, real_txt, fraud_teacher, real_teacher, y, brand_id = batch
+                    fraud_txt, real_txt, fraud_teacher, real_teacher, y = batch
 
                     fraud_txt = fraud_txt.to(self.device, non_blocking=True)
                     real_txt = real_txt.to(self.device, non_blocking=True)
                     fraud_teacher = fraud_teacher.to(self.device, non_blocking=True)
                     real_teacher = real_teacher.to(self.device, non_blocking=True)
                     y = y.to(self.device, non_blocking=True)
-                    brand_id = brand_id.to(self.device, non_blocking=True)
 
                     pred_fraud, pred_real = self.model(fraud_txt, real_txt)
-
-                    loss = self._call_text2img_criterion(
-                        pred_fraud, pred_real, fraud_teacher, real_teacher, y, brand_id
-                    )
+                    loss = self.criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, y)
 
                 else:
                     raise ValueError(f"Unsupported mode: {mode}")
 
-                epoch_loss += loss.item()
+                epoch_loss += float(loss.item())
 
                 if i % 100 == 0:
                     lr = self.optimizer.param_groups[0]["lr"]
@@ -170,6 +142,9 @@ class Trainer:
 
         return epoch_loss / max(len(dataloader), 1)
 
+    # -------------------------
+    # Evaluation helpers
+    # -------------------------
     def evaluate(self, test_filepath, plot=False, roc_png_path=None, cm_png_path=None):
         self.model.eval()
         return self.evaluator.evaluate(
@@ -179,7 +154,7 @@ class Trainer:
     def _scores_from_loader(self, dataloader, max_batches=None, mode="pair"):
         """
         Utility for optional train/val metric logging during training.
-        Returns DF with columns: label, similarity where similarity = cos(z1,z2).
+        Returns DF with columns: label, similarity
 
         In text2img mode: similarity = cos(pred_fraud, pred_real).
         """
@@ -194,19 +169,23 @@ class Trainer:
 
                 if mode == "pair":
                     x1, x2, y = batch
+                    x1 = x1.to(self.device, non_blocking=True)
+                    x2 = x2.to(self.device, non_blocking=True)
+                    y = y.to(self.device, non_blocking=True)
+
+                    z1, z2 = self.model(x1, x2)
 
                 elif mode == "text2img":
-                    # Dataset returns 6 items; we only need fraud_txt, real_txt, y
-                    x1, x2, _t1, _t2, y, _brand_id = batch
+                    fraud_txt, real_txt, _t1, _t2, y = batch
+                    fraud_txt = fraud_txt.to(self.device, non_blocking=True)
+                    real_txt = real_txt.to(self.device, non_blocking=True)
+                    y = y.to(self.device, non_blocking=True)
+
+                    z1, z2 = self.model(fraud_txt, real_txt)
 
                 else:
                     raise ValueError(f"Unsupported mode: {mode}")
 
-                x1 = x1.to(self.device, non_blocking=True)
-                x2 = x2.to(self.device, non_blocking=True)
-                y = y.to(self.device, non_blocking=True)
-
-                z1, z2 = self.model(x1, x2)
                 z1 = F.normalize(z1, dim=1)
                 z2 = F.normalize(z2, dim=1)
                 sims = F.cosine_similarity(z1, z2, dim=1)
@@ -227,6 +206,9 @@ class Trainer:
         y_pred = (y_scores >= float(threshold)).astype(int)
         return float((y_pred == y_true).mean())
 
+    # -------------------------
+    # Train driver
+    # -------------------------
     def train(
         self,
         dataloader,
@@ -242,7 +224,7 @@ class Trainer:
         grad_clip=1.0,
         early_stopping=True,
         patience=5,
-        min_epochs=50,
+        min_epochs=1,
         min_delta=1e-6,
         save_best=True,
         save_dir="saved_models",
@@ -264,11 +246,12 @@ class Trainer:
         best_val_loss = float("inf")
         bad_epochs = 0
         best_model_path = None
+
         if save_best:
             os.makedirs(save_dir, exist_ok=True)
             best_model_path = os.path.join(save_dir, f"best_model_by_val_trial_{trial_number}{string}.pt")
 
-        for epoch in range(epochs):
+        for epoch in range(int(epochs)):
             train_loss = self.train_epoch(dataloader, mode=mode, grad_clip=grad_clip)
             train_loss_history.append(train_loss)
             best_epoch_loss = min(best_epoch_loss, train_loss)
@@ -279,13 +262,14 @@ class Trainer:
                 val_loss_history.append(val_loss)
                 print(f"Epoch {epoch+1} | Val Loss: {val_loss:.6f}")
 
-                if save_best and val_loss < best_val_loss - min_delta:
+                if save_best and val_loss < best_val_loss - float(min_delta):
                     best_val_loss = val_loss
                     bad_epochs = 0
                     torch.save(
                         {
                             "epoch": epoch + 1,
                             "model_state": self.model.state_dict(),
+                            "criterion_state": self.criterion.state_dict(),
                             "optimizer_state": self.optimizer.state_dict(),
                             "best_val_loss": best_val_loss,
                         },
@@ -295,10 +279,11 @@ class Trainer:
                 else:
                     bad_epochs += 1
 
-                if early_stopping and (epoch + 1) >= min_epochs and bad_epochs >= patience:
+                if early_stopping and (epoch + 1) >= int(min_epochs) and bad_epochs >= int(patience):
                     print(f"[DEBUG] Early stopping at epoch {epoch+1} (best_val_loss={best_val_loss:.6f})")
                     break
 
+            # Optional metric logging
             if (
                 plot_accuracy
                 and validate_dataloader is not None
@@ -326,12 +311,17 @@ class Trainer:
                             f"Val Acc (Youden): {val_acc:.4f} | Thr: {youden_thr:.4f} | AUC: {val_auc:.4f}"
                         )
 
+        # Restore best model
         if save_best and best_model_path is not None and os.path.exists(best_model_path):
             ckpt = torch.load(best_model_path, map_location=self.device)
             self.model.load_state_dict(ckpt["model_state"])
+            if "criterion_state" in ckpt:
+                self.criterion.load_state_dict(ckpt["criterion_state"])
             self.model.to(self.device)
+            self.criterion.to(self.device)
             print(f"[DEBUG] Restored best model into memory from {best_model_path}")
 
+        # Plot losses
         if plot_losses:
             os.makedirs("images", exist_ok=True)
             plot_path = f"images/loss_curve_trial_{trial_number}{string}.png"

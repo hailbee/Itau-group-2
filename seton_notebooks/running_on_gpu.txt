@@ -1,13 +1,5 @@
 "/Users/a../Itau-group-2/data/processed/"
 
-python3 main_edited.py \
-  --mode evaluate_saved \
-  --test_filepath "/Users/a../Downloads/test_pairs_with_siglip_embeddings.parquet" \
-  --batch_size 1024 \
-  --internal_layer_size 1024 \
-  --output_dim 128 \
-  --plot
-
 real name: 0
 fraudulent_name: 1
 label: 0/1 (non-spoof vs spoof)
@@ -106,18 +98,25 @@ During the file creation process, keep the columns and just add in the columns f
 
 python main_edited_text2img.py \
   --mode train --optuna True \
-  --training_filepath '../train_pairs_with_img_and_txt_embs.parquet' \
-  --validate_filepath '../validate_pairs_with_img_and_txt_embs.parquet' \
-  --test_filepath '../test_pairs_with_img_and_txt_embs.parquet' \
-  --epochs 5 --n_trials 2
+  --training_filepath 'Golden_and_Text/train_pairs_with_img_and_txt_embs.parquet' \
+  --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_txt_embs.parquet' \
+  --test_filepath 'Golden_and_Text/test_pairs_with_img_and_txt_embs.parquet' \
+  --epochs 5 --n_trials 50
+
+python main_edited_text2img.py \
+  --mode train --optuna False \
+  --training_filepath 'Golden_and_Text/train_pairs_with_img_and_txt_embs.parquet' \
+  --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_txt_embs.parquet' \
+  --test_filepath 'Golden_and_Text/test_pairs_with_img_and_txt_embs.parquet' \
+  --epochs 10 --batch_size 64 --lr 4.3284502212938785e-05 --internal_layer_size 256 --optimizer adam --weight_decay 3.5113563139704077e-06
 
 python main_edited_text2img.py \
   --mode train --optuna False \
   --training_filepath '../train_pairs_with_img_and_txt_embs.parquet' \
   --validate_filepath '../validate_pairs_with_img_and_txt_embs.parquet' \
   --test_filepath '../test_pairs_with_img_and_txt_embs.parquet' \
-  --epochs 10 --batch_size 64 --lr 4.3284502212938785e-05 --internal_layer_size 256 --optimizer adam --weight_decay 3.5113563139704077e-06
-
+  --epochs 10 --batch_size 64 --lr 4.3284502212938785e-05 --internal_layer_size 256 --optimizer adam --weight_decay 3.5113563139704077e-06 \
+  --w_distill 0.0 --w_pair_teacher 1.0 --w_bce 0.0
 
 label = 0 means not actually no matter how similar, label = 1 means spoof attempt. what loss to choose and why? answer in a paragraph? and by the way the task is to just make the embedding spaces align. they have the same real name, fake name, and label just different embeddings (obviously)
 
@@ -131,3 +130,36 @@ Get auc roc implemented in evaluator file
 Remove the Top k things for now
 Get other metrics in that file
 Find a way to reliably test the other things you are trying? Maybe just upload to GitHub and save
+
+git clone --branch training --single-branch git@github.com:hailbee/Itau-group-2.git
+cd Itau-group-2
+
+cd Itau-group-2
+git remote set-url origin git@github.com:hailbee/Itau-group-2.git
+git fetch origin
+git switch training
+# if it doesn't exist locally yet:
+git switch -c training --track origin/training
+
+git branch --show-current
+git log -1 --oneline
+
+cd Itau-group-2
+git branch --show-current
+git status
+git add -A
+git commit -m "Describe what you changed"
+git push -u origin training
+
+
+ssh orcd-login
+tmux new -s gpu
+salloc -p mit_preemptable \
+  --gres=gpu:1 \
+  -c 8 --mem=128G \
+  -t 04:00:00
+Copy node name
+Ctrl-b then d
+
+ssh orcd-login
+tmux attach -t gpu

@@ -16,9 +16,9 @@ This script:
   - keeps ALL existing columns intact (including image embeddings)
 
 Example:
-  python create_siglip_text_embeddings.py \
-    --input 'Downloads/validate_pairs_with_siglip_embeddings' \
-    --output validate_pairs_with_img_and_txt_embs.parquet \
+  python seton_notebooks/create_siglip_text_embeddings.py \
+    --input 'Golden/golden_embeddings_validate.parquet' \
+    --output Golden_and_Text/validate_pairs_with_img_and_txt_embs.parquet \
     --batch-size 256 \
     --strip-com
 """

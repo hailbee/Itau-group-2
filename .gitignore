@@ -7,3 +7,13 @@ __pycache__/
 # outputs/ft_image_encoder/*
 data/embeddings/*.npz
 data/images/test_images.zip
+test_pairs_with_img_and_txt_embs.parquet
+train_pairs_with_img_and_txt_embs.parquet
+validate_pairs_with_img_and_txt_embs.parquet
+Downloads/test_pairs_with_siglip_embeddings.parquet
+Downloads/train_pairs_with_siglip_embeddings_100k.parquet
+Downloads/validate_pairs_with_siglip_embeddings.parquet
+Golden/golden_embeddings_test.parquet
+Golden/golden_embeddings_train.parquet
+Golden/golden_embeddings_validate.parquet
+single_run_model.pt

@@ -2,7 +2,6 @@
 import argparse
 import torch
 import pandas as pd
-
 from torch.utils.data import DataLoader
 
 from scripts.training.trainer import Trainer
@@ -12,8 +11,7 @@ from scripts.evaluation.evaluator2 import Evaluator2, EvalConfig
 from model_utils.models.learning.siamese import SiameseEmbeddingModel
 from model_utils.utils.data import Text2ImgDistillDataset
 
-# ✅ NEW: loss that matches your objective (distill + pair-geometry transfer)
-from model_utils.loss.distill_losses import DistillPlusLabelPairLoss
+from model_utils.loss.distill_losses import TeacherScoreDistillBCELoss
 
 
 # -------------------------
@@ -51,12 +49,13 @@ def build_optimizer(name, params, lr, weight_decay):
 # -------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="Text → spoof-aware image embedding distillation (CASE 2)"
+        description="Text → spoof-aware image embedding distillation (teacher-score BCE, single-term)"
     )
 
     # mode
     parser.add_argument("--mode", type=str, choices=["train", "evaluate_saved"], required=True)
-    # Default to False so you don't accidentally run legacy optuna flow
+
+    # NOTE: Optuna flow is legacy in your codebase; keep it but warn
     parser.add_argument("--optuna", type=str, choices=["True", "False"], default="False")
 
     # data
@@ -67,7 +66,7 @@ def main():
     # saved model eval
     parser.add_argument("--model_path", type=str, default=None)
 
-    # embedding slices
+    # embedding slices (wide format)
     parser.add_argument("--fake_start", type=int, default=3)
     parser.add_argument("--fake_end", type=int, default=771)
     parser.add_argument("--real_start", type=int, default=771)
@@ -85,12 +84,6 @@ def main():
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--internal_layer_size", type=int, default=512)
     parser.add_argument("--optimizer", type=str, default="adamw", choices=["adam", "adamw", "sgd"])
-
-    # loss weights (kept minimal; defaults chosen to be stable)
-    # Recommended starting point: distill + teacher-pair transfer, no BCE.
-    parser.add_argument("--w_distill", type=float, default=1.0)
-    parser.add_argument("--w_bce", type=float, default=0.0)
-    parser.add_argument("--w_pair_teacher", type=float, default=1.0)
 
     # optuna
     parser.add_argument("--n_trials", type=int, default=50)
@@ -122,9 +115,11 @@ def main():
         # ---------- OPTUNA (legacy flow) ----------
         if args.optuna == "True":
             print(
-                "[WARN] Optuna flow uses the legacy optimizer plumbing/loss_type strings. "
-                "If you want the new loss, run with --optuna False."
+                "[WARN] Your Optuna plumbing uses legacy loss_type strings. "
+                "It will NOT use TeacherScoreDistillBCELoss unless you also update the optimizer code. "
+                "Run with --optuna False to train with the teacher-score BCE loss."
             )
+
             optimizer = UnifiedHyperparameterOptimizer(
                 model_type="text2img_distill",
                 device=device,
@@ -155,11 +150,12 @@ def main():
 
         train_ds = Text2ImgDistillDataset(
             train_df,
-            fraud_img_slice=slice(args.fake_start, args.fake_end),
-            real_img_slice=slice(args.real_start, args.real_end),
-            fraud_txt_slice=slice(args.fraud_text_start, args.fraud_text_end),
-            real_txt_slice=slice(args.real_text_start, args.real_text_end),
-            label_col=2,
+            fraud_img=slice(args.fake_start, args.fake_end),
+            real_img=slice(args.real_start, args.real_end),
+            fraud_txt=slice(args.fraud_text_start, args.fraud_text_end),
+            real_txt=slice(args.real_text_start, args.real_text_end),
+            label_col="label",
+            fallback_label_idx=2,
         )
 
         train_loader = DataLoader(
@@ -173,11 +169,12 @@ def main():
         if val_df is not None:
             val_ds = Text2ImgDistillDataset(
                 val_df,
-                fraud_img_slice=slice(args.fake_start, args.fake_end),
-                real_img_slice=slice(args.real_start, args.real_end),
-                fraud_txt_slice=slice(args.fraud_text_start, args.fraud_text_end),
-                real_txt_slice=slice(args.real_text_start, args.real_text_end),
-                label_col=2,
+                fraud_img=slice(args.fake_start, args.fake_end),
+                real_img=slice(args.real_start, args.real_end),
+                fraud_txt=slice(args.fraud_text_start, args.fraud_text_end),
+                real_txt=slice(args.real_text_start, args.real_text_end),
+                label_col="label",
+                fallback_label_idx=2,
             )
             val_loader = DataLoader(
                 val_ds,
@@ -192,14 +189,10 @@ def main():
             out_dim=768,
         ).to(device)
 
-        # ✅ New criterion (distill + teacher pair geometry; optional BCE)
-        criterion = DistillPlusLabelPairLoss(
-            w_distill=args.w_distill,
-            w_bce=args.w_bce,
-            w_pair_teacher=args.w_pair_teacher,
-        ).to(device)
+        # ✅ Single-term loss (NO hybrid)
+        criterion = TeacherScoreDistillBCELoss().to(device)
 
-        # ✅ IMPORTANT: include criterion params (logit_scale) even if w_bce=0 (harmless)
+        # ✅ Include criterion params (it learns a few scalar calibration params)
         optim_params = list(model.parameters()) + list(criterion.parameters())
         optimizer = build_optimizer(args.optimizer, optim_params, args.lr, args.weight_decay)
 
