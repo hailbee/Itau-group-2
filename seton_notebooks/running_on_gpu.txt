@@ -94,27 +94,6 @@ During the file creation process, keep the columns and just add in the columns f
 
 python main_edited_text2img.py \
   --mode train --optuna True \
-  --training_filepath 'Golden_and_Text/train_pairs_with_img_and_txt_embs.parquet' \
-  --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_txt_embs.parquet' \
-  --test_filepath 'Golden_and_Text/test_pairs_with_img_and_txt_embs.parquet' \
-  --epochs 5 --n_trials 50
-
-python main_edited_text2img.py \
-  --mode train --optuna False \
-  --training_filepath 'Golden_and_Text/train_pairs_with_img_and_txt_embs.parquet' \
-  --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_txt_embs.parquet' \
-  --test_filepath 'Golden_and_Text/test_pairs_with_img_and_txt_embs.parquet' \
-  --epochs 10 \
-  --batch_size 64 \
-  --lr 0.0002603974145489503 \
-  --internal_layer_size 768 \
-  --optimizer adamw \
-  --weight_decay 3.889585817855393e-06 \
-
-'lr': 0.0002603974145489503, 'batch_size': 64, 'internal_layer_size': 768, 'optimizer': 'adamw', 'weight_decay': 3.889585817855393e-06, 'grad_clip': 1.0
-
-python main_edited_text2img.py \
-  --mode train --optuna True \
   --training_filepath 'Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet' \
   --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet' \
   --test_filepath 'Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet' \
@@ -126,11 +105,19 @@ python main_edited_text2img.py \
   --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet' \
   --test_filepath 'Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet' \
   --epochs 50 \
-  --batch_size 64 \
-  --lr 0.00024330013346171852 \
-   --internal_layer_size 512 \
-  --optimizer adam \
-  --weight_decay 1.5265709375846812e-07
+  --batch_size 256 \
+  --lr 3.8697602793311115e-05 \
+  --internal_layer_size 1024 \
+  --out_dim 768 \
+  --optimizer adamw \
+  --weight_decay 6.274971797383357e-06 \
+  --tau 0.010138021131092497 \
+  --lam_diag 0.3180357429783238 \
+  --lam_mat 0.17655685811785032
+  
+best_value: 0.9759635064110617
+best_params: {'lr': 3.8697602793311115e-05, 'batch_size': 256, 'hidden_dim': 1024, 'out_dim': 768, 
+'optimizer': 'adamw', 'weight_decay': 6.274971797383357e-06, 'tau': 0.010138021131092497, 'lam_diag': 0.3180357429783238, 'lam_mat': 0.17655685811785032}
 
 label = 0 means not actually no matter how similar, label = 1 means spoof attempt. what loss to choose and why? answer in a paragraph? and by the way the task is to just make the embedding spaces align. they have the same real name, fake name, and label just different embeddings (obviously)
 

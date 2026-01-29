@@ -3,24 +3,13 @@
 import os
 import torch
 import matplotlib.pyplot as plt
-import pandas as pd
 
 
 class Trainer:
     """
     SINGLE MODE TRAINER
 
-    Task:
-      Text -> Golden (spoof-aware) distillation
-
-    Batch format:
-      (fraud_txt, real_txt, fraud_teacher, real_teacher, label)
-
-    Model:
-      model(fraud_txt, real_txt) -> (pred_fraud, pred_real)
-
-    Loss:
-      criterion(pred_fraud, pred_real, fraud_teacher, real_teacher, label)
+    Saves best checkpoint by validation loss (robust to tiny losses like 1e-6).
     """
 
     def __init__(self, model, criterion, optimizer, device):
@@ -60,15 +49,15 @@ class Trainer:
 
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
-
             self.optimizer.step()
+
             epoch_loss += float(loss.item())
 
             if i % 100 == 0:
                 lr = self.optimizer.param_groups[0]["lr"]
                 print(
                     f"Step {i}/{len(dataloader)} | "
-                    f"LR: {lr:.6f} | Loss: {loss.item():.6f}"
+                    f"LR: {lr:.6f} | Loss: {loss.item():.10f}"
                 )
 
         return epoch_loss / max(len(dataloader), 1)
@@ -125,11 +114,20 @@ class Trainer:
         early_stopping=True,
         patience=5,
         min_epochs=25,
-        min_delta=1e-6,
+        min_delta=0.0,          # ✅ FIX: default to saving on *any* improvement
+        relative_delta=False,   # optional: use relative improvement threshold instead of absolute
         save_best=True,
         save_dir="saved_models",
-        eval_every=None,   # ⭐ NEW
+        eval_every=None,
     ):
+        """
+        min_delta:
+          - if relative_delta=False: absolute improvement needed (best - val_loss > min_delta)
+          - if relative_delta=True: relative improvement needed ((best - val_loss)/max(best,eps) > min_delta)
+
+        With tiny losses (~1e-6), you almost always want min_delta=0.0 or ~1e-9.
+        """
+
         train_loss_history = []
         val_loss_history = []
 
@@ -139,24 +137,44 @@ class Trainer:
 
         if save_best:
             os.makedirs(save_dir, exist_ok=True)
-            best_model_path = os.path.join(
-                save_dir, f"best_model_trial_{trial_number}{string}.pt"
-            )
+            best_model_path = os.path.join(save_dir, f"best_model_trial_{trial_number}{string}.pt")
+            print(f"[DEBUG] best_model_path={os.path.abspath(best_model_path)}")
 
         for epoch in range(int(epochs)):
             train_loss = self.train_epoch(dataloader)
             train_loss_history.append(train_loss)
-            print(f"Epoch {epoch+1} | Train Loss: {train_loss:.6f}")
+            print(f"Epoch {epoch+1} | Train Loss: {train_loss:.10f}")
 
             val_loss = self.validate_epoch(validate_dataloader)
             if val_loss is not None:
                 val_loss_history.append(val_loss)
-                print(f"Epoch {epoch+1} | Val Loss: {val_loss:.6f}")
 
-                improved = val_loss < best_val_loss - float(min_delta)
+                # ---- robust improvement check ----
+                if best_val_loss == float("inf"):
+                    delta = float("inf")
+                    improved = True
+                else:
+                    delta = best_val_loss - val_loss
+                    if relative_delta:
+                        denom = max(best_val_loss, 1e-12)
+                        improved = (delta / denom) > float(min_delta)
+                    else:
+                        improved = delta > float(min_delta)
+
+                print(
+                    f"[VAL] epoch={epoch+1} "
+                    f"val_loss={val_loss:.12f} "
+                    f"best_val_loss={best_val_loss:.12f} "
+                    f"delta={delta:.3e} "
+                    f"min_delta={float(min_delta):.3e} "
+                    f"relative={relative_delta} "
+                    f"improved={improved}"
+                )
+
                 if save_best and improved:
                     best_val_loss = val_loss
                     bad_epochs = 0
+
                     torch.save(
                         {
                             "epoch": epoch + 1,
@@ -169,23 +187,19 @@ class Trainer:
                     )
                     print(
                         f"[DEBUG] Saved best checkpoint "
-                        f"(val_loss={best_val_loss:.6f}) -> {best_model_path}"
+                        f"(val_loss={best_val_loss:.12f}) -> {best_model_path}"
                     )
                 else:
                     bad_epochs += 1
 
-                if (
-                    early_stopping
-                    and (epoch + 1) >= int(min_epochs)
-                    and bad_epochs >= int(patience)
-                ):
+                if early_stopping and (epoch + 1) >= int(min_epochs) and bad_epochs >= int(patience):
                     print(
                         f"[DEBUG] Early stopping at epoch {epoch+1} "
-                        f"(best_val_loss={best_val_loss:.6f})"
+                        f"(best_val_loss={best_val_loss:.12f})"
                     )
                     break
 
-            # ⭐ Periodic, trustworthy evaluation
+            # optional periodic evaluation (not required)
             if eval_every is not None and test_filepath is not None:
                 if (epoch + 1) % int(eval_every) == 0:
                     print(f"[EVAL] Running evaluation at epoch {epoch+1}")
@@ -211,6 +225,8 @@ class Trainer:
             self.model.to(self.device)
             self.criterion.to(self.device)
             print(f"[DEBUG] Restored best model from {best_model_path}")
+        else:
+            print("[WARN] No best checkpoint found on disk. Check save_dir/min_delta/validate_dataloader.")
 
         # Plot losses
         if plot_losses:
@@ -236,5 +252,5 @@ class Trainer:
             "best_val_loss": best_val_loss if best_val_loss < float("inf") else None,
             "final_train_loss": train_loss_history[-1] if train_loss_history else None,
             "final_val_loss": val_loss_history[-1] if val_loss_history else None,
-            "best_model_path": best_model_path,
+            "best_model_path": best_model_path if best_model_path and os.path.exists(best_model_path) else None,
         }

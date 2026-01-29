@@ -1,268 +1,108 @@
-# scripts/evaluation/evaluator.py
-
-import os
 import torch
 import torch.nn.functional as F
 import pandas as pd
+from sklearn.metrics import roc_curve, precision_score, recall_score, accuracy_score, roc_auc_score
+from utils.evals import find_best_threshold_youden, plot_roc_curve, plot_confusion_matrix, find_best_threshold_accuracy
+from utils.embeddings import EmbeddingExtractor, SupConEmbeddingExtractor, batched_embedding
 import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.metrics import roc_curve, auc, accuracy_score, confusion_matrix
-
+from sklearn.metrics import auc
 
 class Evaluator:
     """
-    Evaluation for pairwise Siamese model where model(x1, x2) -> (z1, z2).
-
-    Computes cosine similarity scores in the learned projection space and reports:
-      - ROC AUC
-      - Youden-optimal threshold (maximizes TPR - FPR) + accuracy at that threshold
-      - Best-accuracy threshold (any threshold maximizing accuracy) + that best accuracy
-      - Confusion matrix at Youden threshold
-
-    Optionally saves:
-      - ROC curve PNG
-      - Confusion matrix PNG (Youden threshold)
+    Unified evaluation interface for model testing and metrics computation (pairwise only).
     """
-
     def __init__(self, model, batch_size=32, model_type=None):
         self.model = model
-        self.batch_size = int(batch_size)
+        self.batch_size = batch_size
         self.model_type = model_type
+        # Only use embedding extractor
+        if model_type in ['supcon', 'infonce']:
+            print("USING SUPCON EMBEDDING EXTRACTOR")
+            self.extractor = SupConEmbeddingExtractor(model)
+        else:
+            print("USING STANDARD EMBEDDING EXTRACTOR")
+            self.extractor = EmbeddingExtractor(model)
 
-    # -------------------------------
-    # Plot helpers
-    # -------------------------------
-    def _save_roc_plot(self, fpr, tpr, roc_auc, save_path, title="ROC Curve"):
-        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
-        plt.figure()
-        plt.plot(fpr, tpr, label=f"AUC = {roc_auc:.4f}")
-        plt.plot([0, 1], [0, 1], linestyle="--")
-        plt.xlabel("False Positive Rate")
-        plt.ylabel("True Positive Rate")
-        plt.title(title)
-        plt.legend(loc="lower right")
-        plt.tight_layout()
-        plt.savefig(save_path)
-        plt.close()
-        print(f"[DEBUG] Saved ROC curve to {save_path}")
-
-    def _save_confusion_matrix_plot(
-        self,
-        cm,
-        save_path,
-        title="Confusion Matrix (Youden)",
-        class_names=("0", "1"),
-    ):
-        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
-        plt.figure()
-        plt.imshow(cm, interpolation="nearest")
-        plt.title(title)
-        plt.colorbar()
-
-        tick_marks = np.arange(len(class_names))
-        plt.xticks(tick_marks, [f"Pred {c}" for c in class_names])
-        plt.yticks(tick_marks, [f"True {c}" for c in class_names])
-
-        for i in range(cm.shape[0]):
-            for j in range(cm.shape[1]):
-                plt.text(j, i, str(cm[i, j]), ha="center", va="center")
-
-        plt.ylabel("True label")
-        plt.xlabel("Predicted label")
-        plt.tight_layout()
-        plt.savefig(save_path)
-        plt.close()
-        print(f"[DEBUG] Saved confusion matrix to {save_path}")
-
-    # -------------------------------
-    # Metrics
-    # -------------------------------
-    def compute_metrics(
-        self,
-        results_df,
-        plot=False,
-        roc_png_path=None,
-        cm_png_path=None,
-        title_prefix="Test",
-    ):
+    def compute_metrics(self, results_df, plot=False):
         """
-        results_df must contain:
-          - label (0/1)
-          - similarity (float cosine similarity)
+        Compute evaluation metrics from results.
+        Optionally plot ROC curve and confusion matrix.
+        Args:
+            results_df: DataFrame with test results
+            plot (bool): If True, plot ROC curve and confusion matrices. If False, do not plot anything.
+        Returns:
+            dict: Dictionary of metrics
         """
-        y_true = results_df["label"].astype(int).to_numpy()
-        y_scores = results_df["similarity"].astype(float).to_numpy()
-
-        # ROC + thresholds
+        y_true = results_df['label']
+        y_scores = results_df['max_similarity']
+        
+        # Compute ROC curve ONCE and reuse
         fpr, tpr, thresholds = roc_curve(y_true, y_scores)
-        roc_auc = float(auc(fpr, tpr))
-
-        # -------------------------------
-        # Youden threshold (maximize TPR - FPR)
-        # -------------------------------
-        youden_j = tpr - fpr
-        youden_best_idx = int(np.argmax(youden_j))
-        youden_threshold = float(thresholds[youden_best_idx])
-        best_youden_j = float(youden_j[youden_best_idx])
-
-        y_pred_youden = (y_scores >= youden_threshold).astype(int)
-        accuracy_youden = float(accuracy_score(y_true, y_pred_youden))
-        cm_youden = confusion_matrix(y_true, y_pred_youden)
-
-        # -------------------------------
-        # Best-accuracy threshold (maximize accuracy)
-        # -------------------------------
-        finite_mask = np.isfinite(thresholds)
-        finite_thresholds = thresholds[finite_mask]
-
-        accs = []
-        for thr in finite_thresholds:
-            y_pred = (y_scores >= thr).astype(int)
-            accs.append(accuracy_score(y_true, y_pred))
-        accs = np.asarray(accs, dtype=float)
-
-        best_acc_idx = int(np.argmax(accs))
-        best_accuracy_threshold = float(finite_thresholds[best_acc_idx])
-        best_accuracy = float(accs[best_acc_idx])
-
-        # -------------------------------
-        # Logging
-        # -------------------------------
+        roc_auc = auc(fpr, tpr)
         print(f"ROC AUC: {roc_auc:.4f}")
-        print(f"Youden threshold: {youden_threshold:.4f}")
-        print(f"Accuracy (Youden): {accuracy_youden:.4f}")
-        print(f"Best-Acc threshold: {best_accuracy_threshold:.4f}")
-        print(f"Best Accuracy: {best_accuracy:.4f}")
-
-        # -------------------------------
-        # Plots
-        # -------------------------------
-        if plot:
-            # ROC
-            if roc_png_path is None:
-                os.makedirs("images", exist_ok=True)
-                roc_png_path = "images/roc_curve.png"
-            self._save_roc_plot(
-                fpr=fpr,
-                tpr=tpr,
-                roc_auc=roc_auc,
-                save_path=roc_png_path,
-                title=f"{title_prefix} ROC Curve",
-            )
-
-            # Confusion matrix (Youden)
-            if cm_png_path is None:
-                os.makedirs("images", exist_ok=True)
-                cm_png_path = "images/confusion_matrix_youden.png"
-            self._save_confusion_matrix_plot(
-                cm=cm_youden,
-                save_path=cm_png_path,
-                title=f"{title_prefix} Confusion Matrix (Youden)",
-                class_names=("0", "1"),
-            )
-
-        return {
-            "roc_auc": roc_auc,
-
-            "youden_j": best_youden_j,
-            "youden_threshold": youden_threshold,
-            "accuracy_youden": accuracy_youden,
-            "confusion_matrix_youden": cm_youden.tolist(),
-
-            "best_accuracy": best_accuracy,
-            "best_accuracy_threshold": best_accuracy_threshold,
+        
+        # Find thresholds using the already computed ROC curve
+        youden_thresh = find_best_threshold_youden(fpr, tpr, thresholds) # prints best thresh
+        best_acc, best_acc_threshold = find_best_threshold_accuracy(y_true, y_scores, thresholds) # prints acc and thresh
+        
+        # Compute predictions
+        y_pred = (y_scores > youden_thresh).astype(int)
+        
+        # Build metrics dict (at Youden's threshold)
+        metrics = {
+            'accuracy': accuracy_score(y_true, y_pred),
+            'precision': precision_score(y_true, y_pred, zero_division=0),
+            'recall': recall_score(y_true, y_pred, zero_division=0),
+            'threshold': youden_thresh,
+            'roc_curve': (fpr, tpr, thresholds),
+            'roc_auc': roc_auc,
+            'best_accuracy': best_acc,
+            'best_accuracy_threshold': best_acc_threshold
         }
+        
+        # Plot if requested (using already computed values)
+        if plot:
+            plot_roc_curve(results_df)  # This will recompute ROC for plotting, but that's OK for visualization
+            print(f"Plotting confusion matrix at Youden's threshold: {youden_thresh:.3f}")
+            plot_confusion_matrix(y_true, y_scores, youden_thresh)
+            print(f"Best Accuracy: {best_acc:.4f} at Threshold: {best_acc_threshold:.3f}")
+            plot_confusion_matrix(y_true, y_scores, best_acc_threshold)
+        
+        return metrics
 
-    # -------------------------------
-    # Public entrypoints
-    # -------------------------------
-    def evaluate(
-        self,
-        test_filepath,
-        plot=False,
-        max_rows=None,
-        roc_png_path=None,
-        cm_png_path=None,
-    ):
-        return self.test_pairs(
-            test_filepath,
-            plot=plot,
-            max_rows=max_rows,
-            roc_png_path=roc_png_path,
-            cm_png_path=cm_png_path,
-        )
+    def evaluate(self, test_filepath, plot=False):
+        """
+        Evaluate model on a file of (fraudulent_name, real_name, label) pairs.
+        Args:
+            test_filepath: Path to test data (CSV or PARQUET with fraudulent_name, real_name, label)
+            plot (bool): Whether to plot ROC/confusion matrix
+        Returns:
+            tuple: (results_df, metrics)
+        """
+        return self.test_pairs(test_filepath, plot=plot)
 
-    def test_pairs(
-        self,
-        test_filepath,
-        plot=False,
-        max_rows=None,
-        roc_png_path=None,
-        cm_png_path=None,
-    ):
-        # Load data
-        if str(test_filepath).endswith(".csv"):
+    def test_pairs(self, test_filepath, plot=False):
+        import pandas as pd
+        
+        if test_filepath.endswith('.csv'):
             df = pd.read_csv(test_filepath)
         else:
             df = pd.read_parquet(test_filepath)
-
-        if max_rows is not None:
-            df = df.head(int(max_rows))
-
-        fraud_names = df["fraudulent_name"].astype(str).tolist()
-        real_names = df["real_name"].astype(str).tolist()
-        labels = df["label"].astype(int).tolist()
-
-        # Pull embeddings (adjust slices if your parquet layout changes)
-        fraud_np = df.iloc[:, 3:771].to_numpy(dtype=np.float32, copy=False)
-        real_np = df.iloc[:, 771:1539].to_numpy(dtype=np.float32, copy=False)
-
-        fraud_embs = torch.from_numpy(fraud_np)
-        real_embs = torch.from_numpy(real_np)
-
-        # Decide device from model
-        try:
-            device = next(self.model.parameters()).device
-        except StopIteration:
-            device = torch.device(
-                "cuda" if torch.cuda.is_available()
-                else "mps" if torch.backends.mps.is_available()
-                else "cpu"
-            )
-
-        self.model.eval()
-        sims_all = []
-        bs = int(self.batch_size)
-
-        with torch.no_grad():
-            for start in range(0, len(df), bs):
-                end = start + bs
-                x1 = fraud_embs[start:end].to(device)
-                x2 = real_embs[start:end].to(device)
-
-                z1, z2 = self.model(x1, x2)
-
-                # Match training behavior: L2 normalize before comparing
-                z1 = F.normalize(z1, dim=1)
-                z2 = F.normalize(z2, dim=1)
-
-                sims = F.cosine_similarity(z1, z2, dim=1)
-                sims_all.append(sims.detach().cpu())
-
-        similarities = torch.cat(sims_all, dim=0).numpy()
-
+        
+        fraud_names = df['fraudulent_name'].astype(str).tolist()
+        real_names = df['real_name'].astype(str).tolist()
+        labels = df['label'].astype(float).tolist()
+        
+        fraud_embs = batched_embedding(self.extractor, fraud_names, self.batch_size)
+        real_embs = batched_embedding(self.extractor, real_names, self.batch_size)
+        
+        similarities = F.cosine_similarity(fraud_embs, real_embs, dim=1).detach().cpu().numpy()
         results_df = pd.DataFrame({
-            "fraudulent_name": fraud_names,
-            "real_name": real_names,
-            "label": labels,
-            "similarity": similarities,
+            'fraudulent_name': fraud_names,
+            'real_name': real_names,
+            'label': labels,
+            'max_similarity': similarities
         })
-
-        metrics = self.compute_metrics(
-            results_df,
-            plot=plot,
-            roc_png_path=roc_png_path,
-            cm_png_path=cm_png_path,
-            title_prefix="Test",
-        )
-        return results_df, metrics
+        
+        metrics = self.compute_metrics(results_df, plot=plot)
+        return results_df, metrics 

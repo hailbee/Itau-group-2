@@ -1,39 +1,36 @@
 #!/usr/bin/env python3
 """
-Append VATE (trained Siamese) TEXT embeddings to an existing file that already contains IMAGE embeddings.
+Append TEXT embeddings that match Evaluator.test_pairs exactly.
 
-SAFE VERSION:
-- Preserves all existing columns exactly
-- Appends fraud_txt_emb_* and real_txt_emb_* as float32
-- Hard-fails on ANY column collision
-- No index reset, no reordering, no dtype pollution
+- Reads an existing "golden" parquet (already contains fraud_aligned_* / real_aligned_*).
+- Loads the trained SiameseModelPairs exactly like main.py (evaluate_saved mode).
+- Uses the same extractor + batched_embedding path as Evaluator.
+- Appends fraud_txt_emb_* and real_txt_emb_* (float32), aligned by row order.
 
 Example:
-python seton_notebooks/create_golden_with_vate_text_embeddings.py \
-  --input text_to_image/Golden/golden_embeddings_train.parquet \
-  --output text_to_image/Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet \
+python seton_notebooks/create_golden_with_VATE_embeddings.py \
+  --input text_to_image/Golden/golden_embeddings_test.parquet \
+  --output text_to_image/Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet \
   --backbone siglip \
   --model-weights weights/best_model_siglip_pair.pt \
-  --batch-size 256
+  --batch-size 256 \
+  --device cuda
 """
 
 from __future__ import annotations
 
 import argparse
 import os
-import re
-import unicodedata
-from typing import Optional, List, Any, Dict
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from tqdm.auto import tqdm
 
-# VATE / your repo imports
 from scripts.baseline.baseline_tester import BaselineTester
 from model_utils.models.learning.siamese import SiameseModelPairs
+from utils.embeddings import EmbeddingExtractor, SupConEmbeddingExtractor, batched_embedding
 
 
 # ---------------------------
@@ -54,178 +51,44 @@ def save_table(df: pd.DataFrame, path: str) -> None:
 
 
 # ---------------------------
-# Text normalization
+# Checkpoint helpers
 # ---------------------------
-def normalize_name(x: object, strip_com: bool) -> str:
-    s = unicodedata.normalize("NFC", str(x))
-    s = s.lstrip("-").strip()
-    if strip_com:
-        s = re.sub(r"\.com$", "", s, flags=re.IGNORECASE)
-    return s
+def load_checkpoint_safely(path: str, map_location: torch.device) -> Any:
+    # torch>=2.6 supports weights_only
+    try:
+        return torch.load(path, map_location=map_location, weights_only=True)
+    except TypeError:
+        return torch.load(path, map_location=map_location)
 
 
-def pick_device(override: Optional[str]) -> torch.device:
-    if override:
-        d = torch.device(override)
-        if d.type == "cuda" and not torch.cuda.is_available():
-            raise RuntimeError("Requested CUDA but torch.cuda.is_available() is False.")
-        return d
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
-
-
-class nullcontext:
-    def __enter__(self):  # noqa: D401
-        return None
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-
-# ---------------------------
-# Checkpoint loading helpers
-# ---------------------------
 def _extract_state_dict(ckpt: Any) -> Dict[str, torch.Tensor]:
-    """
-    Supports common checkpoint formats:
-      - raw state_dict (mapping param_name -> tensor)
-      - {"state_dict": ...}
-      - {"model_state_dict": ...}
-      - {"model": ...}
-    """
+    # main.py assumes raw state_dict; support common wrappers too.
     if isinstance(ckpt, dict):
-        # If it looks like a raw state_dict already (tensor values), return as-is.
         if len(ckpt) > 0 and all(isinstance(v, torch.Tensor) for v in ckpt.values()):
-            return ckpt  # type: ignore[return-value]
-
-        for k in ("state_dict", "model_state_dict", "model"):
+            return ckpt
+        for k in ("state_dict", "model_state_dict", "model", "model_state"):
             if k in ckpt and isinstance(ckpt[k], dict):
                 sd = ckpt[k]
                 if len(sd) > 0 and all(isinstance(v, torch.Tensor) for v in sd.values()):
-                    return sd  # type: ignore[return-value]
-
-    raise RuntimeError(
-        "Unrecognized checkpoint format. Expected a state_dict or a dict containing "
-        "'state_dict'/'model_state_dict'/'model'."
-    )
+                    return sd
+    raise RuntimeError("Unrecognized checkpoint format.")
 
 
-# ---------------------------
-# VATE text embedding extraction
-# ---------------------------
-def _project_text_features_if_needed(
-    siamese_model: torch.nn.Module,
-    text_features: torch.Tensor,
-) -> torch.Tensor:
-    """
-    If the Siamese model exposes an explicit projection module for text, apply it.
-    Otherwise assume the returned tensor is already the final embedding.
-    """
-    # Common attribute names for a text projection head
-    for attr in ("text_projection", "text_proj", "proj_text", "projection_text"):
-        if hasattr(siamese_model, attr):
-            mod = getattr(siamese_model, attr)
-            if callable(mod):
-                return mod(text_features)
-    # Some implementations have a shared projection head, but that would be ambiguous.
-    return text_features
+def _strip_prefix(sd: Dict[str, torch.Tensor], prefix: str) -> Dict[str, torch.Tensor]:
+    return { (k[len(prefix):] if k.startswith(prefix) else k): v for k, v in sd.items() }
 
 
-@torch.no_grad()
-def _encode_text_batch(
-    texts: List[str],
-    siamese_model: torch.nn.Module,
-    device: torch.device,
-    use_amp: bool,
-) -> torch.Tensor:
-    """
-    Attempts multiple safe pathways to obtain FINAL VATE text embeddings from the trained Siamese model.
-
-    Preferred:
-      1) siamese_model.encode_text(texts)
-      2) siamese_model.get_text_embeddings(texts)
-      3) siamese_model.backbone.encode_text(texts) (+ optional projection)
-
-    Returns: (B, D) float tensor on CPU.
-    """
-    autocast_ctx = (
-        torch.autocast(device_type="cuda", dtype=torch.float16) if use_amp else nullcontext()
-    )
-
-    # Path 1: encode_text on the Siamese model
-    if hasattr(siamese_model, "encode_text") and callable(getattr(siamese_model, "encode_text")):
-        with autocast_ctx:
-            out = siamese_model.encode_text(texts)  # type: ignore[attr-defined]
-        if not isinstance(out, torch.Tensor):
-            raise RuntimeError("siamese_model.encode_text(...) did not return a torch.Tensor.")
-        return out.float().detach().cpu()
-
-    # Path 2: get_text_embeddings on the Siamese model
-    if hasattr(siamese_model, "get_text_embeddings") and callable(getattr(siamese_model, "get_text_embeddings")):
-        with autocast_ctx:
-            out = siamese_model.get_text_embeddings(texts)  # type: ignore[attr-defined]
-        if not isinstance(out, torch.Tensor):
-            raise RuntimeError("siamese_model.get_text_embeddings(...) did not return a torch.Tensor.")
-        return out.float().detach().cpu()
-
-    # Path 3: backbone has encode_text (then apply projection if model exposes it)
-    if hasattr(siamese_model, "backbone"):
-        backbone = getattr(siamese_model, "backbone")
-        if hasattr(backbone, "encode_text") and callable(getattr(backbone, "encode_text")):
-            with autocast_ctx:
-                feats = backbone.encode_text(texts)  # type: ignore[attr-defined]
-            if not isinstance(feats, torch.Tensor):
-                raise RuntimeError("siamese_model.backbone.encode_text(...) did not return a torch.Tensor.")
-            with autocast_ctx:
-                emb = _project_text_features_if_needed(siamese_model, feats)
-            if not isinstance(emb, torch.Tensor):
-                raise RuntimeError("Text projection did not return a torch.Tensor.")
-            return emb.float().detach().cpu()
-
-    raise RuntimeError(
-        "Could not find a supported text-encoding method.\n"
-        "Tried: siamese_model.encode_text, siamese_model.get_text_embeddings, "
-        "siamese_model.backbone.encode_text.\n"
-        "Inspect your SiameseModelPairs/backbone implementation and add a compatible method."
-    )
-
-
-@torch.no_grad()
-def embed_unique_texts_vate(
-    uniq_texts: List[str],
-    siamese_model: torch.nn.Module,
-    device: torch.device,
-    batch_size: int,
-    do_l2_normalize: bool,
-) -> np.ndarray:
-    """
-    Returns float32 embeddings of shape (N, D) from the TRAINED VATE Siamese model.
-    """
-    n = len(uniq_texts)
-    if n == 0:
-        raise ValueError("No texts to embed.")
-
-    siamese_model.eval()
-
-    use_amp = device.type == "cuda"
-    embeddings_cpu: List[torch.Tensor] = []
-
-    for start in tqdm(range(0, n, batch_size), desc="Embedding text (VATE)"):
-        chunk = uniq_texts[start : start + batch_size]
-
-        # The underlying model/backbone should handle tokenization internally.
-        e_cpu = _encode_text_batch(chunk, siamese_model=siamese_model, device=device, use_amp=use_amp)
-
-        if do_l2_normalize:
-            e_cpu = F.normalize(e_cpu, dim=-1, eps=1e-8)
-
-        embeddings_cpu.append(e_cpu)
-
-    emb = torch.cat(embeddings_cpu, dim=0).numpy().astype(np.float32)
-    return emb
+def load_state_dict_robust(model: torch.nn.Module, sd: Dict[str, torch.Tensor]) -> None:
+    try:
+        model.load_state_dict(sd, strict=True)
+        return
+    except RuntimeError:
+        for p in ("module.", "model.", "net.", "encoder.", "siamese_model."):
+            if any(k.startswith(p) for k in sd.keys()):
+                model.load_state_dict(_strip_prefix(sd, p), strict=True)
+                print(f"[INFO] Loaded after stripping prefix: {p!r}")
+                return
+        raise
 
 
 # ---------------------------
@@ -233,113 +96,106 @@ def embed_unique_texts_vate(
 # ---------------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input", required=True, help="Parquet with image embeddings (golden or raw)")
-    ap.add_argument("--output", required=True, help="Output parquet with image + VATE text embeddings")
-
-    # VATE-specific
-    ap.add_argument(
-        "--backbone",
-        default="siglip",
-        choices=["clip", "coca", "flava", "siglip"],
-        help="Backbone type used by the saved Siamese model",
-    )
-    ap.add_argument(
-        "--model-weights",
-        required=True,
-        help="Path to trained Siamese model weights (.pt) to produce VATE embeddings",
-    )
-    ap.add_argument("--embedding-dim", type=int, default=768, help="Siamese embedding_dim used in training")
-    ap.add_argument("--projection-dim", type=int, default=768, help="Siamese projection_dim used in training")
-
+    ap.add_argument("--input", required=True)
+    ap.add_argument("--output", required=True)
+    ap.add_argument("--backbone", default="siglip", choices=["clip", "coca", "flava", "siglip"])
+    ap.add_argument("--model-weights", required=True)
+    ap.add_argument("--embedding-dim", type=int, default=768)
+    ap.add_argument("--projection-dim", type=int, default=768)
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--device", default=None)
-    ap.add_argument("--strip-com", action="store_true")
-    ap.add_argument("--no-normalize", action="store_true")
-    ap.add_argument("--max-rows", type=int, default=None)
     ap.add_argument("--overwrite", action="store_true")
+
+    # Only if you trained with these modes; otherwise leave default (matches evaluate_saved)
+    ap.add_argument("--model-type", default=None, help="use 'supcon' or 'infonce' to select SupConEmbeddingExtractor")
+
+    # IMPORTANT: match evaluator behavior if you want identical AUC numbers
+    ap.add_argument("--head1024", action="store_true", help="If set, embeds only df.head(1024) (like Evaluator)")
+
     args = ap.parse_args()
 
     if (not args.overwrite) and os.path.exists(args.output):
         raise FileExistsError(f"Output already exists: {args.output}")
 
-    df = load_table(args.input)
-
-    if args.max_rows is not None:
-        df = df.head(int(args.max_rows))
-
-    # Required columns
-    if "fraudulent_name" not in df.columns or "real_name" not in df.columns:
-        raise RuntimeError("Input must contain 'fraudulent_name' and 'real_name' columns.")
-
-    df = df.copy()
-    df["fraudulent_name"] = df["fraudulent_name"].map(lambda x: normalize_name(x, args.strip_com))
-    df["real_name"] = df["real_name"].map(lambda x: normalize_name(x, args.strip_com))
-
-    device = pick_device(args.device)
+    device = torch.device(args.device) if args.device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[INFO] device={device}")
 
-    # Build the exact backbone wrapper your VATE code uses
+    df = load_table(args.input).copy()
+
+    if args.head1024:
+        df = df.head(1024).copy()
+        print("[INFO] Using df.head(1024) to match Evaluator")
+
+    # Require columns
+    for col in ("fraudulent_name", "real_name", "label"):
+        if col not in df.columns:
+            raise RuntimeError(f"Missing required column: {col}")
+
+    # Build backbone wrapper exactly like main.py
     tester = BaselineTester(model_type=args.backbone, batch_size=args.batch_size, device=str(device))
     backbone_module = tester.model_wrapper
 
-    # Instantiate the Siamese model in the same configuration used during training
+    # Build SiameseModelPairs exactly like main.py
     siamese_model = SiameseModelPairs(
         embedding_dim=int(args.embedding_dim),
         projection_dim=int(args.projection_dim),
         backbone=backbone_module,
     ).to(device)
 
-    ckpt = torch.load(args.model_weights, map_location=device)
-    state_dict = _extract_state_dict(ckpt)
-    siamese_model.load_state_dict(state_dict)
+    ckpt = load_checkpoint_safely(args.model_weights, map_location=device)
+    sd = _extract_state_dict(ckpt)
+    load_state_dict_robust(siamese_model, sd)
     siamese_model.eval()
 
-    # Deduplicate text
-    all_texts = pd.concat(
-        [df["fraudulent_name"], df["real_name"]],
-        ignore_index=True,
-    ).astype(str)
+    # EXACT extractor selection logic from Evaluator
+    if args.model_type in ["supcon", "infonce"]:
+        print("[INFO] USING SUPCON EMBEDDING EXTRACTOR (matches Evaluator)")
+        extractor = SupConEmbeddingExtractor(siamese_model)
+    else:
+        print("[INFO] USING STANDARD EMBEDDING EXTRACTOR (matches Evaluator)")
+        extractor = EmbeddingExtractor(siamese_model)
 
-    uniq_texts = pd.unique(all_texts).tolist()
-    print(f"[INFO] unique text strings: {len(uniq_texts):,}")
+    fraud_names = df["fraudulent_name"].astype(str).tolist()
+    real_names  = df["real_name"].astype(str).tolist()
 
-    emb_mat = embed_unique_texts_vate(
-        uniq_texts=uniq_texts,
-        siamese_model=siamese_model,
-        device=device,
-        batch_size=args.batch_size,
-        do_l2_normalize=(not args.no_normalize),
-    )
+    # EXACT embedding calls from Evaluator
+    fraud_embs = batched_embedding(extractor, fraud_names, args.batch_size)
+    real_embs  = batched_embedding(extractor, real_names, args.batch_size)
 
-    dim = emb_mat.shape[1]
-    print(f"[INFO] VATE text embedding dim = {dim}")
+    if not isinstance(fraud_embs, torch.Tensor) or not isinstance(real_embs, torch.Tensor):
+        raise RuntimeError("batched_embedding did not return torch.Tensor(s).")
 
-    # Map text → embedding
-    text_to_idx = {t: i for i, t in enumerate(uniq_texts)}
-    fraud_idx = df["fraudulent_name"].map(text_to_idx).to_numpy()
-    real_idx = df["real_name"].map(text_to_idx).to_numpy()
-
-    fraud_embs = emb_mat[fraud_idx]
-    real_embs = emb_mat[real_idx]
+    # Save raw embeddings (don’t renormalize here; cosine_similarity handles it like Evaluator)
+    fraud_np = fraud_embs.detach().cpu().to(torch.float32).numpy()
+    real_np  = real_embs.detach().cpu().to(torch.float32).numpy()
+    dim = fraud_np.shape[1]
+    print(f"[INFO] text emb dim={dim}")
 
     fraud_cols = [f"fraud_txt_emb_{i}" for i in range(dim)]
-    real_cols = [f"real_txt_emb_{i}" for i in range(dim)]
-
-    # HARD FAIL on collision
+    real_cols  = [f"real_txt_emb_{i}" for i in range(dim)]
     for c in fraud_cols + real_cols:
         if c in df.columns:
             raise RuntimeError(f"Column collision detected: {c}")
 
     text_df = pd.DataFrame(
-        np.hstack([fraud_embs, real_embs]),
+        np.hstack([fraud_np, real_np]),
         columns=fraud_cols + real_cols,
+        index=df.index,           # prevents alignment bugs
         dtype=np.float32,
     )
 
     out_df = pd.concat([df, text_df], axis=1)
-
     save_table(out_df, args.output)
-    print(f"[INFO] wrote clean merged file → {args.output}")
+    print(f"[INFO] wrote → {args.output}")
+
+    # Optional: print the AUC computed exactly like Evaluator (sanity)
+    with torch.no_grad():
+        sims = F.cosine_similarity(fraud_embs, real_embs, dim=1).detach().cpu().numpy()
+    y = out_df["label"].astype(float).to_numpy()
+    # quick AUC
+    from sklearn.metrics import roc_curve, auc
+    fpr, tpr, _ = roc_curve(y, sims)
+    print(f"[INFO] sanity ROC AUC (Evaluator-style): {auc(fpr,tpr):.4f}")
 
 
 if __name__ == "__main__":

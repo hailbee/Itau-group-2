@@ -8,8 +8,8 @@ from sklearn.metrics import roc_curve, auc, accuracy_score, confusion_matrix
 
 """
 # Golden / spoof-aware image embeddings
-python golden_eval.py \
-  --input Golden_and_Text/test_pairs_with_img_and_txt_embs.parquet \
+python text_to_image/golden_eval.py \
+  --input text_to_image/Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet \
   --space raw_text
   """
 

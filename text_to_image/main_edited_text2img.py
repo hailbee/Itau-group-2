@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import torch
 import pandas as pd
 from torch.utils.data import DataLoader
@@ -9,7 +10,9 @@ from evaluator2 import Evaluator2, EvalConfig
 
 from siamese import SiameseEmbeddingModel
 from data import Text2TeacherDistillDataset
-from distill_losses import EmbeddingCosineDistillLoss
+
+# ✅ use the new loss
+from distill_losses import AUCBestHybridLoss
 
 
 # -------------------------
@@ -49,12 +52,23 @@ def infer_dim_from_prefix(df: pd.DataFrame, prefix: str) -> int:
     return len(cols)
 
 
+def safe_torch_load(path: str, map_location: torch.device):
+    """
+    Torch 2.6+ supports weights_only=True for safer loading.
+    Older torch will throw TypeError (unexpected kwarg), so we fall back.
+    """
+    try:
+        return torch.load(path, map_location=map_location, weights_only=True)
+    except TypeError:
+        return torch.load(path, map_location=map_location)
+
+
 # -------------------------
 # Main
 # -------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="Text → teacher (golden) embedding distillation (teacher-score BCE)"
+        description="Text → teacher (golden) embedding distillation (AUC-optimized ranking + teacher regularization)"
     )
 
     # mode
@@ -77,7 +91,20 @@ def main():
     parser.add_argument("--internal_layer_size", type=int, default=512)
     parser.add_argument("--optimizer", type=str, default="adamw", choices=["adam", "adamw", "sgd"])
 
-    # optuna controls (kept simple)
+    # ✅ NEW: allow out_dim != teacher_dim
+    parser.add_argument(
+        "--out_dim",
+        type=int,
+        default=None,
+        help="Student output embedding dim. Default=None -> match teacher_dim.",
+    )
+
+    # ✅ NEW: AUCBestHybridLoss hyperparams
+    parser.add_argument("--tau", type=float, default=0.05, help="Ranking temperature for AUCBestHybridLoss")
+    parser.add_argument("--lam_diag", type=float, default=0.1, help="Teacher diagonal sim regularization weight")
+    parser.add_argument("--lam_mat", type=float, default=0.0, help="Teacher cross-view matrix regularization weight")
+
+    # optuna controls
     parser.add_argument("--n_trials", type=int, default=50)
     parser.add_argument("--optuna_short_epochs", type=int, default=5)
 
@@ -129,7 +156,7 @@ def main():
             real_txt_prefix="real_txt_emb_",
             fraud_teacher_prefix="fraud_aligned_",
             real_teacher_prefix="real_aligned_",
-            label_col="label",  
+            label_col="label",
         )
 
         val_ds = Text2TeacherDistillDataset(
@@ -154,25 +181,38 @@ def main():
             pin_memory=(device.type == "cuda"),
         )
 
-        # Infer dims (prevents 768/128 mismatches)
+        # Infer dims
         text_dim = infer_dim_from_prefix(train_df, "fraud_txt_emb_")
         teacher_dim = infer_dim_from_prefix(train_df, "fraud_aligned_")
-        print(f"[INFO] text_dim={text_dim} | teacher_dim={teacher_dim}")
+        out_dim = int(args.out_dim) if args.out_dim is not None else int(teacher_dim)
+
+        print(f"[INFO] text_dim={text_dim} | teacher_dim={teacher_dim} | out_dim={out_dim}")
+        print(f"[INFO] loss hyperparams: tau={args.tau} | lam_diag={args.lam_diag} | lam_mat={args.lam_mat}")
 
         model = SiameseEmbeddingModel(
             embedding_dim=text_dim,
-            hidden_dim=args.internal_layer_size,
-            out_dim=teacher_dim,   # IMPORTANT: match teacher (128)
+            hidden_dim=int(args.internal_layer_size),
+            out_dim=out_dim,
         ).to(device)
 
-        criterion = EmbeddingCosineDistillLoss().to(device)
+        # ✅ instantiate the new loss
+        criterion = AUCBestHybridLoss(
+            tau=float(args.tau),
+            lam_diag=float(args.lam_diag),
+            lam_mat=float(args.lam_mat),
+        ).to(device)
 
-        optim_params = list(model.parameters()) + list(criterion.parameters())
-        optimizer = build_optimizer(args.optimizer, optim_params, args.lr, args.weight_decay)
+        # ✅ criterion has no parameters; don't include it
+        optimizer = build_optimizer(
+            args.optimizer,
+            model.parameters(),
+            args.lr,
+            args.weight_decay,
+        )
 
         trainer = Trainer(model, criterion, optimizer, device)
 
-        trainer.train(
+        train_result = trainer.train(
             dataloader=train_loader,
             validate_dataloader=val_loader,
             test_filepath=args.test_filepath,
@@ -182,14 +222,17 @@ def main():
             save_dir=args.save_dir,
         )
 
+        if isinstance(train_result, dict) and train_result.get("best_model_path"):
+            print(f"[INFO] Best checkpoint: {train_result['best_model_path']}")
+
         # -------- FINAL TEST EVAL --------
         print("\n[INFO] Running final test evaluation...")
 
         evaluator = Evaluator2(
             model,
-            EvalConfig(batch_size=args.eval_batch_size),
+            EvalConfig(batch_size=int(args.eval_batch_size)),
         )
-        results_df, test_metrics = evaluator.evaluate(args.test_filepath, max_rows=args.eval_max_rows)
+        _results_df, test_metrics = evaluator.evaluate(args.test_filepath, max_rows=args.eval_max_rows)
 
         print("\n[INFO] Final test metrics:")
         print("\nAlignment debug:")
@@ -210,26 +253,31 @@ def main():
     if args.mode == "evaluate_saved":
         if args.model_path is None:
             raise ValueError("--model_path is required for evaluate_saved")
+        if not os.path.exists(args.model_path):
+            raise FileNotFoundError(f"Model path does not exist: {args.model_path}")
 
         test_df = load_table(args.test_filepath)
         text_dim = infer_dim_from_prefix(test_df, "fraud_txt_emb_")
         teacher_dim = infer_dim_from_prefix(test_df, "fraud_aligned_")
+        out_dim = int(args.out_dim) if args.out_dim is not None else int(teacher_dim)
+
+        print(f"[INFO] text_dim={text_dim} | teacher_dim={teacher_dim} | out_dim={out_dim}")
 
         model = SiameseEmbeddingModel(
             embedding_dim=text_dim,
-            hidden_dim=args.internal_layer_size,
-            out_dim=teacher_dim,
+            hidden_dim=int(args.internal_layer_size),
+            out_dim=out_dim,
         ).to(device)
 
-        state = torch.load(args.model_path, map_location=device)
+        state = safe_torch_load(args.model_path, map_location=device)
         if isinstance(state, dict) and "model_state" in state:
             state = state["model_state"]
         model.load_state_dict(state)
         model.eval()
 
-        evaluator = Evaluator2(model, EvalConfig(batch_size=args.eval_batch_size))
+        evaluator = Evaluator2(model, EvalConfig(batch_size=int(args.eval_batch_size)))
         print("\n[INFO] Running final test evaluation...")
-        results_df, test_metrics = evaluator.evaluate(args.test_filepath, max_rows=args.eval_max_rows)
+        _results_df, test_metrics = evaluator.evaluate(args.test_filepath, max_rows=args.eval_max_rows)
 
         print("\n[INFO] Final test metrics:")
         print(test_metrics)
