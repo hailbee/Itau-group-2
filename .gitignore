@@ -17,3 +17,5 @@ Golden/golden_embeddings_test.parquet
 Golden/golden_embeddings_train.parquet
 Golden/golden_embeddings_validate.parquet
 single_run_model.pt
+text_to_image/Golden/*.parquet
+text_to_image/Golden_and_Text/*.parquet

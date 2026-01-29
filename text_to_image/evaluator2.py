@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from sklearn.metrics import roc_curve, auc, accuracy_score, confusion_matrix
+from sklearn.metrics import roc_curve, roc_auc_score, accuracy_score, confusion_matrix
 
 
 def _sorted_prefixed_cols(df: pd.DataFrame, prefix: str) -> List[str]:
@@ -63,8 +63,19 @@ class Evaluator2:
         self.cfg = cfg or EvalConfig()
 
     def _compute_metrics(self, y_true, y_scores, tag: str) -> Dict[str, Any]:
+        """
+        IMPORTANT: ROC AUC computed with roc_auc_score() to MATCH Optuna exactly.
+        Threshold/accuracy still uses roc_curve for Youden's J.
+        """
+        # Match Optuna label handling as closely as possible
+        y_true = np.asarray(y_true).astype(np.int32, copy=False)
+        y_scores = np.asarray(y_scores)
+
+        # Optuna-style AUC
+        roc_auc = float(roc_auc_score(y_true, y_scores))
+
+        # Youden threshold (needs roc_curve)
         fpr, tpr, thresholds = roc_curve(y_true, y_scores)
-        roc_auc = float(auc(fpr, tpr))
 
         youden_j = tpr - fpr
         idx = int(np.argmax(youden_j))
@@ -118,7 +129,7 @@ class Evaluator2:
             dim=1
         ).cpu().numpy()
 
-        # STUDENT score (match teacher evaluation)
+        # STUDENT score
         try:
             device = next(self.model.parameters()).device
         except StopIteration:
