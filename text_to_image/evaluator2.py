@@ -12,9 +12,6 @@ import torch.nn.functional as F
 from sklearn.metrics import roc_curve, auc, accuracy_score, confusion_matrix
 
 
-# --------------------------------------------------
-# Helpers
-# --------------------------------------------------
 def _sorted_prefixed_cols(df: pd.DataFrame, prefix: str) -> List[str]:
     cols = [c for c in df.columns if isinstance(c, str) and c.startswith(prefix)]
     if not cols:
@@ -33,15 +30,12 @@ def _mat(df: pd.DataFrame, prefix: str) -> torch.Tensor:
     return torch.tensor(df[cols].to_numpy(dtype=np.float32, copy=False))
 
 
-# --------------------------------------------------
-# Config
-# --------------------------------------------------
 @dataclass
 class EvalConfig:
     batch_size: int = 2048
 
-    fraud_txt_prefix: str = "fraud_txt_"
-    real_txt_prefix: str = "real_txt_"
+    fraud_txt_prefix: str = "fraud_txt_emb_"
+    real_txt_prefix: str = "real_txt_emb_"
 
     fraud_teacher_prefix: str = "fraud_aligned_"
     real_teacher_prefix: str = "real_aligned_"
@@ -51,32 +45,23 @@ class EvalConfig:
     real_name_col: str = "real_name"
 
 
-# --------------------------------------------------
-# Evaluator
-# --------------------------------------------------
 class Evaluator2:
     """
-    Correct evaluation for text→teacher distillation.
+    Evaluation aligned with your reported teacher baseline:
 
-    Scores reported:
-      - RAW_TEXT:    cos(fraud_txt, real_txt)
-      - TEACHER:     cos(fraud_teacher, real_teacher)
-      - STUDENT:     cos(pred_delta, teacher_delta)
-                     where:
-                       pred_delta    = pred_fraud - pred_real
-                       teacher_delta = fraud_teacher - real_teacher
+      - RAW_TEXT:  cos(fraud_txt, real_txt)
+      - TEACHER:   cos(fraud_teacher, real_teacher)
+      - STUDENT:   cos(pred_fraud, pred_real)
 
-    This ensures the student is evaluated in the *same decision geometry*
-    as the teacher. Shortcut solutions will no longer score well.
+    Diagnostics:
+      - cos(pred_fraud, fraud_teacher)
+      - cos(pred_real,  real_teacher)
     """
 
     def __init__(self, model, cfg: Optional[EvalConfig] = None):
         self.model = model
         self.cfg = cfg or EvalConfig()
 
-    # -------------------------
-    # Metrics
-    # -------------------------
     def _compute_metrics(self, y_true, y_scores, tag: str) -> Dict[str, Any]:
         fpr, tpr, thresholds = roc_curve(y_true, y_scores)
         roc_auc = float(auc(fpr, tpr))
@@ -100,9 +85,6 @@ class Evaluator2:
             "confusion_matrix_youden": cm.tolist(),
         }
 
-    # -------------------------
-    # Main evaluation
-    # -------------------------
     @torch.inference_mode()
     def evaluate(
         self,
@@ -117,32 +99,26 @@ class Evaluator2:
         y = df[self.cfg.label_col].astype(int).to_numpy()
 
         fraud_txt = _mat(df, self.cfg.fraud_txt_prefix)
-        real_txt = _mat(df, self.cfg.real_txt_prefix)
+        real_txt  = _mat(df, self.cfg.real_txt_prefix)
 
         fraud_teacher = _mat(df, self.cfg.fraud_teacher_prefix)
-        real_teacher = _mat(df, self.cfg.real_teacher_prefix)
+        real_teacher  = _mat(df, self.cfg.real_teacher_prefix)
 
-        # -------------------------
         # RAW TEXT score
-        # -------------------------
         sim_raw = F.cosine_similarity(
             F.normalize(fraud_txt, dim=1),
             F.normalize(real_txt, dim=1),
             dim=1
         ).cpu().numpy()
 
-        # -------------------------
         # TEACHER score
-        # -------------------------
         sim_teacher = F.cosine_similarity(
             F.normalize(fraud_teacher, dim=1),
             F.normalize(real_teacher, dim=1),
             dim=1
         ).cpu().numpy()
 
-        # -------------------------
-        # STUDENT score (CORRECT)
-        # -------------------------
+        # STUDENT score (match teacher evaluation)
         try:
             device = next(self.model.parameters()).device
         except StopIteration:
@@ -166,33 +142,22 @@ class Evaluator2:
 
             p_f, p_r = self.model(f_txt, r_txt)
 
-            # normalize everything
             p_f = F.normalize(p_f, dim=1)
             p_r = F.normalize(p_r, dim=1)
             f_t = F.normalize(f_t, dim=1)
             r_t = F.normalize(r_t, dim=1)
 
-            # delta vectors define spoof geometry
-            student_delta = p_f - p_r
-            teacher_delta = f_t - r_t
+            sims_student.append(F.cosine_similarity(p_f, p_r, dim=1).cpu())
 
-            sims_student.append(
-                F.cosine_similarity(student_delta, teacher_delta, dim=1).cpu()
-            )
-
-            # alignment diagnostics
             align_fraud.append(F.cosine_similarity(p_f, f_t, dim=1).cpu())
             align_real.append(F.cosine_similarity(p_r, r_t, dim=1).cpu())
 
         sim_student = torch.cat(sims_student).numpy()
         cos_fraud_align = torch.cat(align_fraud).numpy()
-        cos_real_align = torch.cat(align_real).numpy()
+        cos_real_align  = torch.cat(align_real).numpy()
 
-        # -------------------------
-        # Metrics
-        # -------------------------
         student_metrics = self._compute_metrics(y, sim_student, "STUDENT")
-        raw_metrics = self._compute_metrics(y, sim_raw, "RAW_TEXT")
+        raw_metrics     = self._compute_metrics(y, sim_raw, "RAW_TEXT")
         teacher_metrics = self._compute_metrics(y, sim_teacher, "TEACHER")
 
         results_df = pd.DataFrame({

@@ -9,7 +9,7 @@ from evaluator2 import Evaluator2, EvalConfig
 
 from siamese import SiameseEmbeddingModel
 from data import Text2TeacherDistillDataset
-from distill_losses import TeacherScoreDistillBCELoss
+from distill_losses import EmbeddingCosineDistillLoss
 
 
 # -------------------------
@@ -54,13 +54,11 @@ def infer_dim_from_prefix(df: pd.DataFrame, prefix: str) -> int:
 # -------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="Text → spoof-aware (golden) embedding distillation (teacher-score BCE, single-term)"
+        description="Text → teacher (golden) embedding distillation (teacher-score BCE)"
     )
 
     # mode
     parser.add_argument("--mode", type=str, choices=["train", "evaluate_saved"], required=True)
-
-    # NOTE: Optuna flow is legacy in your codebase; keep it but warn
     parser.add_argument("--optuna", type=str, choices=["True", "False"], default="False")
 
     # data
@@ -70,7 +68,7 @@ def main():
 
     # saved model eval
     parser.add_argument("--model_path", type=str, default=None)
-    
+
     # training hyperparams
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch_size", type=int, default=256)
@@ -78,11 +76,15 @@ def main():
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--internal_layer_size", type=int, default=512)
     parser.add_argument("--optimizer", type=str, default="adamw", choices=["adam", "adamw", "sgd"])
+    parser.add_argument("--grad_clip", type=float, default=1.0)
+
+    # optuna controls (kept simple)
+    parser.add_argument("--n_trials", type=int, default=50)
+    parser.add_argument("--optuna_short_epochs", type=int, default=5)
 
     # misc
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--save_dir", type=str, default="saved_models")
-    parser.add_argument("--log_dir", type=str, default="optimization_results")
 
     # eval speed
     parser.add_argument("--eval_batch_size", type=int, default=2048)
@@ -99,21 +101,42 @@ def main():
     if args.mode == "train":
         if args.training_filepath is None:
             raise ValueError("--training_filepath is required for training")
+        if args.validate_filepath is None:
+            raise ValueError("--validate_filepath is required for training (needed for early stopping / sanity eval)")
 
+        # ---------- OPTUNA ----------
         if args.optuna == "True":
-            raise RuntimeError(
-                "Optuna path is legacy and not wired to the new prefix-based datasets/evaluator. "
-                "Run with --optuna False."
+            from optuna_distill import run_optuna, OptunaConfig
+
+            best = run_optuna(
+                training_filepath=args.training_filepath,
+                validate_filepath=args.validate_filepath,
+                device=args.device,
+                cfg=OptunaConfig(n_trials=int(args.n_trials), short_epochs=int(args.optuna_short_epochs)),
             )
 
-        train_df = load_table(args.training_filepath)
-        val_df = load_table(args.validate_filepath) if args.validate_filepath else None
+            print("\n[OPTUNA RESULT]")
+            print("best_value:", best["best_value"])
+            print("best_params:", best["best_params"])
+            return
 
-        # Prefix-based dataset (your schema)
+        # ---------- SINGLE RUN ----------
+        train_df = load_table(args.training_filepath)
+        val_df = load_table(args.validate_filepath)
+
         train_ds = Text2TeacherDistillDataset(
             train_df,
-            fraud_txt_prefix="fraud_txt_",
-            real_txt_prefix="real_txt_",
+            fraud_txt_prefix="fraud_txt_emb_",
+            real_txt_prefix="real_txt_emb_",
+            fraud_teacher_prefix="fraud_aligned_",
+            real_teacher_prefix="real_aligned_",
+            label_col="label",  
+        )
+
+        val_ds = Text2TeacherDistillDataset(
+            val_df,
+            fraud_txt_prefix="fraud_txt_emb_",
+            real_txt_prefix="real_txt_emb_",
             fraud_teacher_prefix="fraud_aligned_",
             real_teacher_prefix="real_aligned_",
             label_col="label",
@@ -125,39 +148,26 @@ def main():
             shuffle=True,
             pin_memory=(device.type == "cuda"),
         )
+        val_loader = DataLoader(
+            val_ds,
+            batch_size=args.batch_size,
+            shuffle=False,
+            pin_memory=(device.type == "cuda"),
+        )
 
-        val_loader = None
-        if val_df is not None:
-            val_ds = Text2TeacherDistillDataset(
-                val_df,
-                fraud_txt_prefix="fraud_txt_",
-                real_txt_prefix="real_txt_",
-                fraud_teacher_prefix="fraud_aligned_",
-                real_teacher_prefix="real_aligned_",
-                label_col="label",
-            )
-            val_loader = DataLoader(
-                val_ds,
-                batch_size=args.batch_size,
-                shuffle=False,
-                pin_memory=(device.type == "cuda"),
-            )
-
-        # ✅ Infer dims from dataframe to avoid teacher-dim mistakes
-        text_dim = infer_dim_from_prefix(train_df, "fraud_txt_")
+        # Infer dims (prevents 768/128 mismatches)
+        text_dim = infer_dim_from_prefix(train_df, "fraud_txt_emb_")
         teacher_dim = infer_dim_from_prefix(train_df, "fraud_aligned_")
-
         print(f"[INFO] text_dim={text_dim} | teacher_dim={teacher_dim}")
 
-        # ✅ IMPORTANT FIX:
-        # student outputs MUST match teacher_dim (128), not 768
         model = SiameseEmbeddingModel(
             embedding_dim=text_dim,
             hidden_dim=args.internal_layer_size,
-            out_dim=teacher_dim,
+            out_dim=teacher_dim,   # IMPORTANT: match teacher (128)
         ).to(device)
 
-        criterion = TeacherScoreDistillBCELoss().to(device)
+        criterion = EmbeddingCosineDistillLoss().to(device)
+
         optim_params = list(model.parameters()) + list(criterion.parameters())
         optimizer = build_optimizer(args.optimizer, optim_params, args.lr, args.weight_decay)
 
@@ -170,7 +180,7 @@ def main():
             string="_distill",
             trial_number=1,
             epochs=args.epochs,
-            eval_every=1,
+            grad_clip=args.grad_clip,
             save_dir=args.save_dir,
         )
 
@@ -179,34 +189,21 @@ def main():
 
         evaluator = Evaluator2(
             model,
-            EvalConfig(
-                batch_size=args.eval_batch_size,
-                fraud_txt_prefix="fraud_txt_",
-                real_txt_prefix="real_txt_",
-                fraud_teacher_prefix="fraud_aligned_",
-                real_teacher_prefix="real_aligned_",
-                label_col="label",
-            ),
+            EvalConfig(batch_size=args.eval_batch_size),
         )
-
         results_df, test_metrics = evaluator.evaluate(args.test_filepath, max_rows=args.eval_max_rows)
 
         print("\n[INFO] Final test metrics:")
         print("\nAlignment debug:")
-        print(test_metrics["alignment_debug"])
-
-        print("\nSpoof decision (TEACHER / GOLDEN space):")
-        print(test_metrics["teacher"])
-
-        print("\nSpoof decision (RAW TEXT space):")
-        print(test_metrics["raw_text"])
-
-        print("\nSpoof decision (STUDENT space):")
-        print(test_metrics["student"])
-
+        print(test_metrics.get("alignment_debug"))
+        print("\nTeacher:")
+        print(test_metrics.get("teacher_image_space") or test_metrics.get("teacher"))
+        print("\nRaw text:")
+        print(test_metrics.get("raw_text_space") or test_metrics.get("raw_text"))
+        print("\nStudent:")
+        print(test_metrics.get("aligned_text_space") or test_metrics.get("student"))
         print("\nDeltas:")
-        print(test_metrics["deltas"])
-
+        print(test_metrics.get("deltas"))
         return
 
     # -------------------------
@@ -216,9 +213,8 @@ def main():
         if args.model_path is None:
             raise ValueError("--model_path is required for evaluate_saved")
 
-        # We infer dims from test file so you don't hardcode 768/128 incorrectly
         test_df = load_table(args.test_filepath)
-        text_dim = infer_dim_from_prefix(test_df, "fraud_txt_")
+        text_dim = infer_dim_from_prefix(test_df, "fraud_txt_emb_")
         teacher_dim = infer_dim_from_prefix(test_df, "fraud_aligned_")
 
         model = SiameseEmbeddingModel(
@@ -233,37 +229,12 @@ def main():
         model.load_state_dict(state)
         model.eval()
 
-        evaluator = Evaluator2(
-            model,
-            EvalConfig(
-                batch_size=args.eval_batch_size,
-                fraud_txt_prefix="fraud_txt_",
-                real_txt_prefix="real_txt_",
-                fraud_teacher_prefix="fraud_aligned_",
-                real_teacher_prefix="real_aligned_",
-                label_col="label",
-            ),
-        )
-
+        evaluator = Evaluator2(model, EvalConfig(batch_size=args.eval_batch_size))
         print("\n[INFO] Running final test evaluation...")
         results_df, test_metrics = evaluator.evaluate(args.test_filepath, max_rows=args.eval_max_rows)
 
         print("\n[INFO] Final test metrics:")
-        print("\nAlignment debug:")
-        print(test_metrics["alignment_debug"])
-
-        print("\nSpoof decision (TEACHER / GOLDEN space):")
-        print(test_metrics["teacher"])
-
-        print("\nSpoof decision (RAW TEXT space):")
-        print(test_metrics["raw_text"])
-
-        print("\nSpoof decision (STUDENT space):")
-        print(test_metrics["student"])
-
-        print("\nDeltas:")
-        print(test_metrics["deltas"])
-
+        print(test_metrics)
         return
 
 

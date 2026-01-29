@@ -8,6 +8,9 @@ real image: 771..1538
 fraud text: 1539..2306
 real text: 2307..3074
 
+Counter({'fraud_txt_emb_': 768, 'real_txt_emb_': 768, 'fraud_aligned_': 128, 'real_aligned_': 128, 'fraudulent_name': 1, 'real_name': 1, 'label': 1})
+
+
 salloc -p mit_preemptable \
   --gres=gpu:h200:1 \
   -c 8 --mem=128G \
@@ -27,13 +30,6 @@ salloc -p mit_preemptable \
   --gres=gpu:1 \
   -c 8 --mem=128G \
   -t 04:00:00
-
-cd ~/Itau-group-2
-conda activate itau
-touch scripts/__init__.py
-touch scripts/training/__init__.py
-export PYTHONPATH=$(pwd)
-export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 python -m main_edited
 
@@ -108,7 +104,15 @@ python main_edited_text2img.py \
   --training_filepath 'Golden_and_Text/train_pairs_with_img_and_txt_embs.parquet' \
   --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_txt_embs.parquet' \
   --test_filepath 'Golden_and_Text/test_pairs_with_img_and_txt_embs.parquet' \
-  --epochs 50 --batch_size 64 --lr 4.3284502212938785e-05 --internal_layer_size 256 --optimizer adam --weight_decay 3.5113563139704077e-06
+  --epochs 50 \
+  --batch_size 64 \
+  --lr 0.0002603974145489503 \
+  --internal_layer_size 768 \
+  --optimizer adamw \
+  --weight_decay 3.889585817855393e-06 \
+  --grad_clip 1.0
+
+'lr': 0.0002603974145489503, 'batch_size': 64, 'internal_layer_size': 768, 'optimizer': 'adamw', 'weight_decay': 3.889585817855393e-06, 'grad_clip': 1.0
 
 python main_edited_text2img.py \
   --mode train --optuna False \
@@ -155,6 +159,7 @@ git pull
 
 ssh orcd-login
 tmux new -s gpu
+tmux attach -t gpu
 salloc -p mit_preemptable \
   --gres=gpu:1 \
   -c 8 --mem=128G \
@@ -162,8 +167,9 @@ salloc -p mit_preemptable \
 Copy node name
 Ctrl-b then d
 
-ssh orcd-login
-tmux attach -t gpu
-
-git config --global user.name "Seton Liu"
-git config --global user.email "setliu22@mit.edu"
+cd ~/Itau-group-2
+conda activate itau
+touch scripts/__init__.py
+touch scripts/training/__init__.py
+export PYTHONPATH=$(pwd)
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH

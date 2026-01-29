@@ -10,8 +10,8 @@ SAFE VERSION:
 
 Example:
 python seton_notebooks/create_golden_with_text_embeddings.py \
-  --input Golden/golden_embeddings_validate.parquet \
-  --output Golden_and_Text/validate_pairs_with_img_and_txt_embs.parquet \
+  --input text_to_image/Golden/golden_embeddings_validate.parquet \
+  --output text_to_image/Golden_and_Text/validate_pairs_with_img_and_txt_embs.parquet \
   --batch-size 256
 """
 

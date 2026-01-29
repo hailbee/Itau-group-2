@@ -8,9 +8,9 @@ from sklearn.metrics import roc_curve, auc, accuracy_score, confusion_matrix
 
 """
 # Golden / spoof-aware image embeddings
-python text_to_image/golden_eval.py \
+python golden_eval.py \
   --input Golden_and_Text/test_pairs_with_img_and_txt_embs.parquet \
-  --space aligned_img
+  --space raw_text
   """
 
 def compute_metrics(y_true, y_scores):
@@ -48,7 +48,7 @@ def main():
     p.add_argument("--input", required=True)
     p.add_argument(
         "--space",
-        choices=["raw_img", "aligned_img", "raw_text"],
+        choices=["aligned_img", "raw_text"],
         default="aligned_img",
         help="Which space to evaluate",
     )

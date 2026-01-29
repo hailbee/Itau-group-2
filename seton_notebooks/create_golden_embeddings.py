@@ -15,7 +15,7 @@ python seton_notebooks/create_golden_embeddings.py \
   --input_filepath ../Downloads/validate_pairs_with_siglip_embeddings.parquet \
   --internal_layer_size 512 \
   --output_dim 128 \
-  --output_filepath Golden/golden_embeddings_validate.parquet
+  --output_filepath text_to_image/Golden/golden_embeddings_validate.parquet
 """
 
 def parse_args():

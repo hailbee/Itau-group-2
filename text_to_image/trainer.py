@@ -131,7 +131,7 @@ class Trainer:
         grad_clip=1.0,
         early_stopping=True,
         patience=5,
-        min_epochs=1,
+        min_epochs=25,
         min_delta=1e-6,
         save_best=True,
         save_dir="saved_models",

@@ -19,6 +19,7 @@ def _coerce_numeric_label(series: pd.Series, *, name: str = "label") -> np.ndarr
     Raises a clear error if non-numeric values exist.
     """
     s = series
+
     if s.dtype == bool:
         s = s.astype(np.int64)
 
@@ -52,24 +53,61 @@ def _has_prefix(df: pd.DataFrame, prefix: str) -> bool:
 
 
 def _sorted_prefixed_cols(df: pd.DataFrame, prefix: str) -> List[str]:
-    """Return columns starting with `prefix`, sorted by integer suffix where possible."""
+    """Return columns starting with `prefix`, sorted by integer suffix.
+
+    Requires columns like:
+      prefix + "0", prefix + "1", ... prefix + "D-1"
+    """
     cols = [c for c in df.columns if isinstance(c, str) and c.startswith(prefix)]
     if not cols:
         raise KeyError(f"No columns found with prefix '{prefix}'")
 
-    def key(c: str):
+    bad = []
+    pairs = []
+    for c in cols:
         suf = c[len(prefix):]
         try:
-            return (0, int(suf))
+            i = int(suf)
         except Exception:
-            return (1, suf)
+            bad.append(c)
+            continue
+        pairs.append((i, c))
 
-    return sorted(cols, key=key)
+    if not pairs:
+        raise KeyError(
+            f"Found columns with prefix '{prefix}', but none had integer suffixes. "
+            f"Examples: {cols[:10]}"
+        )
+
+    if bad:
+        # Not fatal, but it's usually a bug, so warn loudly via exception message if you prefer.
+        # Here we just ignore them, but keep an informative message in case you want to make it fatal.
+        pass
+
+    pairs.sort(key=lambda t: t[0])
+    return [c for _, c in pairs]
 
 
 def _prefix_to_numpy(df: pd.DataFrame, prefix: str, *, name: str) -> np.ndarray:
     cols = _sorted_prefixed_cols(df, prefix)
-    mat = df[cols].to_numpy(dtype=np.float32, copy=False)
+
+    # Force numeric conversion per-column to avoid silent object dtype issues
+    sub = df[cols]
+    try:
+        mat = sub.to_numpy(dtype=np.float32, copy=False)
+    except Exception:
+        # Fallback: coerce each column explicitly
+        sub2 = sub.apply(pd.to_numeric, errors="coerce")
+        if sub2.isna().any().any():
+            # Find a few offending columns
+            bad_cols = sub2.columns[sub2.isna().any()].tolist()[:10]
+            raise TypeError(
+                f"{name}: non-numeric values encountered in columns with prefix '{prefix}'. "
+                f"Example bad columns: {bad_cols}. "
+                f"Your parquet likely contains object dtype in embedding columns."
+            )
+        mat = sub2.to_numpy(dtype=np.float32, copy=False)
+
     if mat.ndim != 2:
         raise TypeError(f"{name} prefix '{prefix}' did not produce a 2D matrix.")
     return mat
@@ -89,7 +127,7 @@ class EmbeddingPairDataset(Dataset):
       - {x1_prefix}0..{x1_prefix}D-1
       - {x2_prefix}0..{x2_prefix}D-1
 
-    Defaults match your exported golden parquet:
+    Defaults match raw image embeddings:
       - fraud_raw_*
       - real_raw_*
     """
@@ -139,22 +177,17 @@ class Text2TeacherDistillDataset(Dataset):
     Returns:
       (fraud_txt, real_txt, fraud_teacher, real_teacher, label)
 
-    Intended for your "Text -> Golden teacher" task.
-
-    Expected columns:
-      - label
-      - fraud_txt_* , real_txt_*
-      - fraud_aligned_* , real_aligned_*   (teacher by default)
-
-    You may override prefixes if you used different names.
+    Defaults match your merged parquet:
+      - fraud_txt_emb_* , real_txt_emb_*
+      - fraud_aligned_* , real_aligned_*   (teacher)
     """
 
     def __init__(
         self,
         df: pd.DataFrame,
         *,
-        fraud_txt_prefix: str = "fraud_txt_",
-        real_txt_prefix: str = "real_txt_",
+        fraud_txt_prefix: str = "fraud_txt_emb_",
+        real_txt_prefix: str = "real_txt_emb_",
         fraud_teacher_prefix: str = "fraud_aligned_",
         real_teacher_prefix: str = "real_aligned_",
         label_col: LabelCol = "label",
