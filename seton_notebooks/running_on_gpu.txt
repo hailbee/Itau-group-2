@@ -110,7 +110,6 @@ python main_edited_text2img.py \
   --internal_layer_size 768 \
   --optimizer adamw \
   --weight_decay 3.889585817855393e-06 \
-  --grad_clip 1.0
 
 'lr': 0.0002603974145489503, 'batch_size': 64, 'internal_layer_size': 768, 'optimizer': 'adamw', 'weight_decay': 3.889585817855393e-06, 'grad_clip': 1.0
 
@@ -128,14 +127,10 @@ python main_edited_text2img.py \
   --test_filepath 'Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet' \
   --epochs 50 \
   --batch_size 64 \
-  --lr 0.0002714056826982513 \
-  --internal_layer_size 512 \
-  --optimizer adamw \
-  --weight_decay 1.05412269290807e-05 \
-  --grad_clip 1.0
-
-best_value: 0.9360283532717145
-best_params: {'lr': 0.0002714056826982513, 'batch_size': 64, 'internal_layer_size': 512, 'optimizer': 'adamw', 'weight_decay': 1.05412269290807e-05, 'grad_clip': 1.0}
+  --lr 0.00024330013346171852 \
+   --internal_layer_size 512 \
+  --optimizer adam \
+  --weight_decay 1.5265709375846812e-07
 
 label = 0 means not actually no matter how similar, label = 1 means spoof attempt. what loss to choose and why? answer in a paragraph? and by the way the task is to just make the embedding spaces align. they have the same real name, fake name, and label just different embeddings (obviously)
 

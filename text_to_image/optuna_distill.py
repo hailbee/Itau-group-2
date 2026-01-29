@@ -130,7 +130,6 @@ class OptunaConfig:
     optimizers: Tuple[str, ...] = ("adamw", "adam")
     weight_decay_low: float = 1e-7
     weight_decay_high: float = 1e-4
-    grad_clips: Tuple[float, ...] = (1.0, 2.0, 5.0)
 
 
 def run_optuna(
@@ -189,7 +188,6 @@ def run_optuna(
         internal_layer_size = trial.suggest_categorical("internal_layer_size", list(cfg.hidden_dims))
         optimizer_name = trial.suggest_categorical("optimizer", list(cfg.optimizers))
         weight_decay = trial.suggest_float("weight_decay", cfg.weight_decay_low, cfg.weight_decay_high, log=True)
-        grad_clip = trial.suggest_categorical("grad_clip", list(cfg.grad_clips))
 
         train_loader = DataLoader(
             train_ds,
@@ -230,7 +228,6 @@ def run_optuna(
             plot_losses=False,
             early_stopping=False,
             save_best=False,
-            grad_clip=float(grad_clip),
         )
         trainer.train(**_filter_kwargs(trainer.train, train_kwargs))
 

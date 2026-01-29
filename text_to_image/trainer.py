@@ -38,7 +38,7 @@ class Trainer:
     # -------------------------
     # Epoch loops
     # -------------------------
-    def train_epoch(self, dataloader, grad_clip=1.0):
+    def train_epoch(self, dataloader):
         self.model.train()
         self.criterion.train()
         epoch_loss = 0.0
@@ -60,12 +60,6 @@ class Trainer:
 
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
-
-            if grad_clip is not None and grad_clip > 0:
-                torch.nn.utils.clip_grad_norm_(
-                    list(self.model.parameters()) + list(self.criterion.parameters()),
-                    grad_clip,
-                )
 
             self.optimizer.step()
             epoch_loss += float(loss.item())
@@ -128,7 +122,6 @@ class Trainer:
         validate_dataloader=None,
         want_test=False,
         plot_losses=True,
-        grad_clip=1.0,
         early_stopping=True,
         patience=5,
         min_epochs=25,
@@ -151,7 +144,7 @@ class Trainer:
             )
 
         for epoch in range(int(epochs)):
-            train_loss = self.train_epoch(dataloader, grad_clip=grad_clip)
+            train_loss = self.train_epoch(dataloader)
             train_loss_history.append(train_loss)
             print(f"Epoch {epoch+1} | Train Loss: {train_loss:.6f}")
 

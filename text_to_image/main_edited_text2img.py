@@ -76,7 +76,6 @@ def main():
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--internal_layer_size", type=int, default=512)
     parser.add_argument("--optimizer", type=str, default="adamw", choices=["adam", "adamw", "sgd"])
-    parser.add_argument("--grad_clip", type=float, default=1.0)
 
     # optuna controls (kept simple)
     parser.add_argument("--n_trials", type=int, default=50)
@@ -180,7 +179,6 @@ def main():
             string="_distill",
             trial_number=1,
             epochs=args.epochs,
-            grad_clip=args.grad_clip,
             save_dir=args.save_dir,
         )
 
