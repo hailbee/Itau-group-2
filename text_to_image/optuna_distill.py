@@ -64,7 +64,7 @@ def _build_optimizer(name: str, params, lr: float, weight_decay: float):
 # Loss (keep whatever you're using)
 # -------------------------
 class AUCBestHybridLoss(torch.nn.Module):
-    def __init__(self, tau=0.05, lam_diag=0.1, lam_mat=0.0, eps=1e-8):
+    def __init__(self, tau=0.05, lam_diag=0.0, lam_mat=0.0, eps=1e-8):
         super().__init__()
         self.tau = float(tau)
         self.lam_diag = float(lam_diag)
@@ -163,9 +163,9 @@ class OptunaConfig:
     tau_low: float = 0.01
     tau_high: float = 0.2
     lam_diag_low: float = 0.0
-    lam_diag_high: float = 1.0
+    lam_diag_high: float = 0.0
     lam_mat_low: float = 0.0
-    lam_mat_high: float = 0.3
+    lam_mat_high: float = 0.0
 
 
 def run_optuna(

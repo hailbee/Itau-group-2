@@ -105,19 +105,19 @@ python main_edited_text2img.py \
   --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet' \
   --test_filepath 'Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet' \
   --epochs 50 \
-  --batch_size 256 \
-  --lr 3.8697602793311115e-05 \
+  --batch_size 64 \
+  --lr 1.462435106957052e-05 \
   --internal_layer_size 1024 \
   --out_dim 768 \
   --optimizer adamw \
-  --weight_decay 6.274971797383357e-06 \
-  --tau 0.010138021131092497 \
-  --lam_diag 0.3180357429783238 \
-  --lam_mat 0.17655685811785032
+  --weight_decay 1.883809944544854e-05 \
+  --tau 0.012028581188845743 \
+  --lam_diag 0.0 \
+  --lam_mat 0.0
   
 best_value: 0.9759635064110617
-best_params: {'lr': 3.8697602793311115e-05, 'batch_size': 256, 'hidden_dim': 1024, 'out_dim': 768, 
-'optimizer': 'adamw', 'weight_decay': 6.274971797383357e-06, 'tau': 0.010138021131092497, 'lam_diag': 0.3180357429783238, 'lam_mat': 0.17655685811785032}
+{'lr': 1.462435106957052e-05, 'batch_size': 64, 'hidden_dim': 1024, 'out_dim': 768, 'optimizer': 'adamw', 'weight_decay': 1.883809944544854e-05, 
+'tau': 0.012028581188845743, 'lam_diag': 0.0, 'lam_mat': 0.0}
 
 label = 0 means not actually no matter how similar, label = 1 means spoof attempt. what loss to choose and why? answer in a paragraph? and by the way the task is to just make the embedding spaces align. they have the same real name, fake name, and label just different embeddings (obviously)
 
