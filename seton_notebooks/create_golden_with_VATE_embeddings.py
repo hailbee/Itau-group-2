@@ -9,8 +9,8 @@ Append TEXT embeddings that match Evaluator.test_pairs exactly.
 
 Example:
 python seton_notebooks/create_golden_with_VATE_embeddings.py \
-  --input text_to_image/Golden/golden_embeddings_test.parquet \
-  --output text_to_image/Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet \
+  --input text_to_image/Golden/golden_embeddings_validate.parquet \
+  --output text_to_image/Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet \
   --backbone siglip \
   --model-weights weights/best_model_siglip_pair.pt \
   --batch-size 256 \

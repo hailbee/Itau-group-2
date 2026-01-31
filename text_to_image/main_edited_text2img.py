@@ -11,8 +11,8 @@ from evaluator2 import Evaluator2, EvalConfig
 from siamese import SiameseEmbeddingModel
 from data import Text2TeacherDistillDataset
 
-# ✅ use the new loss
-from distill_losses import AUCBestHybridLoss
+# ✅ use the margin-only thesis loss with learned teacher projection
+from distill_losses import ThesisMarginOnlyWithTeacherProj
 
 
 # -------------------------
@@ -68,7 +68,7 @@ def safe_torch_load(path: str, map_location: torch.device):
 # -------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="Text → teacher (golden) embedding distillation (AUC-optimized ranking + teacher regularization)"
+        description="Text → teacher (golden) embedding distillation (thesis-style margin contrastive + learned teacher projection)"
     )
 
     # mode
@@ -91,7 +91,7 @@ def main():
     parser.add_argument("--internal_layer_size", type=int, default=512)
     parser.add_argument("--optimizer", type=str, default="adamw", choices=["adam", "adamw", "sgd"])
 
-    # ✅ NEW: allow out_dim != teacher_dim
+    # ✅ allow out_dim != teacher_dim
     parser.add_argument(
         "--out_dim",
         type=int,
@@ -99,10 +99,11 @@ def main():
         help="Student output embedding dim. Default=None -> match teacher_dim.",
     )
 
-    # ✅ NEW: AUCBestHybridLoss hyperparams
-    parser.add_argument("--tau", type=float, default=0.05, help="Ranking temperature for AUCBestHybridLoss")
-    parser.add_argument("--lam_diag", type=float, default=0.1, help="Teacher diagonal sim regularization weight")
-    parser.add_argument("--lam_mat", type=float, default=0.0, help="Teacher cross-view matrix regularization weight")
+    # ✅ thesis loss knob (ONLY knob)
+    parser.add_argument("--margin", type=float, default=1.0, help="Margin for thesis-style contrastive loss")
+
+    # optional: projection bias (keep default False unless you want to test it)
+    parser.add_argument("--proj_bias", type=str, choices=["True", "False"], default="False")
 
     # optuna controls
     parser.add_argument("--n_trials", type=int, default=50)
@@ -120,6 +121,8 @@ def main():
 
     device = pick_device(args.device)
     print(f"Using device: {device}")
+
+    proj_bias = True if args.proj_bias == "True" else False
 
     # -------------------------
     # TRAIN
@@ -141,9 +144,6 @@ def main():
                 cfg=OptunaConfig(n_trials=int(args.n_trials), short_epochs=int(args.optuna_short_epochs)),
             )
 
-            print("\n[OPTUNA RESULT]")
-            print("best_value:", best["best_value"])
-            print("best_params:", best["best_params"])
             return
 
         # ---------- SINGLE RUN ----------
@@ -187,28 +187,29 @@ def main():
         out_dim = int(args.out_dim) if args.out_dim is not None else int(teacher_dim)
 
         print(f"[INFO] text_dim={text_dim} | teacher_dim={teacher_dim} | out_dim={out_dim}")
-        print(f"[INFO] loss hyperparams: tau={args.tau} | lam_diag={args.lam_diag} | lam_mat={args.lam_mat}")
+        print(f"[INFO] thesis loss hyperparam: margin={args.margin} | proj_bias={proj_bias}")
 
         model = SiameseEmbeddingModel(
             embedding_dim=text_dim,
             hidden_dim=int(args.internal_layer_size),
             out_dim=out_dim,
+            teacher_dim=int(teacher_dim),
         ).to(device)
 
-        # ✅ instantiate the new loss
-        criterion = AUCBestHybridLoss(
-            tau=float(args.tau),
-            lam_diag=float(args.lam_diag),
-            lam_mat=float(args.lam_mat),
+
+        # ✅ instantiate thesis loss (has a learnable teacher projection)
+        criterion = ThesisMarginOnlyWithTeacherProj(
+            margin=float(args.margin)
         ).to(device)
 
-        # ✅ criterion has no parameters; don't include it
+        # ✅ include criterion parameters (teacher_proj) in optimizer
         optimizer = build_optimizer(
             args.optimizer,
-            model.parameters(),
+            list(model.parameters()),
             args.lr,
             args.weight_decay,
         )
+
 
         trainer = Trainer(model, criterion, optimizer, device)
 
@@ -263,16 +264,36 @@ def main():
 
         print(f"[INFO] text_dim={text_dim} | teacher_dim={teacher_dim} | out_dim={out_dim}")
 
+        hidden_dim = int(args.internal_layer_size)
+        
         model = SiameseEmbeddingModel(
             embedding_dim=text_dim,
-            hidden_dim=int(args.internal_layer_size),
+            hidden_dim=hidden_dim,
             out_dim=out_dim,
+            teacher_dim=int(teacher_dim),
+        ).to(device)
+        
+
+        # We also reconstruct the criterion so we can restore teacher_proj if it was saved.
+        criterion = ThesisMarginOnlyWithTeacherProj(
+            margin=float(args.margin)
         ).to(device)
 
+
         state = safe_torch_load(args.model_path, map_location=device)
+
+        # Trainer saves {"model_state", "criterion_state", ...}
         if isinstance(state, dict) and "model_state" in state:
-            state = state["model_state"]
-        model.load_state_dict(state)
+            model.load_state_dict(state["model_state"])
+            if "criterion_state" in state:
+                try:
+                    criterion.load_state_dict(state["criterion_state"])
+                except Exception as e:
+                    print(f"[WARN] Could not load criterion_state (ok if not present/changed): {e}")
+        else:
+            # also support raw state_dict checkpoints
+            model.load_state_dict(state)
+
         model.eval()
 
         evaluator = Evaluator2(model, EvalConfig(batch_size=int(args.eval_batch_size)))
