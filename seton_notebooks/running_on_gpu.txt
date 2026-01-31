@@ -3,10 +3,9 @@
 real name: 0
 fraudulent_name: 1
 label: 0/1 (non-spoof vs spoof)
-fraud image: 3..770
-real image: 771..1538
-fraud text: 1539..2306
-real text: 2307..3074
+fraud aligned, real aligned, fraud aligned, real aligned (128 of both)
+fraud text emb (768)
+real text emb (768)
 
 Counter({'fraud_txt_emb_': 768, 'real_txt_emb_': 768, 'fraud_aligned_': 128, 'real_aligned_': 128, 'fraudulent_name': 1, 'real_name': 1, 'label': 1})
 
