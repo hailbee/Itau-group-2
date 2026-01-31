@@ -93,30 +93,35 @@ A really strong improvement (with zero extra trainable parameters) is to add rel
 
 During the file creation process, keep the columns and just add in the columns for text embeddings afterwards (to avoid keeping 2 of everything)
 
-python main_edited_text2img.py \
-  --mode train --optuna True \
-  --training_filepath 'Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet' \
-  --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet' \
-  --test_filepath 'Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet' \
-  --epochs 5
+python optuna_distill.py \
+  --train-t2i Golden_and_Text/train_4pairs.parquet \
+  --val-eval Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet \
+  --n-trials 50 \
+  --short-epochs 5
 
 python main_edited_text2img.py \
-  --mode train --optuna False \
-  --training_filepath 'Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet' \
-  --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet' \
+  --mode train \
+  --training_filepath 'Golden_and_Text/train_4pairs.parquet' \
+  --validate_filepath 'Golden_and_Text/validate_4pairs.parquet' \
   --test_filepath 'Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet' \
   --epochs 50 \
-  --batch_size 256 \
-  --lr 1.0172959230574711e-05 \
-  --internal_layer_size 1024 \
-  --out_dim 768 \
+  --batch_size 128 \
+  --lr 4.8407323600962005e-05 \
+  --internal_layer_size 768 \
+  --out_dim 128 \
   --optimizer adamw \
-  --weight_decay 3.149878752212075e-05 \
-  --margin 0.27205195338394794
+  --weight_decay 7.584873215886672e-06 \
+  --loss margin \
+  --pos_margin 0.7466567645669762 \
+  --neg_margin 0.3743166612505344 \
+  --share_text_heads False \
+  --share_teacher_heads True \
+  --return_pair_kind True
 
-[OPTUNA] best params: {'lr': 1.0172959230574711e-05, 'batch_size': 256, 'hidden_dim': 1024, 'out_dim': 768, 
-'optimizer': 'adamw', 'weight_decay': 3.149878752212075e-05, 'margin': 0.27205195338394794}
-[OPTUNA] best value: 0.9511032051910946
+
+
+{'lr': 4.8407323600962005e-05, 'batch_size': 128, 'hidden_dim': 768, 'optimizer': 'adamw', 'weight_decay': 7.584873215886672e-06, 'loss_type': 'margin', 
+'share_text_heads': False, 'share_teacher_heads': True, 'pos_margin': 0.7466567645669762, 'neg_margin': 0.3743166612505344}
 
 label = 0 means not actually no matter how similar, label = 1 means spoof attempt. what loss to choose and why? answer in a paragraph? and by the way the task is to just make the embedding spaces align. they have the same real name, fake name, and label just different embeddings (obviously)
 

@@ -1,32 +1,40 @@
 #!/usr/bin/env python3
+"""
+optuna_distill.py  (UPDATED for NEW TASK)
+
+Optuna tuning for:
+  - Training on NEW 4-pairs-per-row TEXT->IMAGE binary dataset
+      (left_txt_emb_*, right_img_emb_*, label, pair_kind optional)
+  - Validation objective: ROC AUC on cosine similarity between
+      translated fraud text and translated real text
+    using Evaluator2 on an EVAL parquet with:
+      (fraud_txt_emb_*, real_txt_emb_*, label or spoof_attempt)
+
+Notes:
+  - This script does NOT require a text->image validation set.
+  - It returns the *student* ROC AUC from Evaluator2 ("STUDENT" metric).
+"""
+
 from __future__ import annotations
 
 import argparse
-import inspect
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Optional, Tuple
 
-import numpy as np
 import pandas as pd
 import torch
-import torch.nn.functional as F
-from sklearn.metrics import roc_auc_score
 from torch.utils.data import DataLoader
 
-from trainer import Trainer
+from data import TextImageBinaryPairDataset
 from siamese import SiameseEmbeddingModel
-from data import Text2TeacherDistillDataset
-from distill_losses import ThesisMarginOnlyWithTeacherProj
+from trainer import Trainer
+from evaluator2 import Evaluator2, EvalConfig
+from distill_losses import BinaryCosineMarginLoss
 
 
 # -------------------------
 # Utils
 # -------------------------
-def _filter_kwargs(callable_obj, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    sig = inspect.signature(callable_obj)
-    return {k: v for k, v in kwargs.items() if k in sig.parameters}
-
-
 def _pick_device(device_override: Optional[str] = None) -> torch.device:
     if device_override is not None:
         return torch.device(device_override)
@@ -62,59 +70,75 @@ def _build_optimizer(name: str, params, lr: float, weight_decay: float):
 
 
 # -------------------------
-# Validation metric
-# -------------------------
-@torch.inference_mode()
-def _val_student_auc(model, val_loader, device):
-    model.eval()
-    sims_all, y_all = [], []
-
-    for fraud_txt, real_txt, *_t, y in val_loader:
-        fraud_txt = fraud_txt.to(device)
-        real_txt = real_txt.to(device)
-
-        z_fraud, z_real = model(fraud_txt, real_txt)
-        z_fraud = F.normalize(z_fraud, dim=1)
-        z_real = F.normalize(z_real, dim=1)
-
-        sims = (z_fraud * z_real).sum(dim=1)
-        sims_all.append(sims.cpu())
-        y_all.append(y.cpu())
-
-    sims_np = torch.cat(sims_all).numpy()
-    y_np = torch.cat(y_all).numpy().astype(np.int32)
-    return float(roc_auc_score(y_np, sims_np))
-
-
-# -------------------------
 # Config
 # -------------------------
 @dataclass
 class OptunaConfig:
-    # Dataset-related (ONLY these go to the dataset)
-    fraud_txt_prefix: str = "fraud_txt_emb_"
-    real_txt_prefix: str = "real_txt_emb_"
-    fraud_teacher_prefix: str = "fraud_aligned_"
-    real_teacher_prefix: str = "real_aligned_"
-    label_col: str = "label"
+    # ---- TRAIN (text->image pairs parquet) ----
+    left_txt_prefix: str = "left_txt_emb_"
+    right_img_prefix: str = "right_img_emb_"
+    train_label_col: str = "label"
+    pair_kind_col: str = "pair_kind"
+    return_pair_kind: bool = True
 
-    # Optuna / training
+    # ---- EVAL (text-text pairs parquet) ----
+    eval_fraud_txt_prefix: str = "fraud_txt_emb_"
+    eval_real_txt_prefix: str = "real_txt_emb_"
+    eval_label_col: str = "label"
+
+    # ---- Optuna / training schedule ----
     n_trials: int = 50
-    short_epochs: int = 5
+    short_epochs: int = 4
 
     lr_low: float = 1e-5
     lr_high: float = 3e-4
-    batch_sizes: Tuple[int, ...] = (64, 128, 256)
+    batch_sizes: Tuple[int, ...] = (128, 256, 512)
 
     hidden_dims: Tuple[int, ...] = (256, 512, 768, 1024)
-    out_dims: Tuple[int, ...] = (128, 256, 512, 768)
 
     optimizers: Tuple[str, ...] = ("adamw", "adam")
     weight_decay_low: float = 1e-7
-    weight_decay_high: float = 1e-4
+    weight_decay_high: float = 3e-4
 
-    margin_low: float = 0.2
-    margin_high: float = 1.6
+    # ---- Margin-only tuning ----
+    pos_margin_low: float = 0.3
+    pos_margin_high: float = 0.85
+
+    # Fixed negative threshold (do NOT tune). 0.0 is the “don’t be positively correlated” rule.
+    fixed_neg_margin: float = 0.0
+
+    # architecture switches
+    share_text_heads_choices: Tuple[bool, ...] = (False, True)
+    share_teacher_heads_choices: Tuple[bool, ...] = (True,)  # usually keep True
+
+    # training misc
+    use_amp: bool = True
+    grad_clip_norm: Optional[float] = None
+
+    # evaluation
+    eval_batch_size: int = 4096
+    eval_max_rows: Optional[int] = None
+
+
+# -------------------------
+# Eval helper (objective metric)
+# -------------------------
+@torch.inference_mode()
+def _eval_student_auc(model, eval_filepath: str, cfg: OptunaConfig) -> float:
+    model.eval()
+    evaluator = Evaluator2(
+        model,
+        EvalConfig(
+            batch_size=cfg.eval_batch_size,
+            fraud_txt_prefix=cfg.eval_fraud_txt_prefix,
+            real_txt_prefix=cfg.eval_real_txt_prefix,
+            label_col=cfg.eval_label_col,
+            compute_raw_text=False,   # keep optuna fast
+            compute_teacher=False,    # keep optuna fast
+        ),
+    )
+    _df, metrics = evaluator.evaluate(eval_filepath, max_rows=cfg.eval_max_rows)
+    return float(metrics["student"]["roc_auc"])
 
 
 # -------------------------
@@ -122,8 +146,8 @@ class OptunaConfig:
 # -------------------------
 def run_optuna(
     *,
-    training_filepath: str,
-    validate_filepath: str,
+    train_t2i_filepath: str,
+    val_eval_filepath: str,
     device: Optional[str] = None,
     cfg: Optional[OptunaConfig] = None,
 ):
@@ -132,59 +156,80 @@ def run_optuna(
     cfg = cfg or OptunaConfig()
     dev = _pick_device(device)
     print(f"[OPTUNA] device={dev}")
+    print(f"[OPTUNA] train_t2i={train_t2i_filepath}")
+    print(f"[OPTUNA] val_eval={val_eval_filepath}")
 
-    train_df = _load_table(training_filepath)
-    val_df = _load_table(validate_filepath)
+    train_df = _load_table(train_t2i_filepath)
+    eval_df = _load_table(val_eval_filepath)
 
-    text_dim = _infer_dim_from_prefix(train_df, cfg.fraud_txt_prefix)
-    teacher_dim = _infer_dim_from_prefix(train_df, cfg.fraud_teacher_prefix)
+    # Train dims from NEW dataset
+    text_dim = _infer_dim_from_prefix(train_df, cfg.left_txt_prefix)
+    teacher_dim = _infer_dim_from_prefix(train_df, cfg.right_img_prefix)
 
-    # ✅ PASS ONLY DATASET ARGS
-    train_ds = Text2TeacherDistillDataset(
+    # Eval dims sanity check
+    eval_text_dim_f = _infer_dim_from_prefix(eval_df, cfg.eval_fraud_txt_prefix)
+    eval_text_dim_r = _infer_dim_from_prefix(eval_df, cfg.eval_real_txt_prefix)
+    if eval_text_dim_f != text_dim or eval_text_dim_r != text_dim:
+        print(
+            f"[WARN] Eval text dims ({eval_text_dim_f},{eval_text_dim_r}) != train left_txt dim ({text_dim}). "
+            f"This is OK only if you intentionally changed embeddings; otherwise fix prefixes/files."
+        )
+
+    train_ds = TextImageBinaryPairDataset(
         train_df,
-        fraud_txt_prefix=cfg.fraud_txt_prefix,
-        real_txt_prefix=cfg.real_txt_prefix,
-        fraud_teacher_prefix=cfg.fraud_teacher_prefix,
-        real_teacher_prefix=cfg.real_teacher_prefix,
-        label_col=cfg.label_col,
-    )
-    val_ds = Text2TeacherDistillDataset(
-        val_df,
-        fraud_txt_prefix=cfg.fraud_txt_prefix,
-        real_txt_prefix=cfg.real_txt_prefix,
-        fraud_teacher_prefix=cfg.fraud_teacher_prefix,
-        real_teacher_prefix=cfg.real_teacher_prefix,
-        label_col=cfg.label_col,
+        left_txt_prefix=cfg.left_txt_prefix,
+        right_img_prefix=cfg.right_img_prefix,
+        label_col=cfg.train_label_col,
+        pair_kind_col=cfg.pair_kind_col,
+        return_pair_kind=cfg.return_pair_kind,
+        return_orig_row_id=False,
     )
 
-    def objective(trial):
+    def objective(trial: "optuna.Trial") -> float:
         lr = trial.suggest_float("lr", cfg.lr_low, cfg.lr_high, log=True)
         batch_size = trial.suggest_categorical("batch_size", cfg.batch_sizes)
         hidden_dim = trial.suggest_categorical("hidden_dim", cfg.hidden_dims)
-        out_dim = trial.suggest_categorical("out_dim", cfg.out_dims)
         optimizer_name = trial.suggest_categorical("optimizer", cfg.optimizers)
-        weight_decay = trial.suggest_float(
-            "weight_decay", cfg.weight_decay_low, cfg.weight_decay_high, log=True
-        )
-        margin = trial.suggest_float("margin", cfg.margin_low, cfg.margin_high)
+        weight_decay = trial.suggest_float("weight_decay", cfg.weight_decay_low, cfg.weight_decay_high, log=True)
 
-        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
+        share_text_heads = trial.suggest_categorical("share_text_heads", cfg.share_text_heads_choices)
+        share_teacher_heads = trial.suggest_categorical("share_teacher_heads", cfg.share_teacher_heads_choices)
+
+        # Keep out_dim matched to image/teacher dim (your current setup).
+        out_dim = int(teacher_dim)
 
         model = SiameseEmbeddingModel(
-            embedding_dim=text_dim,
-            hidden_dim=hidden_dim,
-            out_dim=out_dim,
-            teacher_dim=teacher_dim,
+            embedding_dim=int(text_dim),
+            hidden_dim=int(hidden_dim),
+            out_dim=int(out_dim),
+            teacher_dim=int(teacher_dim),
+            share_text_heads=bool(share_text_heads),
+            share_teacher_heads=bool(share_teacher_heads),
+            dropout=0.0,
+            activation="relu",
         ).to(dev)
 
-        criterion = ThesisMarginOnlyWithTeacherProj(margin=margin).to(dev)
+        # One-margin behavior: tune only pos_margin; keep neg fixed
+        pos_margin = trial.suggest_float("pos_margin", cfg.pos_margin_low, cfg.pos_margin_high)
+        criterion = BinaryCosineMarginLoss(
+            pos_margin=float(pos_margin),
+            neg_margin=float(cfg.fixed_neg_margin),
+            normalize_inputs=False,  # Trainer normalizes
+            squared=True,
+        ).to(dev)
 
         optimizer = _build_optimizer(
             optimizer_name,
-            model.parameters(),
-            lr=lr,
-            weight_decay=weight_decay,
+            model.parameters(),  # margin loss has no parameters; keep optimizer clean
+            lr=float(lr),
+            weight_decay=float(weight_decay),
+        )
+
+        train_loader = DataLoader(
+            train_ds,
+            batch_size=int(batch_size),
+            shuffle=True,
+            pin_memory=(dev.type == "cuda"),
         )
 
         trainer = Trainer(
@@ -192,25 +237,30 @@ def run_optuna(
             criterion=criterion,
             optimizer=optimizer,
             device=dev,
+            use_amp=cfg.use_amp,
+            grad_clip_norm=cfg.grad_clip_norm,
         )
 
         trainer.train(
             dataloader=train_loader,
-            validate_dataloader=None,
+            validate_dataloader=None,  # keep optuna fast
+            test_filepath=None,        # do NOT eval each epoch in optuna
             trial_number=trial.number,
-            epochs=cfg.short_epochs,
+            epochs=int(cfg.short_epochs),
             early_stopping=False,
             save_best=False,
         )
 
-        val_auc = _val_student_auc(model, val_loader, dev)
-        return val_auc
+        val_auc = _eval_student_auc(model, val_eval_filepath, cfg)
+        trial.set_user_attr("val_auc", val_auc)
+        return float(val_auc)
 
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=cfg.n_trials)
+    study.optimize(objective, n_trials=int(cfg.n_trials))
 
-    print("[OPTUNA] best params:", study.best_trial.params)
+    print("\n[OPTUNA] best params:", study.best_trial.params)
     print("[OPTUNA] best value:", study.best_value)
+    return study
 
 
 # -------------------------
@@ -218,21 +268,28 @@ def run_optuna(
 # -------------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--train", required=True)
-    ap.add_argument("--val", required=True)
+    ap.add_argument("--train-t2i", required=True, help="Training parquet: NEW text->image 4-pairs dataset.")
+    ap.add_argument("--val-eval", required=True, help="Validation parquet: text-text pairs for ROC AUC (Evaluator2).")
     ap.add_argument("--device", default=None)
+
     ap.add_argument("--n-trials", type=int, default=50)
-    ap.add_argument("--short-epochs", type=int, default=5)
+    ap.add_argument("--short-epochs", type=int, default=4)
+
+    ap.add_argument("--eval-batch-size", type=int, default=4096)
+    ap.add_argument("--eval-max-rows", type=int, default=None)
+
     args = ap.parse_args()
 
     cfg = OptunaConfig(
-        n_trials=args.n_trials,
-        short_epochs=args.short_epochs,
+        n_trials=int(args.n_trials),
+        short_epochs=int(args.short_epochs),
+        eval_batch_size=int(args.eval_batch_size),
+        eval_max_rows=None if args.eval_max_rows is None else int(args.eval_max_rows),
     )
 
     run_optuna(
-        training_filepath=args.train,
-        validate_filepath=args.val,
+        train_t2i_filepath=args.train_t2i,
+        val_eval_filepath=args.val_eval,
         device=args.device,
         cfg=cfg,
     )
