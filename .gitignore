@@ -7,3 +7,4 @@ __pycache__/
 # outputs/ft_image_encoder/*
 data/embeddings/*.npz
 data/images/test_images.zip
+sub_opt/cosine sim/
