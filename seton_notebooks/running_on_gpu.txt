@@ -3,13 +3,12 @@
 real name: 0
 fraudulent_name: 1
 label: 0/1 (non-spoof vs spoof)
-fraud image: 3..770
-real image: 771..1538
-fraud text: 1539..2306
-real text: 2307..3074
+fraud aligned, real aligned, fraud aligned, real aligned (128 of both)
+fraud text emb (768)
+real text emb (768)
 
-Counter({'fraud_txt_emb_': 768, 'real_txt_emb_': 768, 'fraud_aligned_': 128, 'real_aligned_': 128, 'fraudulent_name': 1, 'real_name': 1, 'label': 1})
-
+['fraud_aligned', 'fraud_txt_emb', 'fraudulent_name',
+ 'real_name', 'real_aligned', 'real_txt_emb']
 
 salloc -p mit_preemptable \
   --gres=gpu:h200:1 \
@@ -35,25 +34,49 @@ python -m main_edited
 
 python -m main_edited \
   --mode train --optuna False \
-  --training_filepath "../Downloads/train_pairs_with_siglip_embeddings.parquet" \
-  --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
-  --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" \
+  --training_filepath "../Downloads/aligned_train_pairs_with_siglip_embeddings.parquet" \
+  --validate_filepath "../Downloads/aligned_validate_pairs_with_siglip_embeddings.parquet" \
+  --test_filepath "../Downloads/aligned_test_pairs_with_siglip_embeddings.parquet" \
   --epochs 50 \
   --batch_size 64 \
-  --lr 6.32186334072906e-05 \
+  --lr 5.6115164153345e-05 \
   --internal_layer_size 512 \
-  --output_dim 512 \
-  --optimizer_name adamw \
-  --weight_decay 0.0004967007110560776 \
-  --tau 0.04725963788846987
+  --output_dim 768 \
+  --optimizer_name adam \
+  --weight_decay 2.3102018878452926e-05 \
+  --margin 0.06337992129227159
   
-{"tau": 0.04725963788846987, "lr": 6.32186334072906e-05, "batch_size": 64, "internal_layer_size": 512, "output_dim": 512, "optimizer": "adamw", "weight_decay": 0.0004967007110560776}
+{"margin": 0.06337992129227159, "lr": 5.6115164153345e-05, "batch_size": 64, 
+"internal_layer_size": 512, "output_dim": 768, "optimizer": "adam", "weight_decay": 2.3102018878452926e-05}
 
 python -m main_edited \
   --mode train --optuna True \
   --training_filepath "../Downloads/train_pairs_with_siglip_embeddings.parquet" \
   --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
   --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet"
+  
+  python -m main_edited \
+  --mode train --optuna True \
+  --training_filepath "../Downloads/aligned_train_pairs_with_siglip_embeddings.parquet" \
+  --validate_filepath "../Downloads/aligned_validate_pairs_with_siglip_embeddings.parquet" \
+  --test_filepath "../Downloads/aligned_test_pairs_with_siglip_embeddings.parquet"
+  
+python -m main_edited \
+  --mode train --optuna False \
+  --training_filepath "../Downloads/aligned_train_pairs_with_siglip_embeddings.parquet" \
+  --validate_filepath "../Downloads/aligned_validate_pairs_with_siglip_embeddings.parquet" \
+  --test_filepath "../Downloads/aligned_test_pairs_with_siglip_embeddings.parquet" \
+  --epochs 50 \
+  --batch_size 256 \
+  --lr 2.7855493447974068e-05 \
+  --internal_layer_size 1024 \
+  --output_dim 768 \
+  --optimizer_name adam \
+  --weight_decay 1.913696686341166e-05 \
+  --margin 0.05335152986319457
+  
+{"margin": 0.05335152986319457, "lr": 2.7855493447974068e-05, "batch_size": 256, "internal_layer_size": 1024, "output_dim": 768, 
+"optimizer": "adam", "weight_decay": 1.913696686341166e-05}
 
 python -m main_edited \
   --mode evaluate_saved \
@@ -94,30 +117,28 @@ A really strong improvement (with zero extra trainable parameters) is to add rel
 
 During the file creation process, keep the columns and just add in the columns for text embeddings afterwards (to avoid keeping 2 of everything)
 
-python main_edited_text2img.py \
-  --mode train --optuna True \
-  --training_filepath 'Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet' \
-  --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet' \
-  --test_filepath 'Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet' \
-  --epochs 5
+python text_to_image/optuna_distill.py \
+  --train text_to_image/Golden_and_Text/train_logit_distill.parquet \
+  --val text_to_image/Golden_and_Text/validate_logit_distill.parquet \
+  --n-trials 50 \
+  --short-epochs 5
 
-python main_edited_text2img.py \
-  --mode train --optuna False \
-  --training_filepath 'Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet' \
-  --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet' \
-  --test_filepath 'Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet' \
+python text_to_image/main_edited_text2img.py \
+  --train text_to_image/Golden_and_Text/train_logit_distill.parquet \
+  --val text_to_image/Golden_and_Text/validate_logit_distill.parquet \
+  --test text_to_image/Golden_and_Text/test_logit_distill.parquet \
   --epochs 50 \
-  --batch_size 256 \
-  --lr 1.0172959230574711e-05 \
-  --internal_layer_size 1024 \
-  --out_dim 768 \
-  --optimizer adamw \
-  --weight_decay 3.149878752212075e-05 \
-  --margin 0.27205195338394794
+  --batch-size 256 \
+  --lr 0.0002218286435692191 \
+  --hidden-dim 768 \
+  --weight_decay 0.0002948736210382073
 
-[OPTUNA] best params: {'lr': 1.0172959230574711e-05, 'batch_size': 256, 'hidden_dim': 1024, 'out_dim': 768, 
-'optimizer': 'adamw', 'weight_decay': 3.149878752212075e-05, 'margin': 0.27205195338394794}
-[OPTUNA] best value: 0.9511032051910946
+[OPTUNA] BEST PARAMS
+  lr: 0.0002218286435692191
+  batch_size: 256
+  hidden_dim: 768
+  weight_decay: 0.0002948736210382073
+[OPTUNA] BEST VAL LOSS: 9.152118707334012e-06
 
 label = 0 means not actually no matter how similar, label = 1 means spoof attempt. what loss to choose and why? answer in a paragraph? and by the way the task is to just make the embedding spaces align. they have the same real name, fake name, and label just different embeddings (obviously)
 

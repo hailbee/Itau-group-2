@@ -1,0 +1,1 @@
+{"margin": 0.06337992129227159, "lr": 5.6115164153345e-05, "batch_size": 64, "internal_layer_size": 512, "output_dim": 768, "optimizer": "adam", "weight_decay": 2.3102018878452926e-05}

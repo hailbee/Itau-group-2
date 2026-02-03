@@ -44,7 +44,7 @@ class OptunaOptimizer(BaseOptimizer):
         lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
         batch_size = trial.suggest_categorical("batch_size", [64, 128, 256, 512, 1024])
         internal_layer_size = trial.suggest_categorical("internal_layer_size", [256, 512, 768, 1024])
-        output_dim = trial.suggest_categorical("output_dim", [128, 256, 512])
+        output_dim = trial.suggest_categorical("output_dim", [768])
 
         
         params = {}

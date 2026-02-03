@@ -156,7 +156,7 @@ class Trainer:
         # early stopping + saving
         early_stopping=True,
         patience=5,
-        min_epochs=50,
+        min_epochs=25,
         min_delta=1e-6,
         save_best=True,
         save_dir="saved_models",
