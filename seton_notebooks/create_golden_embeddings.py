@@ -11,10 +11,10 @@ from model_utils.utils.data import EmbeddingPairDataset
 
 """
 python seton_notebooks/create_golden_embeddings.py \
-  --model_ckpt saved_models/single_run_model.pt \
+  --model_ckpt single_run_model.pt \
   --input_filepath ../Downloads/validate_pairs_with_siglip_embeddings.parquet \
-  --internal_layer_size 1024 \
-  --output_dim 768 \
+  --internal_layer_size 512 \
+  --output_dim 128 \
   --output_filepath text_to_image/Golden/golden_embeddings_validate.parquet
 """
 
