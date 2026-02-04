@@ -1,3 +1,5 @@
+# text_to_image/trainer.py
+
 import os
 import torch
 import torch.nn.functional as F
@@ -7,37 +9,33 @@ class Trainer:
     """
     Positive-only text → image trainer.
 
-    Uses margin-based contrastive loss:
-        L(z_txt, z_img, y)
+    Loss:
+        L(z_txt, img, y)
 
     Batch format:
         (txt, img, y)
-
-    - Text embeddings are learned
-    - Image embeddings are fixed
-    - Best model is saved by LOWEST validation loss
     """
 
     def __init__(self, model, criterion, optimizer, device):
         self.model = model.to(device)
-        self.criterion = criterion.to(device)
+        self.criterion = criterion
         self.optimizer = optimizer
         self.device = device
 
         lr = self.optimizer.param_groups[0]["lr"]
-        print(f"[DEBUG] Using fixed learning rate: {lr:.6f}")
+        print(f"[DEBUG] Using learning rate: {lr:.6f}")
 
     # -------------------------
-    # Train one epoch
+    # Epoch loops
     # -------------------------
     def train_epoch(self, dataloader):
         self.model.train()
         total_loss = 0.0
 
         for step, (txt, img, y) in enumerate(dataloader):
-            txt = txt.to(self.device, non_blocking=True)
-            img = img.to(self.device, non_blocking=True)
-            y = y.to(self.device, non_blocking=True)
+            txt = txt.to(self.device)
+            img = img.to(self.device)
+            y = y.to(self.device)
 
             # Encode text
             z_txt = self.model.encode_text(txt)
@@ -66,24 +64,17 @@ class Trainer:
 
         return total_loss / max(len(dataloader), 1)
 
-    # -------------------------
-    # Validate one epoch
-    # -------------------------
     @torch.no_grad()
     def validate_epoch(self, dataloader):
-        if dataloader is None:
-            return None
-
         self.model.eval()
         total_loss = 0.0
 
-        for step, (txt, img, y) in enumerate(dataloader):
-            txt = txt.to(self.device, non_blocking=True)
-            img = img.to(self.device, non_blocking=True)
-            y = y.to(self.device, non_blocking=True)
+        for txt, img, y in dataloader:
+            txt = txt.to(self.device)
+            img = img.to(self.device)
+            y = y.to(self.device)
 
             z_txt = self.model.encode_text(txt)
-
             z_txt = F.normalize(z_txt, dim=1)
             img = F.normalize(img, dim=1)
 
@@ -98,33 +89,37 @@ class Trainer:
     def train(
         self,
         dataloader,
+        *,
         validate_dataloader=None,
         epochs=30,
         save_best=True,
         save_dir="saved_models",
-        min_delta=0.0,
+        min_epochs=25,        # ✅ REQUIRED MINIMUM
+        patience=5,           # ✅ EARLY STOPPING PATIENCE
     ):
         best_val_loss = float("inf")
+        bad_epochs = 0
         best_model_path = None
 
         if save_best:
             os.makedirs(save_dir, exist_ok=True)
             best_model_path = os.path.join(save_dir, "best_model.pt")
-            print(f"[DEBUG] Best model path: {os.path.abspath(best_model_path)}")
+            print(f"[INFO] Best model will be saved to: {best_model_path}")
 
-        for epoch in range(int(epochs)):
+        for epoch in range(epochs):
             train_loss = self.train_epoch(dataloader)
             print(f"Epoch {epoch + 1}/{epochs} | Train Loss: {train_loss:.8f}")
 
-            val_loss = self.validate_epoch(validate_dataloader)
-            if val_loss is None:
+            if validate_dataloader is None:
                 continue
 
+            val_loss = self.validate_epoch(validate_dataloader)
             print(f"Epoch {epoch + 1}/{epochs} | Val Loss:   {val_loss:.8f}")
 
-            # Check improvement
-            if val_loss < best_val_loss - min_delta:
+            # Improvement check
+            if val_loss < best_val_loss:
                 best_val_loss = val_loss
+                bad_epochs = 0
 
                 if save_best:
                     torch.save(
@@ -137,17 +132,21 @@ class Trainer:
                         best_model_path,
                     )
                     print(
-                        f"[DEBUG] Saved best model "
+                        f"[INFO] Saved new best model "
                         f"(val_loss={best_val_loss:.8f})"
                     )
+            else:
+                bad_epochs += 1
 
-        # Restore best model
-        if save_best and best_model_path and os.path.exists(best_model_path):
-            ckpt = torch.load(best_model_path, map_location=self.device)
-            self.model.load_state_dict(ckpt["model_state"])
-            print(f"[DEBUG] Restored best model from {best_model_path}")
+            # ✅ EARLY STOPPING (AFTER min_epochs)
+            if (epoch + 1) >= min_epochs and bad_epochs >= patience:
+                print(
+                    f"[INFO] Early stopping triggered at epoch {epoch + 1} "
+                    f"(no improvement for {patience} epochs)"
+                )
+                break
 
         return {
-            "best_val_loss": best_val_loss if best_val_loss < float("inf") else None,
+            "best_val_loss": None if best_val_loss == float("inf") else best_val_loss,
             "best_model_path": best_model_path,
         }
