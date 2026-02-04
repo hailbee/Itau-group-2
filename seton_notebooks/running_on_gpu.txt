@@ -100,22 +100,19 @@ During the file creation process, keep the columns and just add in the columns f
   --val   text_to_image/Golden_and_Text/validate.parquet
 
 python text_to_image/main_edited_text2img.py \
-  --mode train \
   --training_filepath text_to_image/Golden_and_Text/train.parquet \
   --validate_filepath text_to_image/Golden_and_Text/validate.parquet \
-  --test_filepath text_to_image/Golden_and_Text/test.parquet \
-  --lr 9.734502508043917e-05 \
+  --lr 0.00019219746833898 \
   --batch_size 64 \
-  --internal_layer_size 256 \
-  --out_dim 128 \
+  --hidden_dim 768 \
   --optimizer adam \
-  --weight_decay 6.104194102047385e-05 \
-  --margin 0.46962039371485614 \
+  --weight_decay 7.331864203922856e-07 \
+  --margin 0.9283385603111135\
   --epochs 50
 
-[OPTUNA] best params: {'lr': 9.734502508043917e-05, 'batch_size': 64, 'hidden_dim': 256, 'out_dim': 128, 'optimizer': 'adam', 
-'weight_decay': 6.104194102047385e-05, 'margin': 0.46962039371485614}
-[OPTUNA] best value (val loss): 1.366105191510969e-07
+[OPTUNA] best params: {'lr': 0.00019219746833898, 'batch_size': 64, 'hidden_dim': 768, 'optimizer': 'adam', 
+'weight_decay': 7.331864203922856e-07, 'margin': 0.9283385603111135}
+[OPTUNA] best value (val loss): 0.00043696469633643646
 
 label = 0 means not actually no matter how similar, label = 1 means spoof attempt. what loss to choose and why? answer in a paragraph? and by the way the task is to just make the embedding spaces align. they have the same real name, fake name, and label just different embeddings (obviously)
 
@@ -147,7 +144,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "New gitignore"
+git commit -m "Frozen images 0.89 with only two layers"
 git push -u origin training
 
 git pull

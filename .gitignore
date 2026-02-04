@@ -19,3 +19,5 @@ Golden/golden_embeddings_validate.parquet
 single_run_model.pt
 text_to_image/Golden/*.parquet
 text_to_image/Golden_and_Text/*.parquet
+# Ignore evaluation parquet files
+text_to_image/evaluation/*.parquet

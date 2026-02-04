@@ -4,36 +4,21 @@ import torch.nn.functional as F
 
 
 class SiameseEmbeddingModel(nn.Module):
-    def __init__(self, embedding_dim, hidden_dim, out_dim, teacher_dim=None):
+    def __init__(self, embedding_dim, hidden_dim, out_dim):
         super().__init__()
 
-        # Text branch: 3-layer MLP
         self.text_head = nn.Sequential(
             nn.Linear(embedding_dim, hidden_dim),
             nn.ReLU(),
+
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
+
             nn.Linear(hidden_dim, out_dim),
         )
 
-        # Teacher branch: mirror architecture
-        self.teacher_proj = None
-        if teacher_dim is not None:
-            self.teacher_proj = nn.Sequential(
-                nn.Linear(teacher_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, out_dim),
-            )
-
     def encode_text(self, x):
-        return self.text_head(x)  # trainer handles normalization
-
-    def encode_teacher(self, t):
-        if self.teacher_proj is None:
-            raise RuntimeError("teacher_proj not initialized (pass teacher_dim to model)")
-        return self.teacher_proj(t)
+        return self.text_head(x)
 
     def forward(self, fraud_txt, real_txt):
         z_f = self.encode_text(fraud_txt)

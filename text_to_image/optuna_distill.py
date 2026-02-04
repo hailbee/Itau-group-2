@@ -65,7 +65,7 @@ def _val_loss(model, val_loader, criterion, device):
         y = y.to(device)
 
         z_txt = F.normalize(model.encode_text(txt), dim=1)
-        z_img = F.normalize(model.encode_teacher(img), dim=1)
+        z_img = F.normalize(img, dim=1)
 
         loss = criterion(z_txt, z_img, y)
         total += loss.item()
@@ -92,7 +92,6 @@ class OptunaConfig:
     batch_sizes: Tuple[int, ...] = (64, 128, 256)
 
     hidden_dims: Tuple[int, ...] = (256, 512, 768, 1024)
-    out_dims: Tuple[int, ...] = (128, 256, 512, 768)
 
     optimizers: Tuple[str, ...] = ("adamw", "adam")
     weight_decay_low: float = 1e-7
@@ -141,7 +140,6 @@ def run_optuna(
         lr = trial.suggest_float("lr", cfg.lr_low, cfg.lr_high, log=True)
         batch_size = trial.suggest_categorical("batch_size", cfg.batch_sizes)
         hidden_dim = trial.suggest_categorical("hidden_dim", cfg.hidden_dims)
-        out_dim = trial.suggest_categorical("out_dim", cfg.out_dims)
         optimizer_name = trial.suggest_categorical("optimizer", cfg.optimizers)
         weight_decay = trial.suggest_float(
             "weight_decay", cfg.weight_decay_low, cfg.weight_decay_high, log=True
@@ -154,8 +152,7 @@ def run_optuna(
         model = SiameseEmbeddingModel(
             embedding_dim=text_dim,
             hidden_dim=hidden_dim,
-            out_dim=out_dim,
-            teacher_dim=img_dim,
+            out_dim=img_dim
         ).to(dev)
 
         criterion = ThesisMarginOnlyWithTeacherProj(margin=margin).to(dev)
@@ -176,11 +173,9 @@ def run_optuna(
 
         trainer.train(
             dataloader=train_loader,
-            validate_dataloader=None,
             epochs=cfg.short_epochs,
-            early_stopping=False,
-            save_best=False,
         )
+
 
         # ✅ CORRECT OPTUNA OBJECTIVE
         return _val_loss(model, val_loader, criterion, dev)
