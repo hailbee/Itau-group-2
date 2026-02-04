@@ -1,4 +1,4 @@
-# scripts/training/trainer.py
+# text_to_image/trainer.py
 
 import os
 import torch
@@ -7,14 +7,13 @@ import torch.nn.functional as F
 
 class Trainer:
     """
-    SINGLE MODE TRAINER
+    Positive-only text → image trainer.
 
-    Implements symmetric thesis-style contrastive loss:
+    Uses thesis-style margin loss:
+        L(z_txt, z_img, y)
 
-      0.5 * [
-          L(pred_fraud, real_teacher, y) +
-          L(pred_real,  fraud_teacher, y)
-      ]
+    Batch format:
+        (txt, img, y)
     """
 
     def __init__(self, model, criterion, optimizer, device):
@@ -37,31 +36,22 @@ class Trainer:
         epoch_loss = 0.0
 
         for i, batch in enumerate(dataloader):
-            fraud_txt, real_txt, fraud_teacher, real_teacher, y = batch
+            txt, img, y = batch
 
-            fraud_txt = fraud_txt.to(self.device, non_blocking=True)
-            real_txt = real_txt.to(self.device, non_blocking=True)
-            fraud_teacher = fraud_teacher.to(self.device, non_blocking=True)
-            real_teacher = real_teacher.to(self.device, non_blocking=True)
+            txt = txt.to(self.device, non_blocking=True)
+            img = img.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
 
-            # ---- forward student ----
-            z_fraud, z_real = self.model(fraud_txt, real_txt)
+            # ---- forward ----
+            z_txt = self.model.encode_text(txt)
+            z_img = self.model.encode_teacher(img)
 
-            # ---- teacher projections ----
-            z_real_teacher = self.model.encode_teacher(real_teacher)
-            z_fraud_teacher = self.model.encode_teacher(fraud_teacher)
+            # ---- normalize ----
+            z_txt = F.normalize(z_txt, dim=1)
+            z_img = F.normalize(z_img, dim=1)
 
-            # ---- REQUIRED: L2 normalization ----
-            z_fraud = F.normalize(z_fraud, dim=1)
-            z_real = F.normalize(z_real, dim=1)
-            z_real_teacher = F.normalize(z_real_teacher, dim=1)
-            z_fraud_teacher = F.normalize(z_fraud_teacher, dim=1)
-
-            # ---- symmetric loss ----
-            loss_f = self.criterion(z_fraud, z_real_teacher, y)
-            loss_r = self.criterion(z_real, z_fraud_teacher, y)
-            loss = 0.5 * (loss_f + loss_r)
+            # ---- loss ----
+            loss = self.criterion(z_txt, z_img, y)
 
             if not torch.isfinite(loss):
                 raise ValueError(f"Non-finite loss detected: {loss.item()}")
@@ -90,27 +80,19 @@ class Trainer:
 
         with torch.no_grad():
             for i, batch in enumerate(dataloader):
-                fraud_txt, real_txt, fraud_teacher, real_teacher, y = batch
+                txt, img, y = batch
 
-                fraud_txt = fraud_txt.to(self.device, non_blocking=True)
-                real_txt = real_txt.to(self.device, non_blocking=True)
-                fraud_teacher = fraud_teacher.to(self.device, non_blocking=True)
-                real_teacher = real_teacher.to(self.device, non_blocking=True)
+                txt = txt.to(self.device, non_blocking=True)
+                img = img.to(self.device, non_blocking=True)
                 y = y.to(self.device, non_blocking=True)
 
-                z_fraud, z_real = self.model(fraud_txt, real_txt)
-                z_real_teacher = self.model.encode_teacher(real_teacher)
-                z_fraud_teacher = self.model.encode_teacher(fraud_teacher)
+                z_txt = self.model.encode_text(txt)
+                z_img = self.model.encode_teacher(img)
 
-                z_fraud = F.normalize(z_fraud, dim=1)
-                z_real = F.normalize(z_real, dim=1)
-                z_real_teacher = F.normalize(z_real_teacher, dim=1)
-                z_fraud_teacher = F.normalize(z_fraud_teacher, dim=1)
+                z_txt = F.normalize(z_txt, dim=1)
+                z_img = F.normalize(z_img, dim=1)
 
-                loss_f = self.criterion(z_fraud, z_real_teacher, y)
-                loss_r = self.criterion(z_real, z_fraud_teacher, y)
-                loss = 0.5 * (loss_f + loss_r)
-
+                loss = self.criterion(z_txt, z_img, y)
                 epoch_loss += loss.item()
 
                 if i % 100 == 0:
@@ -132,7 +114,6 @@ class Trainer:
     def train(
         self,
         dataloader,
-        trial_number,
         test_filepath=None,
         string="",
         epochs=30,
@@ -151,14 +132,12 @@ class Trainer:
 
         if save_best:
             os.makedirs(save_dir, exist_ok=True)
-            best_model_path = os.path.join(
-                save_dir, f"best_model_trial_{trial_number}{string}.pt"
-            )
+            best_model_path = os.path.join(save_dir, f"best_model{string}.pt")
             print(f"[DEBUG] best_model_path={os.path.abspath(best_model_path)}")
 
         for epoch in range(int(epochs)):
             train_loss = self.train_epoch(dataloader)
-            print(f"Epoch {epoch+1} | Train Loss: {train_loss:.10f}")
+            print(f"Epoch {epoch + 1} | Train Loss: {train_loss:.10f}")
 
             val_loss = self.validate_epoch(validate_dataloader)
             if val_loss is None:
@@ -195,7 +174,7 @@ class Trainer:
                 bad_epochs += 1
 
             if early_stopping and (epoch + 1) >= min_epochs and bad_epochs >= patience:
-                print(f"[DEBUG] Early stopping at epoch {epoch+1}")
+                print(f"[DEBUG] Early stopping at epoch {epoch + 1}")
                 break
 
         if save_best and best_model_path and os.path.exists(best_model_path):

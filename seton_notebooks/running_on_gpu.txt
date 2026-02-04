@@ -94,30 +94,28 @@ A really strong improvement (with zero extra trainable parameters) is to add rel
 
 During the file creation process, keep the columns and just add in the columns for text embeddings afterwards (to avoid keeping 2 of everything)
 
-python main_edited_text2img.py \
-  --mode train --optuna True \
-  --training_filepath 'Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet' \
-  --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet' \
-  --test_filepath 'Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet' \
-  --epochs 5
 
-python main_edited_text2img.py \
-  --mode train --optuna False \
-  --training_filepath 'Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet' \
-  --validate_filepath 'Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet' \
-  --test_filepath 'Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet' \
-  --epochs 50 \
-  --batch_size 256 \
-  --lr 1.0172959230574711e-05 \
-  --internal_layer_size 1024 \
-  --out_dim 768 \
-  --optimizer adamw \
-  --weight_decay 3.149878752212075e-05 \
-  --margin 0.27205195338394794
+  python text_to_image/optuna_distill.py \
+  --train text_to_image/Golden_and_Text/train.parquet \
+  --val   text_to_image/Golden_and_Text/validate.parquet
 
-[OPTUNA] best params: {'lr': 1.0172959230574711e-05, 'batch_size': 256, 'hidden_dim': 1024, 'out_dim': 768, 
-'optimizer': 'adamw', 'weight_decay': 3.149878752212075e-05, 'margin': 0.27205195338394794}
-[OPTUNA] best value: 0.9511032051910946
+python text_to_image/main_edited_text2img.py \
+  --mode train \
+  --training_filepath text_to_image/Golden_and_Text/train.parquet \
+  --validate_filepath text_to_image/Golden_and_Text/validate.parquet \
+  --test_filepath text_to_image/Golden_and_Text/test.parquet \
+  --lr 9.734502508043917e-05 \
+  --batch_size 64 \
+  --internal_layer_size 256 \
+  --out_dim 128 \
+  --optimizer adam \
+  --weight_decay 6.104194102047385e-05 \
+  --margin 0.46962039371485614 \
+  --epochs 50
+
+[OPTUNA] best params: {'lr': 9.734502508043917e-05, 'batch_size': 64, 'hidden_dim': 256, 'out_dim': 128, 'optimizer': 'adam', 
+'weight_decay': 6.104194102047385e-05, 'margin': 0.46962039371485614}
+[OPTUNA] best value (val loss): 1.366105191510969e-07
 
 label = 0 means not actually no matter how similar, label = 1 means spoof attempt. what loss to choose and why? answer in a paragraph? and by the way the task is to just make the embedding spaces align. they have the same real name, fake name, and label just different embeddings (obviously)
 

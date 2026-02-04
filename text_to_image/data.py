@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import List, Union
 
 import numpy as np
@@ -12,33 +11,29 @@ from torch.utils.data import Dataset
 LabelCol = Union[int, str]
 
 
+# -------------------------------------------------
+# helpers
+# -------------------------------------------------
 def _coerce_numeric_label(series: pd.Series, *, name: str = "label") -> np.ndarray:
-    """Convert a label Series to float32 numeric array.
+    """Convert a label Series to float32 numeric array."""
+    if series.dtype == bool:
+        series = series.astype(np.int64)
 
-    Accepts ints/floats/bools/"0"/"1"/"0.0"/"1.0".
-    Raises a clear error if non-numeric values exist.
-    """
-    s = series
-
-    if s.dtype == bool:
-        s = s.astype(np.int64)
-
-    if s.dtype == object:
-        s2 = pd.to_numeric(s, errors="coerce")
+    if series.dtype == object:
+        s2 = pd.to_numeric(series, errors="coerce")
         if s2.isna().any():
-            bad = s[s2.isna()].unique()[:10]
+            bad = series[s2.isna()].unique()[:10]
             raise TypeError(
                 f"{name} column contains non-numeric values; examples: {bad}. "
-                f"Fix the source parquet/csv so label is 0/1."
+                f"Fix the source parquet/csv so label is numeric."
             )
-        s = s2
+        series = s2
 
-    arr = s.to_numpy()
-    return arr.astype(np.float32, copy=False)
+    return series.to_numpy(dtype=np.float32, copy=False)
 
 
 def _get_label_series(df: pd.DataFrame, label_col: LabelCol) -> pd.Series:
-    """label_col can be an int (iloc) or str (named column)."""
+    """label_col can be an int (iloc) or str (column name)."""
     if isinstance(label_col, int):
         return df.iloc[:, int(label_col)]
     if isinstance(label_col, str):
@@ -53,36 +48,24 @@ def _has_prefix(df: pd.DataFrame, prefix: str) -> bool:
 
 
 def _sorted_prefixed_cols(df: pd.DataFrame, prefix: str) -> List[str]:
-    """Return columns starting with `prefix`, sorted by integer suffix.
-
-    Requires columns like:
-      prefix + "0", prefix + "1", ... prefix + "D-1"
-    """
+    """Return columns starting with prefix, sorted by integer suffix."""
     cols = [c for c in df.columns if isinstance(c, str) and c.startswith(prefix)]
     if not cols:
         raise KeyError(f"No columns found with prefix '{prefix}'")
 
-    bad = []
     pairs = []
     for c in cols:
         suf = c[len(prefix):]
         try:
             i = int(suf)
         except Exception:
-            bad.append(c)
             continue
         pairs.append((i, c))
 
     if not pairs:
         raise KeyError(
-            f"Found columns with prefix '{prefix}', but none had integer suffixes. "
-            f"Examples: {cols[:10]}"
+            f"Columns with prefix '{prefix}' found, but none have integer suffixes."
         )
-
-    if bad:
-        # Not fatal, but it's usually a bug, so warn loudly via exception message if you prefer.
-        # Here we just ignore them, but keep an informative message in case you want to make it fatal.
-        pass
 
     pairs.sort(key=lambda t: t[0])
     return [c for _, c in pairs]
@@ -90,156 +73,78 @@ def _sorted_prefixed_cols(df: pd.DataFrame, prefix: str) -> List[str]:
 
 def _prefix_to_numpy(df: pd.DataFrame, prefix: str, *, name: str) -> np.ndarray:
     cols = _sorted_prefixed_cols(df, prefix)
-
-    # Force numeric conversion per-column to avoid silent object dtype issues
     sub = df[cols]
+
     try:
         mat = sub.to_numpy(dtype=np.float32, copy=False)
     except Exception:
-        # Fallback: coerce each column explicitly
         sub2 = sub.apply(pd.to_numeric, errors="coerce")
         if sub2.isna().any().any():
-            # Find a few offending columns
             bad_cols = sub2.columns[sub2.isna().any()].tolist()[:10]
             raise TypeError(
-                f"{name}: non-numeric values encountered in columns with prefix '{prefix}'. "
-                f"Example bad columns: {bad_cols}. "
-                f"Your parquet likely contains object dtype in embedding columns."
+                f"{name}: non-numeric values in embedding columns. "
+                f"Bad columns: {bad_cols}"
             )
         mat = sub2.to_numpy(dtype=np.float32, copy=False)
 
     if mat.ndim != 2:
         raise TypeError(f"{name} prefix '{prefix}' did not produce a 2D matrix.")
+
     return mat
 
 
-@dataclass(frozen=True)
-class PairPrefixes:
-    left: str
-    right: str
-
-
-class EmbeddingPairDataset(Dataset):
-    """Prefix-based pair dataset for Siamese training/export: returns (x1, x2, y).
+# -------------------------------------------------
+# DATASET (NEW FORMAT ONLY)
+# -------------------------------------------------
+class TextTeacherPairDataset(Dataset):
+    """
+    Positive-only text → image/teacher embedding dataset.
 
     Expected columns:
       - label
-      - {x1_prefix}0..{x1_prefix}D-1
-      - {x2_prefix}0..{x2_prefix}D-1
-
-    Defaults match raw image embeddings:
-      - fraud_raw_*
-      - real_raw_*
-    """
-
-    def __init__(
-        self,
-        df: pd.DataFrame,
-        *,
-        x1_prefix: str = "fraud_raw_",
-        x2_prefix: str = "real_raw_",
-        label_col: LabelCol = "label",
-    ):
-        super().__init__()
-        self.df = df.reset_index(drop=True)
-
-        if not _has_prefix(self.df, x1_prefix):
-            raise KeyError(f"EmbeddingPairDataset: missing columns with prefix '{x1_prefix}'")
-        if not _has_prefix(self.df, x2_prefix):
-            raise KeyError(f"EmbeddingPairDataset: missing columns with prefix '{x2_prefix}'")
-
-        self.x1 = _prefix_to_numpy(self.df, x1_prefix, name="x1")
-        self.x2 = _prefix_to_numpy(self.df, x2_prefix, name="x2")
-
-        y_series = _get_label_series(self.df, label_col)
-        self.y = _coerce_numeric_label(y_series, name="label")
-
-        if len(self.x1) != len(self.x2) or len(self.x1) != len(self.y):
-            raise ValueError("EmbeddingPairDataset: length mismatch among x1/x2/y.")
-        if self.x1.shape[1] != self.x2.shape[1]:
-            raise ValueError(
-                f"EmbeddingPairDataset: dim mismatch x1_dim={self.x1.shape[1]} vs x2_dim={self.x2.shape[1]}"
-            )
-
-    def __len__(self) -> int:
-        return int(len(self.y))
-
-    def __getitem__(self, idx: int):
-        x1 = torch.from_numpy(self.x1[idx])
-        x2 = torch.from_numpy(self.x2[idx])
-        y = torch.tensor(self.y[idx], dtype=torch.float32)
-        return x1, x2, y
-
-
-class Text2TeacherDistillDataset(Dataset):
-    """Prefix-based distillation dataset.
+      - {txt_prefix}0..D-1
+      - {img_prefix}0..D-1
 
     Returns:
-      (fraud_txt, real_txt, fraud_teacher, real_teacher, label)
-
-    Defaults match your merged parquet:
-      - fraud_txt_emb_* , real_txt_emb_*
-      - fraud_aligned_* , real_aligned_*   (teacher)
+      (txt, img, label)
     """
 
     def __init__(
         self,
         df: pd.DataFrame,
         *,
-        fraud_txt_prefix: str = "fraud_txt_emb_",
-        real_txt_prefix: str = "real_txt_emb_",
-        fraud_teacher_prefix: str = "fraud_aligned_",
-        real_teacher_prefix: str = "real_aligned_",
+        txt_prefix: str = "left_txt_emb_",
+        img_prefix: str = "right_img_emb_",
         label_col: LabelCol = "label",
     ):
         super().__init__()
         self.df = df.reset_index(drop=True)
 
-        for pfx, nm in [
-            (fraud_txt_prefix, "fraud_txt"),
-            (real_txt_prefix, "real_txt"),
-            (fraud_teacher_prefix, "fraud_teacher"),
-            (real_teacher_prefix, "real_teacher"),
-        ]:
-            if not _has_prefix(self.df, pfx):
-                raise KeyError(f"Text2TeacherDistillDataset: missing {nm} columns with prefix '{pfx}'")
+        if not _has_prefix(self.df, txt_prefix):
+            raise KeyError(f"Missing text embedding columns with prefix '{txt_prefix}'")
+        if not _has_prefix(self.df, img_prefix):
+            raise KeyError(f"Missing image embedding columns with prefix '{img_prefix}'")
 
-        self.fraud_txt = _prefix_to_numpy(self.df, fraud_txt_prefix, name="fraud_txt")
-        self.real_txt = _prefix_to_numpy(self.df, real_txt_prefix, name="real_txt")
-        self.fraud_teacher = _prefix_to_numpy(self.df, fraud_teacher_prefix, name="fraud_teacher")
-        self.real_teacher = _prefix_to_numpy(self.df, real_teacher_prefix, name="real_teacher")
+        self.txt = _prefix_to_numpy(self.df, txt_prefix, name="txt")
+        self.img = _prefix_to_numpy(self.df, img_prefix, name="img")
 
         y_series = _get_label_series(self.df, label_col)
         self.labels = _coerce_numeric_label(y_series, name="label")
 
-        n = len(self.labels)
-        for name, arr in [
-            ("fraud_txt", self.fraud_txt),
-            ("real_txt", self.real_txt),
-            ("fraud_teacher", self.fraud_teacher),
-            ("real_teacher", self.real_teacher),
-        ]:
-            if len(arr) != n:
-                raise ValueError(f"Text2TeacherDistillDataset: length mismatch for {name} vs labels.")
+        if len(self.txt) != len(self.img) or len(self.txt) != len(self.labels):
+            raise ValueError("Length mismatch among txt, img, and label")
 
-        if self.fraud_txt.shape[1] != self.real_txt.shape[1]:
+        if self.txt.shape[1] != self.img.shape[1]:
             raise ValueError(
-                f"Text2TeacherDistillDataset: txt dim mismatch fraud_txt_dim={self.fraud_txt.shape[1]} "
-                f"vs real_txt_dim={self.real_txt.shape[1]}"
-            )
-        if self.fraud_teacher.shape[1] != self.real_teacher.shape[1]:
-            raise ValueError(
-                f"Text2TeacherDistillDataset: teacher dim mismatch fraud_teacher_dim={self.fraud_teacher.shape[1]} "
-                f"vs real_teacher_dim={self.real_teacher.shape[1]}"
+                f"Embedding dim mismatch: txt_dim={self.txt.shape[1]} "
+                f"vs img_dim={self.img.shape[1]}"
             )
 
     def __len__(self) -> int:
         return int(len(self.labels))
 
     def __getitem__(self, idx: int):
-        fraud_txt = torch.from_numpy(self.fraud_txt[idx])
-        real_txt = torch.from_numpy(self.real_txt[idx])
-        fraud_teacher = torch.from_numpy(self.fraud_teacher[idx])
-        real_teacher = torch.from_numpy(self.real_teacher[idx])
+        txt = torch.from_numpy(self.txt[idx])
+        img = torch.from_numpy(self.img[idx])
         y = torch.tensor(self.labels[idx], dtype=torch.float32)
-        return fraud_txt, real_txt, fraud_teacher, real_teacher, y
+        return txt, img, y

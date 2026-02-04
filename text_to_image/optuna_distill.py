@@ -2,31 +2,23 @@
 from __future__ import annotations
 
 import argparse
-import inspect
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Optional, Tuple
 
-import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from sklearn.metrics import roc_auc_score
 from torch.utils.data import DataLoader
 
 from trainer import Trainer
 from siamese import SiameseEmbeddingModel
-from data import Text2TeacherDistillDataset
+from data import TextTeacherPairDataset
 from distill_losses import ThesisMarginOnlyWithTeacherProj
 
 
 # -------------------------
 # Utils
 # -------------------------
-def _filter_kwargs(callable_obj, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    sig = inspect.signature(callable_obj)
-    return {k: v for k, v in kwargs.items() if k in sig.parameters}
-
-
 def _pick_device(device_override: Optional[str] = None) -> torch.device:
     if device_override is not None:
         return torch.device(device_override)
@@ -56,34 +48,29 @@ def _build_optimizer(name: str, params, lr: float, weight_decay: float):
         return torch.optim.Adam(params, lr=lr, weight_decay=weight_decay)
     if name == "adamw":
         return torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
-    if name == "sgd":
-        return torch.optim.SGD(params, lr=lr, weight_decay=weight_decay)
     raise ValueError(f"Unknown optimizer: {name}")
 
 
 # -------------------------
-# Validation metric
+# Validation loss (CORRECT OBJECTIVE)
 # -------------------------
 @torch.inference_mode()
-def _val_student_auc(model, val_loader, device):
+def _val_loss(model, val_loader, criterion, device):
     model.eval()
-    sims_all, y_all = [], []
+    total = 0.0
 
-    for fraud_txt, real_txt, *_t, y in val_loader:
-        fraud_txt = fraud_txt.to(device)
-        real_txt = real_txt.to(device)
+    for txt, img, y in val_loader:
+        txt = txt.to(device)
+        img = img.to(device)
+        y = y.to(device)
 
-        z_fraud, z_real = model(fraud_txt, real_txt)
-        z_fraud = F.normalize(z_fraud, dim=1)
-        z_real = F.normalize(z_real, dim=1)
+        z_txt = F.normalize(model.encode_text(txt), dim=1)
+        z_img = F.normalize(model.encode_teacher(img), dim=1)
 
-        sims = (z_fraud * z_real).sum(dim=1)
-        sims_all.append(sims.cpu())
-        y_all.append(y.cpu())
+        loss = criterion(z_txt, z_img, y)
+        total += loss.item()
 
-    sims_np = torch.cat(sims_all).numpy()
-    y_np = torch.cat(y_all).numpy().astype(np.int32)
-    return float(roc_auc_score(y_np, sims_np))
+    return total / max(len(val_loader), 1)
 
 
 # -------------------------
@@ -91,14 +78,12 @@ def _val_student_auc(model, val_loader, device):
 # -------------------------
 @dataclass
 class OptunaConfig:
-    # Dataset-related (ONLY these go to the dataset)
-    fraud_txt_prefix: str = "fraud_txt_emb_"
-    real_txt_prefix: str = "real_txt_emb_"
-    fraud_teacher_prefix: str = "fraud_aligned_"
-    real_teacher_prefix: str = "real_aligned_"
+    # Dataset
+    txt_prefix: str = "left_txt_emb_"
+    img_prefix: str = "right_img_emb_"
     label_col: str = "label"
 
-    # Optuna / training
+    # Optuna
     n_trials: int = 50
     short_epochs: int = 5
 
@@ -136,24 +121,19 @@ def run_optuna(
     train_df = _load_table(training_filepath)
     val_df = _load_table(validate_filepath)
 
-    text_dim = _infer_dim_from_prefix(train_df, cfg.fraud_txt_prefix)
-    teacher_dim = _infer_dim_from_prefix(train_df, cfg.fraud_teacher_prefix)
+    text_dim = _infer_dim_from_prefix(train_df, cfg.txt_prefix)
+    img_dim = _infer_dim_from_prefix(train_df, cfg.img_prefix)
 
-    # ✅ PASS ONLY DATASET ARGS
-    train_ds = Text2TeacherDistillDataset(
+    train_ds = TextTeacherPairDataset(
         train_df,
-        fraud_txt_prefix=cfg.fraud_txt_prefix,
-        real_txt_prefix=cfg.real_txt_prefix,
-        fraud_teacher_prefix=cfg.fraud_teacher_prefix,
-        real_teacher_prefix=cfg.real_teacher_prefix,
+        txt_prefix=cfg.txt_prefix,
+        img_prefix=cfg.img_prefix,
         label_col=cfg.label_col,
     )
-    val_ds = Text2TeacherDistillDataset(
+    val_ds = TextTeacherPairDataset(
         val_df,
-        fraud_txt_prefix=cfg.fraud_txt_prefix,
-        real_txt_prefix=cfg.real_txt_prefix,
-        fraud_teacher_prefix=cfg.fraud_teacher_prefix,
-        real_teacher_prefix=cfg.real_teacher_prefix,
+        txt_prefix=cfg.txt_prefix,
+        img_prefix=cfg.img_prefix,
         label_col=cfg.label_col,
     )
 
@@ -175,7 +155,7 @@ def run_optuna(
             embedding_dim=text_dim,
             hidden_dim=hidden_dim,
             out_dim=out_dim,
-            teacher_dim=teacher_dim,
+            teacher_dim=img_dim,
         ).to(dev)
 
         criterion = ThesisMarginOnlyWithTeacherProj(margin=margin).to(dev)
@@ -197,20 +177,20 @@ def run_optuna(
         trainer.train(
             dataloader=train_loader,
             validate_dataloader=None,
-            trial_number=trial.number,
             epochs=cfg.short_epochs,
             early_stopping=False,
             save_best=False,
         )
 
-        val_auc = _val_student_auc(model, val_loader, dev)
-        return val_auc
+        # ✅ CORRECT OPTUNA OBJECTIVE
+        return _val_loss(model, val_loader, criterion, dev)
 
-    study = optuna.create_study(direction="maximize")
+    # ✅ CORRECT DIRECTION
+    study = optuna.create_study(direction="minimize")
     study.optimize(objective, n_trials=cfg.n_trials)
 
     print("[OPTUNA] best params:", study.best_trial.params)
-    print("[OPTUNA] best value:", study.best_value)
+    print("[OPTUNA] best value (val loss):", study.best_value)
 
 
 # -------------------------
