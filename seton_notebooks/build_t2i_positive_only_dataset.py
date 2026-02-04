@@ -175,6 +175,6 @@ if __name__ == "__main__":
 
 """
 python seton_notebooks/build_t2i_positive_only_dataset.py \
-  --input  text_to_image/Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet \
-  --output text_to_image/Golden_and_Text/validate.parquet
+  --input  text_to_image/Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet \
+  --output text_to_image/Golden_and_Text/test.parquet
 """

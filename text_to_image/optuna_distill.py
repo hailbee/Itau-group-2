@@ -150,9 +150,7 @@ def run_optuna(
         val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
         model = SiameseEmbeddingModel(
-            embedding_dim=text_dim,
-            hidden_dim=hidden_dim,
-            out_dim=img_dim
+            hidden_dim=hidden_dim
         ).to(dev)
 
         criterion = ThesisMarginOnlyWithTeacherProj(margin=margin).to(dev)

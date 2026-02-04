@@ -134,12 +134,6 @@ class TextTeacherPairDataset(Dataset):
         if len(self.txt) != len(self.img) or len(self.txt) != len(self.labels):
             raise ValueError("Length mismatch among txt, img, and label")
 
-        if self.txt.shape[1] != self.img.shape[1]:
-            raise ValueError(
-                f"Embedding dim mismatch: txt_dim={self.txt.shape[1]} "
-                f"vs img_dim={self.img.shape[1]}"
-            )
-
     def __len__(self) -> int:
         return int(len(self.labels))
 

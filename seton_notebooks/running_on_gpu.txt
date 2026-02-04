@@ -102,17 +102,20 @@ During the file creation process, keep the columns and just add in the columns f
 python text_to_image/main_edited_text2img.py \
   --training_filepath text_to_image/Golden_and_Text/train.parquet \
   --validate_filepath text_to_image/Golden_and_Text/validate.parquet \
-  --lr 0.00025203976165349756 \
+  --lr 9.270348108821893e-05 \
   --batch_size 64 \
   --hidden_dim 768 \
   --optimizer adamw \
-  --weight_decay 4.4239755041028405e-05 \
-  --margin 1.1056428543297299 \
+  --weight_decay 2.8865163079501823e-05 \
+  --margin 0.2657451881542977 \
   --epochs 50
 
-[OPTUNA] best params: {'lr': 0.00025203976165349756, 'batch_size': 64, 'hidden_dim': 768, 'optimizer': 'adamw', 
-'weight_decay': 4.4239755041028405e-05, 'margin': 1.1056428543297299}
-[OPTUNA] best value (val loss): 0.00040630605547858505
+Best is trial 49 with value: 0.0010110045104070355.
+[OPTUNA] best params: {'lr': 9.270348108821893e-05, 'batch_size': 64, 'hidden_dim': 768, 'optimizer': 'adamw', 
+'weight_decay': 2.8865163079501823e-05, 'margin': 0.2657451881542977}
+
+Trial 40 finished with value: 0.0010144149718327097 and parameters: {'lr': 6.623284765129017e-05, 'batch_size': 64, 
+'hidden_dim': 768, 'optimizer': 'adamw', 'weight_decay': 2.0062377868028942e-05, 'margin': 0.3821867370963272}. 
 
 label = 0 means not actually no matter how similar, label = 1 means spoof attempt. what loss to choose and why? answer in a paragraph? and by the way the task is to just make the embedding spaces align. they have the same real name, fake name, and label just different embeddings (obviously)
 
@@ -144,7 +147,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "Frozen images 0.89 with only two layers"
+git commit -m "Frozen images 0.89 with three layers"
 git push -u origin training
 
 git pull

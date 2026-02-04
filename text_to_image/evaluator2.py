@@ -110,9 +110,7 @@ def main():
         state = ckpt
 
     model = SiameseEmbeddingModel(
-        embedding_dim=text_dim,
-        hidden_dim=args.hidden_dim,
-        out_dim=args.out_dim,
+        hidden_dim=args.hidden_dim
     ).to(device)
 
     model.load_state_dict(state, strict=False)
@@ -162,7 +160,7 @@ CHANGE HIDDEN AND OUT IF NEEDED
 python text_to_image/evaluator2.py \
   --test text_to_image/evaluation/vate_test.parquet \
   --hidden-dim 768 \
-  --out-dim 768
+  --out-dim 128
 
 
 """

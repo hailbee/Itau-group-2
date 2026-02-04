@@ -14,10 +14,10 @@ This version:
 - Appends to the input dataframe by row order
 
 Example:
-python create_golden_with_VATE_embeddings.py \
-  --input text_to_image/Golden/golden_embeddings_validate.parquet \
-  --vate-parquet text_to_image/evaluation/vate_validate.parquet \
-  --output text_to_image/Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet \
+python seton_notebooks/create_golden_with_VATE_embeddings_precomputed.py \
+  --input text_to_image/Golden/golden_embeddings_test.parquet \
+  --vate-parquet text_to_image/evaluation/vate_test.parquet \
+  --output text_to_image/Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet \
   --overwrite
 """
 

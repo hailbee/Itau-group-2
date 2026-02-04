@@ -119,9 +119,7 @@ def main():
     print(f"[INFO] text_dim={text_dim} | img_dim={img_dim}")
 
     model = SiameseEmbeddingModel(
-        embedding_dim=text_dim,
-        hidden_dim=args.hidden_dim,
-        out_dim=img_dim,   # IMPORTANT: must match image dim
+        hidden_dim=args.hidden_dim
     ).to(device)
 
     criterion = ThesisMarginOnlyWithTeacherProj(margin=args.margin).to(device)
