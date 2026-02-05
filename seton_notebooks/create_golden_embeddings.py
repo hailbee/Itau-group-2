@@ -11,7 +11,7 @@ from model_utils.utils.data import EmbeddingPairDataset
 
 """
 python seton_notebooks/create_golden_embeddings.py \
-  --model_ckpt saved_models/single_run_model.pt \
+  --model_ckpt saved_models/best_model_by_val_trial_1_single_run.pt \
   --input_filepath ../Downloads/test_pairs_with_siglip_embeddings.parquet \
   --internal_layer_size 512 \
   --output_dim 128 \

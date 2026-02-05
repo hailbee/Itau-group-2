@@ -39,29 +39,22 @@ python -m main_edited \
   --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
   --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" \
   --epochs 50 \
-  --batch_size 64 \
-  --lr 6.32186334072906e-05 \
+  --batch_size 1024 \
+  --lr 0.00014461013789657452 \
   --internal_layer_size 512 \
-  --output_dim 512 \
-  --optimizer_name adamw \
-  --weight_decay 0.0004967007110560776 \
-  --tau 0.04725963788846987
-  
-{"tau": 0.04725963788846987, "lr": 6.32186334072906e-05, "batch_size": 64, "internal_layer_size": 512, "output_dim": 512, "optimizer": "adamw", "weight_decay": 0.0004967007110560776}
+  --output_dim 128 \
+  --optimizer_name adam \
+  --weight_decay 6.773569380235356e-05 \
+  --margin 0.6178292819960491
+
+{"margin": 0.6178292819960491, "lr": 0.00014461013789657452, "batch_size": 1024, 
+"internal_layer_size": 512, "output_dim": 128, "optimizer": "adam", "weight_decay": 6.773569380235356e-05}
 
 python -m main_edited \
   --mode train --optuna True \
   --training_filepath "../Downloads/train_pairs_with_siglip_embeddings.parquet" \
   --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
   --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet"
-
-python -m main_edited \
-  --mode evaluate_saved \
-  --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" \
-  --batch_size 1024 \
-  --internal_layer_size 512 \
-  --output_dim 128 \
-  --plot
 
 python create_embeddings_run.py \
   --input train_pairs_medium_100k.parquet \
@@ -102,20 +95,16 @@ During the file creation process, keep the columns and just add in the columns f
 python text_to_image/main_edited_text2img.py \
   --training_filepath text_to_image/Golden_and_Text/train.parquet \
   --validate_filepath text_to_image/Golden_and_Text/validate.parquet \
-  --lr 9.270348108821893e-05 \
+  --lr 8.878831354011049e-05 \
   --batch_size 64 \
-  --hidden_dim 768 \
+  --hidden_dim 1024 \
   --optimizer adamw \
-  --weight_decay 2.8865163079501823e-05 \
-  --margin 0.2657451881542977 \
+  --weight_decay 1.8183981414639606e-06 \
+  --margin 0.8393451576585539 \
   --epochs 50
 
-Best is trial 49 with value: 0.0010110045104070355.
-[OPTUNA] best params: {'lr': 9.270348108821893e-05, 'batch_size': 64, 'hidden_dim': 768, 'optimizer': 'adamw', 
-'weight_decay': 2.8865163079501823e-05, 'margin': 0.2657451881542977}
-
-Trial 40 finished with value: 0.0010144149718327097 and parameters: {'lr': 6.623284765129017e-05, 'batch_size': 64, 
-'hidden_dim': 768, 'optimizer': 'adamw', 'weight_decay': 2.0062377868028942e-05, 'margin': 0.3821867370963272}. 
+{'lr': 8.878831354011049e-05, 'batch_size': 64, 'hidden_dim': 1
+024, 'optimizer': 'adamw', 'weight_decay': 1.8183981414639606e-06, 'margin': 0.8393451576585539}
 
 label = 0 means not actually no matter how similar, label = 1 means spoof attempt. what loss to choose and why? answer in a paragraph? and by the way the task is to just make the embedding spaces align. they have the same real name, fake name, and label just different embeddings (obviously)
 

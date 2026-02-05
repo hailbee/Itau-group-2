@@ -44,7 +44,7 @@ class OptunaOptimizer(BaseOptimizer):
         lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
         batch_size = trial.suggest_categorical("batch_size", [64, 128, 256, 512, 1024])
         internal_layer_size = trial.suggest_categorical("internal_layer_size", [256, 512, 768, 1024])
-        output_dim = trial.suggest_categorical("output_dim", [768])
+        output_dim = trial.suggest_categorical("output_dim", [128, 256, 768])
 
         
         params = {}
@@ -53,7 +53,7 @@ class OptunaOptimizer(BaseOptimizer):
             temperature = trial.suggest_float("temperature", 0.01, 0.1, log=True)
             params['temperature'] = temperature
         else:
-            margin = trial.suggest_float("margin", 0.05, 0.7)
+            margin = trial.suggest_float("margin", 0.6, 0.95)
             params['margin'] = margin
         
         # Optional: suggest optimizer
