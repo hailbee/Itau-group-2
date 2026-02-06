@@ -43,25 +43,28 @@ python -m main_edited \
   --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" \
   --epochs 50 \
   --batch_size 1024 \
-  --lr 0.00018063602559718363 \
+  --lr 0.0002319754023753831 \
   --internal_layer_size 1024 \
   --output_dim 768 \
   --optimizer_name adamw \
-  --weight_decay 0.0009640463891108649 \
-  --margin 0.8678296455822312 \
-  --w_pos 1.964172329739195 \
-  --w_neg 3.481140046605662
+  --weight_decay 2.7710255005918065e-05 \
+  --m_neg 0.8706522279582501 \
+  --m_pos 0.9772440687834018 \
+  --w_pos 1.1894043571038706 \
+  --w_neg 3.1518113351588117
 
 {
-  "lr": 0.00018063602559718363,
+  "lr": 0.0002319754023753831,
   "batch_size": 1024,
   "internal_layer_size": 1024,
   "output_dim": 768,
   "optimizer": "adamw",
-  "weight_decay": 0.0009640463891108649,
-  "margin": 0.8678296455822312,
-  "w_pos": 1.964172329739195,
-  "w_neg": 3.481140046605662
+  "weight_decay": 2.7710255005918065e-05,
+  "m_neg": 0.8706522279582501,
+  "m_pos": 0.9772440687834018,
+  "gap": 0.10659184082515162,
+  "w_pos": 1.1894043571038706,
+  "w_neg": 3.1518113351588117
 }
 
   python text_to_image/optuna_distill.py \
