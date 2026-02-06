@@ -12,10 +12,10 @@ from model_utils.utils.data import EmbeddingPairDataset
 """
 python seton_notebooks/create_golden_embeddings.py \
   --model_ckpt saved_models/best_model_by_val_trial_1_single_run.pt \
-  --input_filepath ../Downloads/validate_pairs_with_siglip_embeddings.parquet \
+  --input_filepath ../Downloads/test_pairs_with_siglip_embeddings.parquet \
   --internal_layer_size 256 \
   --output_dim 768 \
-  --output_filepath text_to_image/Golden/golden_embeddings_validate.parquet
+  --output_filepath text_to_image/Golden/golden_embeddings_test.parquet
 """
 
 def parse_args():

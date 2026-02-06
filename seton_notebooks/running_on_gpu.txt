@@ -42,14 +42,27 @@ python -m main_edited \
   --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
   --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" \
   --epochs 50 \
-  --batch_size 512 \
-  --lr 0.000930826888126965 \
-  --internal_layer_size 256 \
+  --batch_size 1024 \
+  --lr 0.00018063602559718363 \
+  --internal_layer_size 1024 \
   --output_dim 768 \
   --optimizer_name adamw \
-  --weight_decay 0.00059258658423689 \
-  --m_pos 0.42048126696127186 \
-  --m_neg 0.49619568097835465
+  --weight_decay 0.0009640463891108649 \
+  --margin 0.8678296455822312 \
+  --w_pos 1.964172329739195 \
+  --w_neg 3.481140046605662
+
+{
+  "lr": 0.00018063602559718363,
+  "batch_size": 1024,
+  "internal_layer_size": 1024,
+  "output_dim": 768,
+  "optimizer": "adamw",
+  "weight_decay": 0.0009640463891108649,
+  "margin": 0.8678296455822312,
+  "w_pos": 1.964172329739195,
+  "w_neg": 3.481140046605662
+}
 
   python text_to_image/optuna_distill.py \
   --train text_to_image/Golden_and_Text/train.parquet \
@@ -87,7 +100,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "saved_models/best_model_by_val_trial_1_single_run.pt"
+git commit -m "97.67"
 git push -u origin training
 
 git pull
