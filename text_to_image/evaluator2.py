@@ -59,7 +59,7 @@ def _save_table(df: pd.DataFrame, path: str) -> None:
 @torch.inference_mode()
 def main():
     ap = argparse.ArgumentParser(
-        description="Evaluate trained embeddings using cosine similarity (ROC AUC) and export the *student* embeddings used for evaluation."
+        description="Evaluate trained embeddings using cosine similarity (ROC AUC) and export student embeddings."
     )
 
     # files
@@ -74,9 +74,9 @@ def main():
     ap.add_argument("--hidden-dim", type=int, required=True)
     ap.add_argument("--out-dim", type=int, required=True)
 
-    # prefixes (input)
-    ap.add_argument("--fraud-prefix", default="fraud_emb_")
-    ap.add_argument("--real-prefix", default="real_emb_")
+    # prefixes (input text embeddings)
+    ap.add_argument("--fraud-txt-prefix", default="fraud_txt_emb_")
+    ap.add_argument("--real-txt-prefix", default="real_txt_emb_")
     ap.add_argument("--label-col", default="label")
 
     # export
@@ -86,7 +86,7 @@ def main():
     ap.add_argument(
         "--keep-original-embeddings",
         action="store_true",
-        help="If set, keep the original fraud_prefix/real_prefix embedding columns too (default is to drop them).",
+        help="If set, keep the original input embedding columns too (default is to drop them).",
     )
     ap.add_argument(
         "--save-unnormalized",
@@ -109,10 +109,10 @@ def main():
     df = pd.read_parquet(args.test) if args.test.lower().endswith(".parquet") else pd.read_csv(args.test)
     y = df[args.label_col].astype(int).to_numpy()
 
-    # Pull input embeddings
-    fraud_in = _mat(df, args.fraud_prefix)
-    real_in = _mat(df, args.real_prefix)
-    text_dim = fraud_in.shape[1]
+    fraud_txt = _mat(df, args.fraud_txt_prefix)
+    real_txt = _mat(df, args.real_txt_prefix)
+
+    text_dim = fraud_txt.shape[1]
 
     print(f"[INFO] text_dim={text_dim} | hidden_dim={args.hidden_dim} | out_dim={args.out_dim}")
 
@@ -131,9 +131,11 @@ def main():
     load_info = model.load_state_dict(state, strict=False)
     model.eval()
 
-    # Print loading diagnostics (helps catch "weights didn't load" cases)
     if hasattr(load_info, "missing_keys") and hasattr(load_info, "unexpected_keys"):
-        print(f"[INFO] load_state_dict: missing_keys={len(load_info.missing_keys)} unexpected_keys={len(load_info.unexpected_keys)}")
+        print(
+            f"[INFO] load_state_dict: missing_keys={len(load_info.missing_keys)} "
+            f"unexpected_keys={len(load_info.unexpected_keys)}"
+        )
         if load_info.missing_keys:
             print("  missing_keys (first 10):", load_info.missing_keys[:10])
         if load_info.unexpected_keys:
@@ -142,7 +144,7 @@ def main():
     print("[INFO] Model loaded successfully")
 
     # -------------------------
-    # Forward pass: get student embeddings + sims
+    # Forward pass: student embeddings + sims
     # -------------------------
     bs = int(args.batch_size)
     n = len(df)
@@ -158,8 +160,8 @@ def main():
     for start in range(0, n, bs):
         end = min(start + bs, n)
 
-        f = fraud_in[start:end].to(device)
-        r = real_in[start:end].to(device)
+        f = fraud_txt[start:end].to(device)
+        r = real_txt[start:end].to(device)
 
         z_f, z_r = model(f, r)
 
@@ -167,7 +169,6 @@ def main():
             zf_raw_all[start:end] = z_f.detach().float().cpu().numpy()
             zr_raw_all[start:end] = z_r.detach().float().cpu().numpy()
 
-        # THESE are the embeddings used for ROC AUC:
         z_f = F.normalize(z_f, dim=1)
         z_r = F.normalize(z_r, dim=1)
 
@@ -195,10 +196,10 @@ def main():
     print("==============================\n")
 
     # -------------------------
-    # Build output df: non-embedding cols + student embeddings + score
+    # Build output df
     # -------------------------
-    fraud_cols_in = _sorted_prefixed_cols(df, args.fraud_prefix)
-    real_cols_in = _sorted_prefixed_cols(df, args.real_prefix)
+    fraud_cols_in = _sorted_prefixed_cols(df, args.fraud_txt_prefix)
+    real_cols_in = _sorted_prefixed_cols(df, args.real_txt_prefix)
 
     if args.keep_original_embeddings:
         base_df = df.reset_index(drop=True)
@@ -223,10 +224,12 @@ def main():
     _save_table(out_df, args.output)
 
     print(f"[INFO] Wrote: {args.output}")
-    print(f"[INFO] Added: {args.out_fraud_prefix}*, {args.out_real_prefix}*, student_cos"
-          + (" (+ *_raw)" if args.save_unnormalized else ""))
+    print(
+        f"[INFO] Added: {args.out_fraud_prefix}*, {args.out_real_prefix}*, student_cos"
+        + (" (+ *_raw)" if args.save_unnormalized else "")
+    )
     if not args.keep_original_embeddings:
-        print(f"[INFO] Dropped original input embedding cols: {args.fraud_prefix}* and {args.real_prefix}*")
+        print(f"[INFO] Dropped original input embedding cols: {args.fraud_txt_prefix}* and {args.real_txt_prefix}*")
 
 
 if __name__ == "__main__":
@@ -235,10 +238,9 @@ if __name__ == "__main__":
 """
 Example:
 python text_to_image/evaluator2.py \
-  --test text_to_image/evaluation/vate_validate.parquet \
+  --test text_to_image/Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet  \
   --model-path saved_models/best_model.pt \
-  --hidden-dim 512 \
+  --hidden-dim 1024 \
   --out-dim 768 \
   --output text_to_image/evaluation/vate_validate_student_only.parquet
-
 """

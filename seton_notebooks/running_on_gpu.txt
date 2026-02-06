@@ -68,23 +68,28 @@ python -m main_edited \
 }
 
   python text_to_image/optuna_distill.py \
-  --train text_to_image/Golden_and_Text/train.parquet \
-  --val   text_to_image/Golden_and_Text/validate.parquet \
-  --val-pairs text_to_image/evaluation/vate_validate.parquet
+  --train text_to_image/Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet \
+  --val   text_to_image/Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet
+
 
 python text_to_image/main_edited_text2img.py \
-  --training_filepath text_to_image/Golden_and_Text/train.parquet \
-  --validate_filepath text_to_image/Golden_and_Text/validate.parquet \
-  --lr 0.00016720808933175308 \
-  --batch_size 64 \
-  --hidden_dim 512 \
+  --training_filepath text_to_image/Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet \
+  --validate_filepath text_to_image/Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet \
+  --lr 8.250464883920907e-05 \
+  --batch_size 128 \
+  --hidden_dim 1024 \
   --optimizer adam \
-  --weight_decay 3.987300555233492e-05 \
+  --weight_decay 2.4259391979923205e-07 \
+  --align_margin 0.5691887325275329 \
+  --pos_pair_margin 0.9712854502509488 \
+  --neg_pair_margin 0.9494789823073525 \
+  --pair_weight 3.0280613664155895 \
   --epochs 50
 
-[OPTUNA] best params: {'lr': 0.00016720808933175308, 'batch_size': 64, 'hidden_dim': 512, 'optimizer': 'adam', 'weight_decay': 3.987300555233492e-05}
-[OPTUNA] best value (val ROC AUC): 0.9677305707300933
-[OPTUNA] best trial attrs: {'val_loss_teacher': 0.12676807047840885}
+[OPTUNA] best params: {'lr': 8.250464883920907e-05, 'batch_size': 128, 'hidden_dim': 1024, 'optimizer': 'adam', 'weight_decay': 2.4259391979923205e-07, 
+'align_margin': 0.5691887325275329, 'pos_pair_margin': 0.9712854502509488, 'neg_pair_margin': 0.9494789823073525, 'pair_weight': 3.0280613664155895}
+[OPTUNA] best value (val ROC AUC): 0.9740252277690872
+[OPTUNA] best trial attrs: {'val_loss': 0.0070268620966780415}
 
 git clone --branch training --single-branch git@github.com:hailbee/Itau-group-2.git
 cd Itau-group-2

@@ -3,15 +3,14 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from typing import Optional, Tuple, List
-import re
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from sklearn.metrics import roc_auc_score  # <-- ADD
+from sklearn.metrics import roc_auc_score
 
 from trainer import Trainer
 from siamese import SiameseEmbeddingModel
@@ -55,85 +54,57 @@ def _build_optimizer(name: str, params, lr: float, weight_decay: float):
 
 
 # -------------------------
-# Pair-file helpers (for ROC AUC objective)
-# -------------------------
-def _sorted_prefixed_cols(df: pd.DataFrame, prefix: str) -> List[str]:
-    cols = [c for c in df.columns if isinstance(c, str) and c.startswith(prefix)]
-    if not cols:
-        raise KeyError(f"No columns found with prefix '{prefix}'")
-
-    def key_fn(c: str):
-        suf = c[len(prefix):]
-        return int(suf) if re.fullmatch(r"-?\d+", suf) else 10**18
-
-    return sorted(cols, key=lambda c: (key_fn(c), c))
-
-
-@torch.inference_mode()
-def _val_pair_auc_from_df(
-    model: SiameseEmbeddingModel,
-    pair_df: pd.DataFrame,
-    fraud_prefix: str,
-    real_prefix: str,
-    label_col: str,
-    device: torch.device,
-    batch_size: int,
-) -> float:
-    model.eval()
-
-    y = pair_df[label_col].astype(int).to_numpy()
-
-    fcols = _sorted_prefixed_cols(pair_df, fraud_prefix)
-    rcols = _sorted_prefixed_cols(pair_df, real_prefix)
-
-    F_np = pair_df[fcols].to_numpy(dtype=np.float32, copy=False)
-    R_np = pair_df[rcols].to_numpy(dtype=np.float32, copy=False)
-
-    n = len(pair_df)
-    sims = []
-
-    for start in range(0, n, batch_size):
-        end = min(start + batch_size, n)
-
-        f = torch.from_numpy(F_np[start:end]).to(device)
-        r = torch.from_numpy(R_np[start:end]).to(device)
-
-        # uses your Siamese forward
-        zf, zr = model(f, r)
-
-        zf = F.normalize(zf, dim=1)
-        zr = F.normalize(zr, dim=1)
-
-        sims.append(F.cosine_similarity(zf, zr, dim=1).detach().cpu())
-
-    sims = torch.cat(sims).numpy()
-
-    # robust to accidental label direction flips
-    auc_pos = float(roc_auc_score(y, sims))
-    auc_neg = float(roc_auc_score(y, -sims))
-    return max(auc_pos, auc_neg)
-
-
-# -------------------------
-# Validation loss (kept for logging / debugging)
+# Validation metrics
 # -------------------------
 @torch.inference_mode()
 def _val_loss(model, val_loader, criterion, device):
     model.eval()
     total = 0.0
 
-    for txt, img, y in val_loader:
-        txt = txt.to(device)
-        img = img.to(device)
+    for fraud_txt, real_txt, fraud_img, real_img, y in val_loader:
+        fraud_txt = fraud_txt.to(device)
+        real_txt = real_txt.to(device)
+        fraud_img = fraud_img.to(device)
+        real_img = real_img.to(device)
         y = y.to(device)
 
-        z_txt = F.normalize(model.encode_text(txt), dim=1)
-        z_img = F.normalize(img, dim=1)
+        z_fraud = F.normalize(model.encode_text(fraud_txt), dim=1)
+        z_real = F.normalize(model.encode_text(real_txt), dim=1)
 
-        loss = criterion(z_txt, z_img, y)
+        fraud_img = F.normalize(fraud_img, dim=1)
+        real_img = F.normalize(real_img, dim=1)
+
+        loss = criterion(z_fraud, z_real, fraud_img, real_img, y)
         total += loss.item()
 
     return total / max(len(val_loader), 1)
+
+
+@torch.inference_mode()
+def _val_auc(model, val_loader, device):
+    model.eval()
+
+    ys = []
+    sims = []
+
+    for fraud_txt, real_txt, fraud_img, real_img, y in val_loader:
+        fraud_txt = fraud_txt.to(device)
+        real_txt = real_txt.to(device)
+
+        z_fraud = F.normalize(model.encode_text(fraud_txt), dim=1)
+        z_real = F.normalize(model.encode_text(real_txt), dim=1)
+
+        sim = F.cosine_similarity(z_fraud, z_real, dim=1)
+
+        ys.append(y.detach().cpu())
+        sims.append(sim.detach().cpu())
+
+    ys = torch.cat(ys).numpy().astype(int)
+    sims = torch.cat(sims).numpy()
+
+    auc_pos = float(roc_auc_score(ys, sims))
+    auc_neg = float(roc_auc_score(ys, -sims))
+    return max(auc_pos, auc_neg)
 
 
 # -------------------------
@@ -141,30 +112,37 @@ def _val_loss(model, val_loader, criterion, device):
 # -------------------------
 @dataclass
 class OptunaConfig:
-    # Train/val (teacher) dataset
-    txt_prefix: str = "left_txt_emb_"
-    img_prefix: str = "right_img_emb_"
+    fraud_txt_prefix: str = "fraud_txt_emb_"
+    real_txt_prefix: str = "real_txt_emb_"
+    fraud_img_prefix: str = "fraud_aligned_"
+    real_img_prefix: str = "real_aligned_"
     label_col: str = "label"
 
-    # Pair-validation (ROC AUC objective) dataset
-    pair_fraud_prefix: str = "fraud_emb_"
-    pair_real_prefix: str = "real_emb_"
-    pair_label_col: str = "label"
-    eval_batch_size: int = 4096
-
-    # Optuna
     n_trials: int = 50
     short_epochs: int = 5
 
     lr_low: float = 1e-5
     lr_high: float = 3e-4
-    batch_sizes: Tuple[int, ...] = (64, 128, 256)
 
+    batch_sizes: Tuple[int, ...] = (64, 128, 256)
     hidden_dims: Tuple[int, ...] = (256, 512, 768, 1024)
 
     optimizers: Tuple[str, ...] = ("adamw", "adam")
+
     weight_decay_low: float = 1e-7
     weight_decay_high: float = 1e-4
+
+    align_margin_low: float = 0.55
+    align_margin_high: float = 0.80
+
+    pos_pair_margin_low: float = 0.85
+    pos_pair_margin_high: float = 0.99
+
+    neg_pair_margin_low: float = 0.60
+    neg_pair_margin_high: float = 0.95
+
+    pair_weight_low: float = 0.1
+    pair_weight_high: float = 5.0
 
 
 # -------------------------
@@ -174,7 +152,6 @@ def run_optuna(
     *,
     training_filepath: str,
     validate_filepath: str,
-    val_pairs_filepath: str,  # <-- ADD (required for AUC objective)
     device: Optional[str] = None,
     cfg: Optional[OptunaConfig] = None,
 ):
@@ -187,22 +164,23 @@ def run_optuna(
     train_df = _load_table(training_filepath)
     val_df = _load_table(validate_filepath)
 
-    # This is the pair-format file used for ROC AUC objective
-    val_pairs_df = _load_table(val_pairs_filepath)
-
-    text_dim = _infer_dim_from_prefix(train_df, cfg.txt_prefix)
-    img_dim = _infer_dim_from_prefix(train_df, cfg.img_prefix)
+    text_dim = _infer_dim_from_prefix(train_df, cfg.fraud_txt_prefix)
+    img_dim = _infer_dim_from_prefix(train_df, cfg.fraud_img_prefix)
 
     train_ds = TextTeacherPairDataset(
         train_df,
-        txt_prefix=cfg.txt_prefix,
-        img_prefix=cfg.img_prefix,
+        fraud_txt_prefix=cfg.fraud_txt_prefix,
+        real_txt_prefix=cfg.real_txt_prefix,
+        fraud_img_prefix=cfg.fraud_img_prefix,
+        real_img_prefix=cfg.real_img_prefix,
         label_col=cfg.label_col,
     )
     val_ds = TextTeacherPairDataset(
         val_df,
-        txt_prefix=cfg.txt_prefix,
-        img_prefix=cfg.img_prefix,
+        fraud_txt_prefix=cfg.fraud_txt_prefix,
+        real_txt_prefix=cfg.real_txt_prefix,
+        fraud_img_prefix=cfg.fraud_img_prefix,
+        real_img_prefix=cfg.real_img_prefix,
         label_col=cfg.label_col,
     )
 
@@ -215,17 +193,37 @@ def run_optuna(
             "weight_decay", cfg.weight_decay_low, cfg.weight_decay_high, log=True
         )
 
+        align_margin = trial.suggest_float(
+            "align_margin", cfg.align_margin_low, cfg.align_margin_high
+        )
+        pos_pair_margin = trial.suggest_float(
+            "pos_pair_margin", cfg.pos_pair_margin_low, cfg.pos_pair_margin_high
+        )
+        neg_pair_margin = trial.suggest_float(
+            "neg_pair_margin", cfg.neg_pair_margin_low, cfg.neg_pair_margin_high
+        )
+        pair_weight = trial.suggest_float(
+            "pair_weight", cfg.pair_weight_low, cfg.pair_weight_high, log=True
+        )
+
+        if neg_pair_margin >= pos_pair_margin:
+            raise optuna.TrialPruned()
+
         train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
         val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
-        # IMPORTANT: pass dims so output matches teacher dim
         model = SiameseEmbeddingModel(
             text_dim=text_dim,
             hidden_dim=hidden_dim,
             image_dim=img_dim,
         ).to(dev)
 
-        criterion = ThesisMarginOnlyWithTeacherProj().to(dev)
+        criterion = ThesisMarginOnlyWithTeacherProj(
+            align_margin=align_margin,
+            pos_pair_margin=pos_pair_margin,
+            neg_pair_margin=neg_pair_margin,
+            pair_weight=pair_weight,
+        ).to(dev)
 
         optimizer = _build_optimizer(
             optimizer_name,
@@ -246,23 +244,12 @@ def run_optuna(
             epochs=cfg.short_epochs,
         )
 
-        # Optional: keep for debugging in trial output
         vloss = _val_loss(model, val_loader, criterion, dev)
-        trial.set_user_attr("val_loss_teacher", float(vloss))
+        trial.set_user_attr("val_loss", float(vloss))
 
-        # ✅ NEW OBJECTIVE: validation ROC AUC on pair file
-        vauc = _val_pair_auc_from_df(
-            model=model,
-            pair_df=val_pairs_df,
-            fraud_prefix=cfg.pair_fraud_prefix,
-            real_prefix=cfg.pair_real_prefix,
-            label_col=cfg.pair_label_col,
-            device=dev,
-            batch_size=cfg.eval_batch_size,
-        )
+        vauc = _val_auc(model, val_loader, dev)
         return vauc
 
-    # ✅ maximize ROC AUC
     study = optuna.create_study(direction="maximize")
     study.optimize(objective, n_trials=cfg.n_trials)
 
@@ -278,13 +265,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--train", required=True)
     ap.add_argument("--val", required=True)
-
-    # NEW: pair-validation file for ROC AUC objective
-    ap.add_argument("--val-pairs", required=True, help="Pair-format val file (e.g. vate_validation.parquet)")
-
     ap.add_argument("--device", default=None)
     ap.add_argument("--n-trials", type=int, default=50)
     ap.add_argument("--short-epochs", type=int, default=5)
+
     args = ap.parse_args()
 
     cfg = OptunaConfig(
@@ -295,7 +279,6 @@ def main():
     run_optuna(
         training_filepath=args.train,
         validate_filepath=args.val,
-        val_pairs_filepath=args.val_pairs,
         device=args.device,
         cfg=cfg,
     )

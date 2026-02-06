@@ -7,13 +7,16 @@ import torch.nn.functional as F
 
 class Trainer:
     """
-    Positive-only text → image trainer.
-
-    Loss:
-        L(z_txt, img, y)
+    Trainer for 4-embedding dataset format.
 
     Batch format:
-        (txt, img, y)
+        (fraud_txt, real_txt, fraud_img, real_img, y)
+
+    Model:
+        encode_text(x) -> projected embedding
+
+    Criterion signature:
+        loss(z_fraud_txt, z_real_txt, fraud_img, real_img, y)
     """
 
     def __init__(self, model, criterion, optimizer, device):
@@ -32,20 +35,26 @@ class Trainer:
         self.model.train()
         total_loss = 0.0
 
-        for step, (txt, img, y) in enumerate(dataloader):
-            txt = txt.to(self.device)
-            img = img.to(self.device)
+        for step, (fraud_txt, real_txt, fraud_img, real_img, y) in enumerate(dataloader):
+            fraud_txt = fraud_txt.to(self.device)
+            real_txt = real_txt.to(self.device)
+            fraud_img = fraud_img.to(self.device)
+            real_img = real_img.to(self.device)
             y = y.to(self.device)
 
-            # Encode text
-            z_txt = self.model.encode_text(txt)
+            # Encode fraud + real text
+            z_fraud = self.model.encode_text(fraud_txt)
+            z_real = self.model.encode_text(real_txt)
 
-            # Normalize
-            z_txt = F.normalize(z_txt, dim=1)
-            img = F.normalize(img, dim=1)
+            # Normalize everything
+            z_fraud = F.normalize(z_fraud, dim=1)
+            z_real = F.normalize(z_real, dim=1)
+
+            fraud_img = F.normalize(fraud_img, dim=1)
+            real_img = F.normalize(real_img, dim=1)
 
             # Loss
-            loss = self.criterion(z_txt, img, y)
+            loss = self.criterion(z_fraud, z_real, fraud_img, real_img, y)
 
             if not torch.isfinite(loss):
                 raise ValueError(f"Non-finite loss detected: {loss.item()}")
@@ -69,16 +78,23 @@ class Trainer:
         self.model.eval()
         total_loss = 0.0
 
-        for txt, img, y in dataloader:
-            txt = txt.to(self.device)
-            img = img.to(self.device)
+        for fraud_txt, real_txt, fraud_img, real_img, y in dataloader:
+            fraud_txt = fraud_txt.to(self.device)
+            real_txt = real_txt.to(self.device)
+            fraud_img = fraud_img.to(self.device)
+            real_img = real_img.to(self.device)
             y = y.to(self.device)
 
-            z_txt = self.model.encode_text(txt)
-            z_txt = F.normalize(z_txt, dim=1)
-            img = F.normalize(img, dim=1)
+            z_fraud = self.model.encode_text(fraud_txt)
+            z_real = self.model.encode_text(real_txt)
 
-            loss = self.criterion(z_txt, img, y)
+            z_fraud = F.normalize(z_fraud, dim=1)
+            z_real = F.normalize(z_real, dim=1)
+
+            fraud_img = F.normalize(fraud_img, dim=1)
+            real_img = F.normalize(real_img, dim=1)
+
+            loss = self.criterion(z_fraud, z_real, fraud_img, real_img, y)
             total_loss += loss.item()
 
         return total_loss / max(len(dataloader), 1)
@@ -94,8 +110,8 @@ class Trainer:
         epochs=30,
         save_best=True,
         save_dir="saved_models",
-        min_epochs=25,        # ✅ REQUIRED MINIMUM
-        patience=5,           # ✅ EARLY STOPPING PATIENCE
+        min_epochs=25,
+        patience=5,
     ):
         best_val_loss = float("inf")
         bad_epochs = 0
@@ -138,7 +154,7 @@ class Trainer:
             else:
                 bad_epochs += 1
 
-            # ✅ EARLY STOPPING (AFTER min_epochs)
+            # Early stopping
             if (epoch + 1) >= min_epochs and bad_epochs >= patience:
                 print(
                     f"[INFO] Early stopping triggered at epoch {epoch + 1} "
