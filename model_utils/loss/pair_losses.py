@@ -1,4 +1,3 @@
-# ContrastiveLoss: two-sided band
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -13,13 +12,19 @@ class ContrastiveLoss(nn.Module):
         if not (self.m_neg > self.m_pos):
             raise ValueError(f"Need m_neg > m_pos, got m_pos={self.m_pos}, m_neg={self.m_neg}")
 
+        self.beta = 10.0  # fixed: higher -> closer to ReLU, but still smooth (no dead zone)
+
     def forward(self, z1, z2, y):
         y = y.float()
         z1 = F.normalize(z1, dim=1)
         z2 = F.normalize(z2, dim=1)
-        d = torch.norm(z1 - z2, dim=1)  # in [0,2]
+        d = torch.norm(z1 - z2, dim=1)  # [0,2]
 
-        pos = y * F.relu(d - self.m_pos).pow(2)          # punish positives only if too far
-        neg = (1 - y) * F.relu(self.m_neg - d).pow(2)    # punish negatives only if too close
+        # smooth hinge ~ relu(x)
+        hp = F.softplus(d - self.m_pos, beta=self.beta)   # ~ relu(d-m_pos)
+        hn = F.softplus(self.m_neg - d, beta=self.beta)   # ~ relu(m_neg-d)
+
+        pos = y * hp.pow(2)
+        neg = (1 - y) * hn.pow(2)
 
         return (self.w_pos * pos + self.w_neg * neg).mean()

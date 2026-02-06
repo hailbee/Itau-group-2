@@ -31,6 +31,12 @@ salloc -p mit_preemptable \
   -t 04:00:00
 
 python -m main_edited \
+  --mode train --optuna True \
+  --training_filepath "../Downloads/train_pairs_with_siglip_embeddings.parquet" \
+  --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
+  --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet"
+  
+python -m main_edited \
   --mode train --optuna False \
   --training_filepath "../Downloads/train_pairs_with_siglip_embeddings.parquet" \
   --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
@@ -44,15 +50,6 @@ python -m main_edited \
   --weight_decay 0.00059258658423689 \
   --m_pos 0.42048126696127186 \
   --m_neg 0.49619568097835465
-  
-  {"m_pos": 0.42048126696127186, "m_neg": 0.49619568097835465, "m_gap": 0.0757144140170828, "lr": 0.000930826888126965, 
-  "batch_size": 512, "internal_layer_size": 256, "output_dim": 768, "optimizer": "adamw", "weight_decay": 0.00059258658423689}
-
-python -m main_edited \
-  --mode train --optuna True \
-  --training_filepath "../Downloads/train_pairs_with_siglip_embeddings.parquet" \
-  --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
-  --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet"
 
   python text_to_image/optuna_distill.py \
   --train text_to_image/Golden_and_Text/train.parquet \

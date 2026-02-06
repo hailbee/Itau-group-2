@@ -53,19 +53,38 @@ class OptunaOptimizer(BaseOptimizer):
             temperature = trial.suggest_float("temperature", 0.01, 0.1, log=True)
             params['temperature'] = temperature
         else:
-            # Two-sided margins in DISTANCE space (d = ||norm(z1)-norm(z2)||, in [0,2])
-            # Center around your data-driven pick: m_pos~0.495, m_neg~0.634
-            m_pos = trial.suggest_float("m_pos", 0.42, 0.56)          # around ~0.495
-            m_gap = trial.suggest_float("m_gap", 0.05, 0.25)          # ensures separation band
-            m_neg = m_pos + m_gap                                     # enforce constraint
+            # Search over quantiles (interpretable + stable)
+            q_pos = trial.suggest_categorical("q_pos", [0.60, 0.65, 0.70, 0.75, 0.80])
+            q_neg = trial.suggest_categorical("q_neg", [0.25, 0.30, 0.35, 0.40])
+            min_gap = 0.02
+        
+            # Map quantiles -> margins using your printed quantiles
+            # (Hardcode the values you already computed)
+            POS_Q_TO_M = {
+                0.60: 0.42747533321380615,
+                0.65: 0.447457999,        # use your exact number if you want
+                0.70: 0.47026756405830383,
+                0.75: 0.494830000,        # your q75
+                0.80: 0.5181400179862976,
+            }
+            NEG_Q_TO_M = {
+                0.25: 0.6341327428817749,
+                0.30: 0.6489432454109192,
+                0.35: 0.662435000,        # your q35
+                0.40: 0.6754883527755737,
+            }
+        
+            m_pos = float(POS_Q_TO_M[q_pos])
+            m_neg = float(NEG_Q_TO_M[q_neg])
+        
+            # enforce a real band
+            if m_neg < m_pos + min_gap:
+                m_neg = m_pos + min_gap
         
             params["m_pos"] = m_pos
             params["m_neg"] = m_neg
-            params["m_gap"] = m_gap  # optional but useful for debugging
-        
-            # Optional: tune weighting if you still see tradeoffs
-            # params["w_pos"] = trial.suggest_float("w_pos", 0.5, 4.0, log=True)
-            # params["w_neg"] = trial.suggest_float("w_neg", 0.5, 4.0, log=True)
+            params["min_gap"] = min_gap
+
                 
         # Optional: suggest optimizer
         optimizer_name = trial.suggest_categorical("optimizer", ["adam", "adamw", "sgd"])
