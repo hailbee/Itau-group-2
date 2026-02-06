@@ -44,17 +44,26 @@ def pick_device(device_override=None):
     return torch.device("cpu")
 
 
+def _save_table(df: pd.DataFrame, path: str) -> None:
+    if path.lower().endswith(".parquet"):
+        df.to_parquet(path, index=False)
+    elif path.lower().endswith(".csv"):
+        df.to_csv(path, index=False)
+    else:
+        raise ValueError("Output file must end with .parquet or .csv")
+
+
 # -------------------------
 # Main
 # -------------------------
 @torch.inference_mode()
 def main():
     ap = argparse.ArgumentParser(
-        description="Evaluate trained text→image embeddings using cosine similarity (ROC AUC)"
+        description="Evaluate trained embeddings using cosine similarity (ROC AUC) and export the *student* embeddings used for evaluation."
     )
 
     # files
-    ap.add_argument("--test", required=True, help="Test parquet or csv")
+    ap.add_argument("--test", required=True, help="Input parquet or csv")
     ap.add_argument(
         "--model-path",
         default="saved_models/best_model.pt",
@@ -65,10 +74,25 @@ def main():
     ap.add_argument("--hidden-dim", type=int, required=True)
     ap.add_argument("--out-dim", type=int, required=True)
 
-    # prefixes
+    # prefixes (input)
     ap.add_argument("--fraud-prefix", default="fraud_emb_")
     ap.add_argument("--real-prefix", default="real_emb_")
     ap.add_argument("--label-col", default="label")
+
+    # export
+    ap.add_argument("--output", required=True, help="Output parquet/csv with student embeddings")
+    ap.add_argument("--out-fraud-prefix", default="fraud_student_")
+    ap.add_argument("--out-real-prefix", default="real_student_")
+    ap.add_argument(
+        "--keep-original-embeddings",
+        action="store_true",
+        help="If set, keep the original fraud_prefix/real_prefix embedding columns too (default is to drop them).",
+    )
+    ap.add_argument(
+        "--save-unnormalized",
+        action="store_true",
+        help="If set, also save unnormalized student vectors with suffix '_raw'.",
+    )
 
     # runtime
     ap.add_argument("--batch-size", type=int, default=2048)
@@ -82,85 +106,139 @@ def main():
     # -------------------------
     # Load data
     # -------------------------
-    df = (
-        pd.read_parquet(args.test)
-        if args.test.endswith(".parquet")
-        else pd.read_csv(args.test)
-    )
-
+    df = pd.read_parquet(args.test) if args.test.lower().endswith(".parquet") else pd.read_csv(args.test)
     y = df[args.label_col].astype(int).to_numpy()
 
-    fraud_txt = _mat(df, args.fraud_prefix)
-    real_txt = _mat(df, args.real_prefix)
+    # Pull input embeddings
+    fraud_in = _mat(df, args.fraud_prefix)
+    real_in = _mat(df, args.real_prefix)
+    text_dim = fraud_in.shape[1]
 
-    text_dim = fraud_txt.shape[1]
-
-    print(
-        f"[INFO] text_dim={text_dim} | hidden_dim={args.hidden_dim} | out_dim={args.out_dim}"
-    )
+    print(f"[INFO] text_dim={text_dim} | hidden_dim={args.hidden_dim} | out_dim={args.out_dim}")
 
     # -------------------------
     # Load model
     # -------------------------
     ckpt = torch.load(args.model_path, map_location=device)
-
-    if isinstance(ckpt, dict) and "model_state" in ckpt:
-        state = ckpt["model_state"]
-    else:
-        state = ckpt
+    state = ckpt["model_state"] if isinstance(ckpt, dict) and "model_state" in ckpt else ckpt
 
     model = SiameseEmbeddingModel(
-        hidden_dim=args.hidden_dim
+        text_dim=text_dim,
+        hidden_dim=args.hidden_dim,
+        image_dim=args.out_dim,
     ).to(device)
 
-    model.load_state_dict(state, strict=False)
+    load_info = model.load_state_dict(state, strict=False)
     model.eval()
+
+    # Print loading diagnostics (helps catch "weights didn't load" cases)
+    if hasattr(load_info, "missing_keys") and hasattr(load_info, "unexpected_keys"):
+        print(f"[INFO] load_state_dict: missing_keys={len(load_info.missing_keys)} unexpected_keys={len(load_info.unexpected_keys)}")
+        if load_info.missing_keys:
+            print("  missing_keys (first 10):", load_info.missing_keys[:10])
+        if load_info.unexpected_keys:
+            print("  unexpected_keys (first 10):", load_info.unexpected_keys[:10])
 
     print("[INFO] Model loaded successfully")
 
     # -------------------------
-    # Compute similarities
+    # Forward pass: get student embeddings + sims
     # -------------------------
-    sims = []
     bs = int(args.batch_size)
+    n = len(df)
 
-    for start in range(0, len(df), bs):
-        end = min(start + bs, len(df))
+    zf_all = np.empty((n, args.out_dim), dtype=np.float32)
+    zr_all = np.empty((n, args.out_dim), dtype=np.float32)
+    sims_list = []
 
-        f = fraud_txt[start:end].to(device)
-        r = real_txt[start:end].to(device)
+    if args.save_unnormalized:
+        zf_raw_all = np.empty((n, args.out_dim), dtype=np.float32)
+        zr_raw_all = np.empty((n, args.out_dim), dtype=np.float32)
+
+    for start in range(0, n, bs):
+        end = min(start + bs, n)
+
+        f = fraud_in[start:end].to(device)
+        r = real_in[start:end].to(device)
 
         z_f, z_r = model(f, r)
 
+        if args.save_unnormalized:
+            zf_raw_all[start:end] = z_f.detach().float().cpu().numpy()
+            zr_raw_all[start:end] = z_r.detach().float().cpu().numpy()
+
+        # THESE are the embeddings used for ROC AUC:
         z_f = F.normalize(z_f, dim=1)
         z_r = F.normalize(z_r, dim=1)
 
-        sims.append(F.cosine_similarity(z_f, z_r, dim=1).cpu())
+        zf_all[start:end] = z_f.detach().float().cpu().numpy()
+        zr_all[start:end] = z_r.detach().float().cpu().numpy()
 
-    sims = torch.cat(sims).numpy()
+        sims_list.append(F.cosine_similarity(z_f, z_r, dim=1).detach().cpu())
+
+    sims = torch.cat(sims_list).numpy()
 
     # -------------------------
     # Metrics
     # -------------------------
-    roc_auc = float(roc_auc_score(y, sims))
+    auc_pos = float(roc_auc_score(y, sims))
+    auc_neg = float(roc_auc_score(y, -sims))
+    auc_best = max(auc_pos, auc_neg)
+    direction = "score_higher_for_label1" if auc_pos >= auc_neg else "score_lower_for_label1 (use -score)"
 
     print("\n==============================")
     print(" STUDENT EMBEDDING EVALUATION")
     print("==============================")
-    print(f"ROC AUC (cosine): {roc_auc:.6f}")
+    print(f"ROC AUC (cosine): {auc_pos:.6f}")
+    print(f"ROC AUC (cosine, flipped): {auc_neg:.6f}")
+    print(f"ROC AUC (best): {auc_best:.6f}  |  direction: {direction}")
     print("==============================\n")
+
+    # -------------------------
+    # Build output df: non-embedding cols + student embeddings + score
+    # -------------------------
+    fraud_cols_in = _sorted_prefixed_cols(df, args.fraud_prefix)
+    real_cols_in = _sorted_prefixed_cols(df, args.real_prefix)
+
+    if args.keep_original_embeddings:
+        base_df = df.reset_index(drop=True)
+    else:
+        drop_set = set(fraud_cols_in + real_cols_in)
+        keep_cols = [c for c in df.columns if c not in drop_set]
+        base_df = df[keep_cols].reset_index(drop=True)
+
+    out_cols = {}
+    for j in range(args.out_dim):
+        out_cols[f"{args.out_fraud_prefix}{j}"] = zf_all[:, j]
+        out_cols[f"{args.out_real_prefix}{j}"] = zr_all[:, j]
+
+    if args.save_unnormalized:
+        for j in range(args.out_dim):
+            out_cols[f"{args.out_fraud_prefix}{j}_raw"] = zf_raw_all[:, j]
+            out_cols[f"{args.out_real_prefix}{j}_raw"] = zr_raw_all[:, j]
+
+    out_cols["student_cos"] = sims
+
+    out_df = pd.concat([base_df, pd.DataFrame(out_cols)], axis=1)
+    _save_table(out_df, args.output)
+
+    print(f"[INFO] Wrote: {args.output}")
+    print(f"[INFO] Added: {args.out_fraud_prefix}*, {args.out_real_prefix}*, student_cos"
+          + (" (+ *_raw)" if args.save_unnormalized else ""))
+    if not args.keep_original_embeddings:
+        print(f"[INFO] Dropped original input embedding cols: {args.fraud_prefix}* and {args.real_prefix}*")
 
 
 if __name__ == "__main__":
     main()
 
 """
-
-CHANGE HIDDEN AND OUT IF NEEDED
+Example:
 python text_to_image/evaluator2.py \
-  --test text_to_image/evaluation/vate_test.parquet \
-  --hidden-dim 768 \
-  --out-dim 128
-
+  --test text_to_image/evaluation/vate_validate.parquet \
+  --model-path saved_models/best_model.pt \
+  --hidden-dim 1024 \
+  --out-dim 768 \
+  --output text_to_image/evaluation/vate_validate_student_only.parquet
 
 """

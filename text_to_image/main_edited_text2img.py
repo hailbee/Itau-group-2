@@ -67,7 +67,6 @@ def main():
     parser.add_argument("--hidden_dim", type=int, default=512)
     parser.add_argument("--optimizer", type=str, default="adamw",
                         choices=["adam", "adamw", "sgd"])
-    parser.add_argument("--margin", type=float, default=1.0)
 
     # misc
     parser.add_argument("--device", type=str, default=None)
@@ -122,7 +121,7 @@ def main():
         hidden_dim=args.hidden_dim
     ).to(device)
 
-    criterion = ThesisMarginOnlyWithTeacherProj(margin=args.margin).to(device)
+    criterion = ThesisMarginOnlyWithTeacherProj().to(device)
 
     optimizer = build_optimizer(
         args.optimizer,

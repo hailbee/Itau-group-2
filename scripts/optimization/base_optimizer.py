@@ -194,7 +194,8 @@ class BaseOptimizer:
                 f"_Hidden={hidden_dim}"
                 f"_OutDim={out_dim}"
                 f"_Opt={params['optimizer']}"
-                f"_Margin={float(params['margin']):.3f}"
+                f"_mPos={float(params['m_pos']):.3f}"
+                f"_mNeg={float(params['m_neg']):.3f}"
                 f"_Ep={epochs}"
             )
 
@@ -216,7 +217,13 @@ class BaseOptimizer:
             optimizer = self.create_optimizer(model, params)
 
             from model_utils.loss.pair_losses import ContrastiveLoss
-            criterion = ContrastiveLoss(margin=float(params["margin"]))
+            
+            criterion = ContrastiveLoss(
+                m_pos=float(params["m_pos"]),
+                m_neg=float(params["m_neg"]),
+                w_pos=float(params.get("w_pos", 1.0)),
+                w_neg=float(params.get("w_neg", 1.0)),
+            )
 
             trainer = Trainer(
                 model=model,
@@ -253,7 +260,7 @@ class BaseOptimizer:
                 "output_dim": out_dim,
                 "optimizer": params["optimizer"],
                 "weight_decay": params["weight_decay"],
-                "margin": float(params["margin"]),
+                "m_pos": float(params["m_pos"]),
                 "mode": mode,
                 "loss_type": loss_type,
 

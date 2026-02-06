@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class SiameseEmbeddingModel(nn.Module):
-    def __init__(self, text_dim=768, hidden_dim=256, image_dim=128):
+    def __init__(self, text_dim=768, hidden_dim=256, image_dim=768):
         super().__init__()
         self.text_head = nn.Sequential(
             nn.Linear(text_dim, hidden_dim),

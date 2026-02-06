@@ -1,1 +1,1 @@
-{"margin": 0.6178292819960491, "lr": 0.00014461013789657452, "batch_size": 1024, "internal_layer_size": 512, "output_dim": 128, "optimizer": "adam", "weight_decay": 6.773569380235356e-05}
+{"m_pos": 0.42048126696127186, "m_neg": 0.49619568097835465, "m_gap": 0.0757144140170828, "lr": 0.000930826888126965, "batch_size": 512, "internal_layer_size": 256, "output_dim": 768, "optimizer": "adamw", "weight_decay": 0.00059258658423689}

@@ -53,9 +53,20 @@ class OptunaOptimizer(BaseOptimizer):
             temperature = trial.suggest_float("temperature", 0.01, 0.1, log=True)
             params['temperature'] = temperature
         else:
-            margin = trial.suggest_float("margin", 0.6, 0.95)
-            params['margin'] = margin
+            # Two-sided margins in DISTANCE space (d = ||norm(z1)-norm(z2)||, in [0,2])
+            # Center around your data-driven pick: m_pos~0.495, m_neg~0.634
+            m_pos = trial.suggest_float("m_pos", 0.42, 0.56)          # around ~0.495
+            m_gap = trial.suggest_float("m_gap", 0.05, 0.25)          # ensures separation band
+            m_neg = m_pos + m_gap                                     # enforce constraint
         
+            params["m_pos"] = m_pos
+            params["m_neg"] = m_neg
+            params["m_gap"] = m_gap  # optional but useful for debugging
+        
+            # Optional: tune weighting if you still see tradeoffs
+            # params["w_pos"] = trial.suggest_float("w_pos", 0.5, 4.0, log=True)
+            # params["w_neg"] = trial.suggest_float("w_neg", 0.5, 4.0, log=True)
+                
         # Optional: suggest optimizer
         optimizer_name = trial.suggest_categorical("optimizer", ["adam", "adamw", "sgd"])
        

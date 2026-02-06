@@ -57,7 +57,8 @@ def main():
     parser.add_argument("--output_dim", type=int, default=128)
     parser.add_argument("--optimizer_name", type=str, choices=["adam", "adamw", "sgd"], default="adamw")
     parser.add_argument("--weight_decay", type=float, default=0.0)
-    parser.add_argument("--margin", type=float, default=1.0)
+    parser.add_argument("--m_pos", type=float, default=0.494830, help="Positive distance margin (penalize if d > m_pos)")
+    parser.add_argument("--m_neg", type=float, default=0.634133, help="Negative distance margin (penalize if d < m_neg)")
 
     # Hyperparameter optimization parameters
     parser.add_argument("--n_trials", type=int, default=50, help="Number of trials for optimization methods")
@@ -177,7 +178,7 @@ def main():
             out_dim=args.output_dim,
         ).to(device)
 
-        criterion = ContrastiveLoss(margin=args.margin)
+        criterion = ContrastiveLoss(m_pos=args.m_pos, m_neg=args.m_neg)
 
         if args.optimizer_name == "adam":
             optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -246,7 +247,8 @@ def main():
             "output_dim": args.output_dim,
             "optimizer": args.optimizer_name,
             "weight_decay": args.weight_decay,
-            "margin": args.margin,
+            "m_pos": args.m_pos,
+            "m_neg": args.m_neg,
             "epochs": args.epochs,
         }
         with open(os.path.join(save_dir, "single_run_hparams.json"), "w", encoding="utf-8") as f:

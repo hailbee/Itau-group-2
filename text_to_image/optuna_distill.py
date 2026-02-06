@@ -97,9 +97,6 @@ class OptunaConfig:
     weight_decay_low: float = 1e-7
     weight_decay_high: float = 1e-4
 
-    margin_low: float = 0.2
-    margin_high: float = 1.6
-
 
 # -------------------------
 # Optuna runner
@@ -144,7 +141,6 @@ def run_optuna(
         weight_decay = trial.suggest_float(
             "weight_decay", cfg.weight_decay_low, cfg.weight_decay_high, log=True
         )
-        margin = trial.suggest_float("margin", cfg.margin_low, cfg.margin_high)
 
         train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
         val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
@@ -153,7 +149,7 @@ def run_optuna(
             hidden_dim=hidden_dim
         ).to(dev)
 
-        criterion = ThesisMarginOnlyWithTeacherProj(margin=margin).to(dev)
+        criterion = ThesisMarginOnlyWithTeacherProj().to(dev)
 
         optimizer = _build_optimizer(
             optimizer_name,
@@ -173,7 +169,6 @@ def run_optuna(
             dataloader=train_loader,
             epochs=cfg.short_epochs,
         )
-
 
         # ✅ CORRECT OPTUNA OBJECTIVE
         return _val_loss(model, val_loader, criterion, dev)

@@ -1,33 +1,25 @@
+# ContrastiveLoss: two-sided band
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch
 
 class ContrastiveLoss(nn.Module):
-    def __init__(self, margin: float = 1.0):
+    def __init__(self, m_pos: float, m_neg: float, w_pos: float = 1.0, w_neg: float = 1.0):
         super().__init__()
-        self.margin = margin
+        self.m_pos = float(m_pos)
+        self.m_neg = float(m_neg)
+        self.w_pos = float(w_pos)
+        self.w_neg = float(w_neg)
+        if not (self.m_neg > self.m_pos):
+            raise ValueError(f"Need m_neg > m_pos, got m_pos={self.m_pos}, m_neg={self.m_neg}")
 
     def forward(self, z1, z2, y):
-        """
-        z1, z2: [B, D] projected embeddings
-        y:      [B] in {0,1}  (1 = positive / spoof)
-        """
-
-        # Ensure float labels
         y = y.float()
-
-        # L2 normalize (paper requirement)
         z1 = F.normalize(z1, dim=1)
         z2 = F.normalize(z2, dim=1)
+        d = torch.norm(z1 - z2, dim=1)  # in [0,2]
 
-        # Euclidean distance
-        d = torch.norm(z1 - z2, dim=1)
+        pos = y * F.relu(d - self.m_pos).pow(2)          # punish positives only if too far
+        neg = (1 - y) * F.relu(self.m_neg - d).pow(2)    # punish negatives only if too close
 
-        pos_loss = y * d.pow(2)
-        neg_loss = (1 - y) * torch.clamp(self.margin - d, min=0).pow(2)
-
-        #if self.training:
-         #   assert (y == 0).any(), "No negative pairs in batch"
-          #  assert (y == 1).any(), "No positive pairs in batch"
-
-        return (pos_loss + neg_loss).mean()
+        return (self.w_pos * pos + self.w_neg * neg).mean()

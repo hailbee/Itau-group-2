@@ -10,7 +10,6 @@ real text: 2307..3074
 
 Counter({'fraud_txt_emb_': 768, 'real_txt_emb_': 768, 'fraud_aligned_': 128, 'real_aligned_': 128, 'fraudulent_name': 1, 'real_name': 1, 'label': 1})
 
-
 salloc -p mit_preemptable \
   --gres=gpu:h200:1 \
   -c 8 --mem=128G \
@@ -31,62 +30,29 @@ salloc -p mit_preemptable \
   -c 8 --mem=128G \
   -t 04:00:00
 
-python -m main_edited
-
 python -m main_edited \
   --mode train --optuna False \
   --training_filepath "../Downloads/train_pairs_with_siglip_embeddings.parquet" \
   --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
   --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" \
   --epochs 50 \
-  --batch_size 1024 \
-  --lr 0.00014461013789657452 \
-  --internal_layer_size 512 \
-  --output_dim 128 \
-  --optimizer_name adam \
-  --weight_decay 6.773569380235356e-05 \
-  --margin 0.6178292819960491
-
-{"margin": 0.6178292819960491, "lr": 0.00014461013789657452, "batch_size": 1024, 
-"internal_layer_size": 512, "output_dim": 128, "optimizer": "adam", "weight_decay": 6.773569380235356e-05}
+  --batch_size 512 \
+  --lr 0.000930826888126965 \
+  --internal_layer_size 256 \
+  --output_dim 768 \
+  --optimizer_name adamw \
+  --weight_decay 0.00059258658423689 \
+  --m_pos 0.42048126696127186 \
+  --m_neg 0.49619568097835465
+  
+  {"m_pos": 0.42048126696127186, "m_neg": 0.49619568097835465, "m_gap": 0.0757144140170828, "lr": 0.000930826888126965, 
+  "batch_size": 512, "internal_layer_size": 256, "output_dim": 768, "optimizer": "adamw", "weight_decay": 0.00059258658423689}
 
 python -m main_edited \
   --mode train --optuna True \
   --training_filepath "../Downloads/train_pairs_with_siglip_embeddings.parquet" \
   --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
   --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet"
-
-python create_embeddings_run.py \
-  --input train_pairs_medium_100k.parquet \
-  --output train_pairs_medium_with_siglip_embeddings.parquet \
-  --batch-size 128
-
-python3 scripts/evaluation/baseline_eval.py \
-  --test_filepath "../Downloads/train_pairs_with_siglip_embeddings_100k.parquet" \
-  --plot
-
-python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.version.cuda); print(torch.cuda.device_count())"
-
-python create_diff.py
-
-Final hyperparameters:
-{'margin': 0.0831, 'lr': 0.0001, 'batch_size': 1024, 'internal_layer_size': 512, 'output_dim': 128, 'optimizer': 'adam', 'weight_decay': 0.0001}
-
-so in my original code i have fraud and real text and a label saying 1 if actual spoof attempt or 0 if not. i turned these into image encodings using siglip. i then used a siamese mlp model and contrastive pairwise loss to get "better" embeddings that are "spoof aware" because spoofs are closer, non-spoofs are farther. now the next goal is to turn the fraud and real text into the siglip text embeddings and then learn a space where the text embeddings are mapped to image embeddings because although image embeddings have more rich information, they are also more expensive to compute so essentially i want to "translate" the information.
-
-main_edited, optuna, base_optimizer, unified optimizer, pair_losses, data, trainer, evaluator, siamese
-
-Track two things during experiments:
-Alignment: mean cosine(student(s), teacher(s))
-Spoof pair ROC-AUC: cosine(student(fraud), student(real)) vs label
-If alignment improves but ROC-AUC drops, it usually means either: the student is matching teacher globally but distorting pair geometry relevant to your task, or your teacher spoof-aware space is doing something that your text embedding can’t fully predict At that point you’d consider (optional) geometry-preserving distillation — but you don’t need to jump there yet.
-
-Figure out getting VATE output
-If “go from one space to the other” means preserve neighborhoods / similarity structure, pointwise cosine loss can sometimes be “correct on average” but slightly off on local structure.
-A really strong improvement (with zero extra trainable parameters) is to add relational distillation
-
-During the file creation process, keep the columns and just add in the columns for text embeddings afterwards (to avoid keeping 2 of everything)
-
 
   python text_to_image/optuna_distill.py \
   --train text_to_image/Golden_and_Text/train.parquet \
@@ -95,29 +61,15 @@ During the file creation process, keep the columns and just add in the columns f
 python text_to_image/main_edited_text2img.py \
   --training_filepath text_to_image/Golden_and_Text/train.parquet \
   --validate_filepath text_to_image/Golden_and_Text/validate.parquet \
-  --lr 8.878831354011049e-05 \
+  --lr 0.00024701776242279095 \
   --batch_size 64 \
   --hidden_dim 1024 \
   --optimizer adamw \
-  --weight_decay 1.8183981414639606e-06 \
-  --margin 0.8393451576585539 \
+  --weight_decay 3.97536014257123e-07 \
   --epochs 50
 
-{'lr': 8.878831354011049e-05, 'batch_size': 64, 'hidden_dim': 1
-024, 'optimizer': 'adamw', 'weight_decay': 1.8183981414639606e-06, 'margin': 0.8393451576585539}
-
-label = 0 means not actually no matter how similar, label = 1 means spoof attempt. what loss to choose and why? answer in a paragraph? and by the way the task is to just make the embedding spaces align. they have the same real name, fake name, and label just different embeddings (obviously)
-
-i'm gonna measure roc auc at the end using the "aligned" embedding vs the raw text embedding. the strategy is, if you aren't aware, is to base it on similarity between fake and real and in a perfect space, the spoofs are close and non-spoofs are far apart. trying to see if that rocauc score improves in the aligned space with the information from image embeddings. what loss function? answer in a paragraph.
-
-
-If both spaces are already spoof-aware and your goal is mainly to make the text embeddings usable in the same “decision geometry” as the image embeddings (so your fake–real similarity ROC-AUC improves or at least doesn’t regress), the best low-tuning choice is a two-term objective: (1) pointwise cosine distillation to align each mapped text vector to its paired image vector (keeps you in the same coordinate system), plus (2) a label-aware similarity term on the mapped text pair cos(pred_fraud, pred_real) trained with BCEWithLogitsLoss (so label=1 pushes that similarity up and label=0 pushes it down), because the first term handles “space alignment” while the second directly optimizes the exact separation your ROC-AUC is computed from; you can keep the distillation weight modest and avoid extra hyperparameters by using a learnable logit scale (instead of tuning temperature) for the BCE term. No — it’s not the only strategy that can do both. “Align spaces” + “preserve/improve spoof separation” can also be done with (a) two-stage training (first pure alignment, then a light label-supervised similarity tuning while freezing most layers), (b) teacher-behavior distillation that matches the teacher’s fake–real similarity score (or its score distribution over candidates) instead of matching vectors, (c) relational distillation (match neighborhood structure / similarity matrix) which often preserves spoof-aware geometry better than pointwise matching, or (d) architecture constraints (orthogonal/low-rank/residual projector) that make alignment happen with minimal distortion. Do the objectives contradict? They can if there’s any mismatch between “what it means to be close in the teacher space” and “what your label wants the fake–real similarity to do” under your text-only mapping (e.g., label=0 pairs that are genuinely similar strings but should be “not a spoof,” or mapping errors that systematically shrink/expand distances); then the label loss will try to warp the mapped space away from strict pointwise alignment. If your image and text spaces are truly consistent and “spoof-aware” in the same sense, they’re mostly compatible—distillation keeps you in the teacher coordinate system, and the label term just nudges the decision boundary—but it’s normal for them to partially conflict, which is why people either (1) gate/weight the label term lightly, (2) do two-stage with freezing, or (3) distill the teacher’s scores rather than forcing exact vector matches.
-
-
-Get auc roc implemented in evaluator file
-Remove the Top k things for now
-Get other metrics in that file
-Find a way to reliably test the other things you are trying? Maybe just upload to GitHub and save
+[OPTUNA] best params: {'lr': 0.00024701776242279095, 'batch_size': 64, 'hidden_dim': 1024, 'optimizer': 'adamw', 'weight_decay': 3.97536014257123e-07}
+[OPTUNA] best value (val loss): 0.12398728209372145
 
 git clone --branch training --single-branch git@github.com:hailbee/Itau-group-2.git
 cd Itau-group-2
@@ -136,7 +88,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "Frozen images 0.89 with three layers"
+git commit -m "saved_models/best_model_by_val_trial_1_single_run.pt"
 git push -u origin training
 
 git pull
