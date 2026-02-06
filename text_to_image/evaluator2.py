@@ -235,10 +235,10 @@ if __name__ == "__main__":
 """
 Example:
 python text_to_image/evaluator2.py \
-  --test text_to_image/evaluation/vate_validate.parquet \
+  --test text_to_image/evaluation/vate_test.parquet \
   --model-path saved_models/best_model.pt \
   --hidden-dim 1024 \
   --out-dim 768 \
-  --output text_to_image/evaluation/vate_validate_student_only.parquet
+  --output text_to_image/evaluation/vate_test_student_only.parquet
 
 """
