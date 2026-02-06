@@ -60,34 +60,30 @@ class OptunaOptimizer(BaseOptimizer):
         
             # Map quantiles -> margins using your printed quantiles
             # (Hardcode the values you already computed)
-            POS_Q_TO_M = {
-                0.60: 0.42747533321380615,
-                0.65: 0.447457999,        # use your exact number if you want
-                0.70: 0.47026756405830383,
-                0.75: 0.494830000,        # your q75
-                0.80: 0.5181400179862976,
-            }
-            NEG_Q_TO_M = {
-                0.25: 0.6341327428817749,
-                0.30: 0.6489432454109192,
-                0.35: 0.662435000,        # your q35
-                0.40: 0.6754883527755737,
-            }
-        
-            m_pos = float(POS_Q_TO_M[q_pos])
-            m_neg = float(NEG_Q_TO_M[q_neg])
-        
-            # enforce a real band
-            if m_neg < m_pos + min_gap:
-                m_neg = m_pos + min_gap
-        
-            params["m_pos"] = m_pos
-            params["m_neg"] = m_neg
-            params["min_gap"] = min_gap
-
+            # choose from your best/valid candidates (hard-coded from your table)
+            MARGIN_PAIRS = [
+                # (q_pos, q_neg, m_pos, m_neg)
+                (0.70, 0.30, 0.47026756405830383, 0.6489432454109192),
+                (0.65, 0.30, 0.44745800000000000, 0.6489432454109192),
+                (0.70, 0.25, 0.47026756405830383, 0.6341327428817749),
+                (0.70, 0.35, 0.47026756405830383, 0.6624350000000000),
+                (0.75, 0.30, 0.4948300000000000, 0.6489432454109192),
+                (0.60, 0.30, 0.42747533321380615, 0.6489432454109192),
+                (0.65, 0.25, 0.44745800000000000, 0.6341327428817749),
+                (0.65, 0.35, 0.44745800000000000, 0.6624350000000000),
+                (0.70, 0.40, 0.47026756405830383, 0.6754883527755737),
+            ]
+            
+            idx = trial.suggest_int("margin_pair_idx", 0, len(MARGIN_PAIRS) - 1)
+            q_pos, q_neg, m_pos, m_neg = MARGIN_PAIRS[idx]
+            
+            params["m_pos"] = float(m_pos)
+            params["m_neg"] = float(m_neg)
+            params["q_pos"] = float(q_pos)
+            params["q_neg"] = float(q_neg)
                 
         # Optional: suggest optimizer
-        optimizer_name = trial.suggest_categorical("optimizer", ["adam", "adamw", "sgd"])
+        optimizer_name = trial.suggest_categorical("optimizer", ["adam", "adamw"])
        
         # Optional: suggest weight decay
         weight_decay = trial.suggest_float("weight_decay", 1e-5, 1e-3, log=True)
