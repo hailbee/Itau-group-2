@@ -83,9 +83,6 @@ class UnifiedHyperparameterOptimizer:
                 gap = float(np.random.uniform(0.04, 0.14))
                 m_pos = float(min(m_neg + gap, 0.99))
 
-                w_pos = float(np.random.uniform(0.5, 2.0))
-                w_neg = float(np.exp(np.random.uniform(np.log(1.0), np.log(12.0))))
-
                 params = {
                     "lr": lr,
                     "batch_size": batch_size,
@@ -96,8 +93,6 @@ class UnifiedHyperparameterOptimizer:
                     "m_neg": m_neg,
                     "gap": gap,      # keep for interpretability
                     "m_pos": m_pos,  # explicit for downstream code paths
-                    "w_pos": w_pos,
-                    "w_neg": w_neg,
                 }
 
             population.append(params)
@@ -153,10 +148,6 @@ class UnifiedHyperparameterOptimizer:
                 new_params["m_neg"] = 0.84
             if "gap" not in new_params:
                 new_params["gap"] = 0.08
-            if "w_pos" not in new_params:
-                new_params["w_pos"] = 1.0
-            if "w_neg" not in new_params:
-                new_params["w_neg"] = 3.0
 
             if np.random.random() < mutation_rate:
                 new_params["m_neg"] *= float(np.exp(np.random.normal(0, 0.02)))
@@ -171,14 +162,6 @@ class UnifiedHyperparameterOptimizer:
             # (Optional safety: guarantee strict inequality)
             if not (new_params["m_pos"] > new_params["m_neg"]):
                 new_params["m_pos"] = float(min(new_params["m_neg"] + 1e-3, 0.99))
-
-            if np.random.random() < mutation_rate:
-                new_params["w_pos"] *= float(np.exp(np.random.normal(0, 0.25)))
-                new_params["w_pos"] = float(np.clip(new_params["w_pos"], 0.25, 4.0))
-
-            if np.random.random() < mutation_rate:
-                new_params["w_neg"] *= float(np.exp(np.random.normal(0, 0.35)))
-                new_params["w_neg"] = float(np.clip(new_params["w_neg"], 0.5, 20.0))
 
         return new_params
 
@@ -255,8 +238,6 @@ class UnifiedHyperparameterOptimizer:
                     "m_neg": 0.84,
                     "gap": 0.08,
                     "m_pos": 0.92,
-                    "w_pos": 1.0,
-                    "w_neg": 3.0,
                 },
                 "triplet": {
                     "lr": 1e-4,
@@ -312,8 +293,6 @@ class UnifiedHyperparameterOptimizer:
             "m_neg": 0.84,
             "gap": 0.08,
             "m_pos": 0.92,
-            "w_pos": 1.0,
-            "w_neg": 3.0,
             "optimizer": "adamw",
             "weight_decay": 1e-4,
         }
