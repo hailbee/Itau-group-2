@@ -237,7 +237,7 @@ Example:
 python text_to_image/evaluator2.py \
   --test text_to_image/evaluation/vate_test.parquet \
   --model-path saved_models/best_model.pt \
-  --hidden-dim 1024 \
+  --hidden-dim 512 \
   --out-dim 768 \
   --output text_to_image/evaluation/vate_test_student_only.parquet
 
