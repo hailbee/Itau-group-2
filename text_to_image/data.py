@@ -94,51 +94,59 @@ def _prefix_to_numpy(df: pd.DataFrame, prefix: str, *, name: str) -> np.ndarray:
 
 
 # -------------------------------------------------
-# DATASET (NEW FORMAT ONLY)
+# DATASET (4-EMBEDDING FORMAT)
 # -------------------------------------------------
 class TextTeacherPairDataset(Dataset):
     """
-    Positive-only text → image/teacher embedding dataset.
+    Dataset where each row contains 4 embeddings:
 
-    Expected columns:
-      - label
-      - {txt_prefix}0..D-1
-      - {img_prefix}0..D-1
+      fraud_txt_emb_*
+      real_txt_emb_*
+      fraud_img_emb_*
+      real_img_emb_*
+      label
 
     Returns:
-      (txt, img, label)
+      (fraud_txt, real_txt, fraud_img, real_img, label)
     """
 
     def __init__(
         self,
         df: pd.DataFrame,
         *,
-        txt_prefix: str = "left_txt_emb_",
-        img_prefix: str = "right_img_emb_",
+        fraud_txt_prefix: str = "fraud_txt_emb_",
+        real_txt_prefix: str = "real_txt_emb_",
+        fraud_img_prefix: str = "fraud_img_emb_",
+        real_img_prefix: str = "real_img_emb_",
         label_col: LabelCol = "label",
     ):
         super().__init__()
         self.df = df.reset_index(drop=True)
 
-        if not _has_prefix(self.df, txt_prefix):
-            raise KeyError(f"Missing text embedding columns with prefix '{txt_prefix}'")
-        if not _has_prefix(self.df, img_prefix):
-            raise KeyError(f"Missing image embedding columns with prefix '{img_prefix}'")
+        for prefix in [fraud_txt_prefix, real_txt_prefix, fraud_img_prefix, real_img_prefix]:
+            if not _has_prefix(self.df, prefix):
+                raise KeyError(f"Missing embedding columns with prefix '{prefix}'")
 
-        self.txt = _prefix_to_numpy(self.df, txt_prefix, name="txt")
-        self.img = _prefix_to_numpy(self.df, img_prefix, name="img")
+        self.fraud_txt = _prefix_to_numpy(self.df, fraud_txt_prefix, name="fraud_txt")
+        self.real_txt = _prefix_to_numpy(self.df, real_txt_prefix, name="real_txt")
+        self.fraud_img = _prefix_to_numpy(self.df, fraud_img_prefix, name="fraud_img")
+        self.real_img = _prefix_to_numpy(self.df, real_img_prefix, name="real_img")
 
         y_series = _get_label_series(self.df, label_col)
         self.labels = _coerce_numeric_label(y_series, name="label")
 
-        if len(self.txt) != len(self.img) or len(self.txt) != len(self.labels):
-            raise ValueError("Length mismatch among txt, img, and label")
+        n = len(self.labels)
+        if not (len(self.fraud_txt) == len(self.real_txt) == len(self.fraud_img) == len(self.real_img) == n):
+            raise ValueError("Length mismatch among fraud_txt, real_txt, fraud_img, real_img, labels")
 
     def __len__(self) -> int:
         return int(len(self.labels))
 
     def __getitem__(self, idx: int):
-        txt = torch.from_numpy(self.txt[idx])
-        img = torch.from_numpy(self.img[idx])
+        fraud_txt = torch.from_numpy(self.fraud_txt[idx])
+        real_txt = torch.from_numpy(self.real_txt[idx])
+        fraud_img = torch.from_numpy(self.fraud_img[idx])
+        real_img = torch.from_numpy(self.real_img[idx])
         y = torch.tensor(self.labels[idx], dtype=torch.float32)
-        return txt, img, y
+
+        return fraud_txt, real_txt, fraud_img, real_img, y
