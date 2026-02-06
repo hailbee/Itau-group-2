@@ -90,7 +90,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "finally working 96.7 saved_models/best_model_by_val_trial_1_single_run.pt"
+git commit -m "saved_models/best_model_by_val_trial_1_single_run.pt"
 git push -u origin training
 
 git pull
