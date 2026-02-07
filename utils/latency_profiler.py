@@ -188,103 +188,6 @@ class LatencyProfiler:
             gpu_utilization_percent=None,  # Requires nvidia-ml-py
             throughput_samples_per_sec=throughput
         )
-    
-    def profile_image_encoder(self, model_wrapper, num_images: int = 32, image_size: Tuple[int, int] = (224, 224)) -> LatencyMetrics:
-        """
-        Profile image encoder model.
-        
-        Args:
-            model_wrapper: Image encoder model wrapper with encode_images() method
-            num_images: Number of images to encode
-            image_size: Size of images (H, W)
-            
-        Returns:
-            LatencyMetrics object with detailed performance metrics
-        """
-        from PIL import Image
-        import numpy as np
-        
-        model_name = getattr(model_wrapper, 'model_name', 'unknown')
-        model_type = getattr(model_wrapper.__class__, '__name__', 'Unknown')
-        
-        # Create dummy images
-        images = []
-        for _ in range(num_images):
-            # Create random RGB image
-            img_array = np.random.randint(0, 256, (image_size[0], image_size[1], 3), dtype=np.uint8)
-            img = Image.fromarray(img_array, 'RGB')
-            images.append(img)
-        
-        # Get initial memory state
-        torch.cuda.reset_peak_memory_stats() if torch.cuda.is_available() else None
-        torch.cuda.empty_cache() if torch.cuda.is_available() else None
-        
-        # Warmup runs
-        for _ in range(self.warmup_runs):
-            with torch.no_grad():
-                _ = model_wrapper.encode_images(images[:num_images])
-        
-        # Measure latencies
-        latencies = []
-        
-        for _ in range(self.num_runs):
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-            
-            start_time = time.perf_counter()
-            
-            with torch.no_grad():
-                _ = model_wrapper.encode_images(images[:num_images])
-            
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-            
-            end_time = time.perf_counter()
-            latency_ms = (end_time - start_time) * 1000
-            latencies.append(latency_ms)
-        
-        latencies = latencies[self.warmup_runs:]
-        
-        # Calculate statistics
-        import numpy as np
-        latencies_array = np.array(latencies)
-        mean_latency = float(np.mean(latencies_array))
-        min_latency = float(np.min(latencies_array))
-        max_latency = float(np.max(latencies_array))
-        std_latency = float(np.std(latencies_array))
-        throughput = (num_images * 1000.0) / mean_latency
-        
-        # Memory metrics
-        if torch.cuda.is_available():
-            gpu_memory = torch.cuda.memory_allocated() / 1024 / 1024
-            gpu_reserved = torch.cuda.memory_reserved() / 1024 / 1024
-            gpu_peak = torch.cuda.max_memory_allocated() / 1024 / 1024
-        else:
-            gpu_memory = None
-            gpu_reserved = None
-            gpu_peak = None
-        
-        # CPU metrics
-        cpu_memory = self.process.memory_info().rss / 1024 / 1024
-        cpu_percent = self.process.cpu_percent(interval=0.1)
-        
-        return LatencyMetrics(
-            model_name=model_name,
-            model_type=model_type,
-            batch_size=num_images,
-            mean_latency_ms=mean_latency,
-            min_latency_ms=min_latency,
-            max_latency_ms=max_latency,
-            std_latency_ms=std_latency,
-            memory_allocated_mb=gpu_memory if gpu_memory else 0,
-            memory_reserved_mb=gpu_reserved if gpu_reserved else 0,
-            peak_memory_mb=gpu_peak if gpu_peak else 0,
-            cpu_memory_mb=cpu_memory,
-            cpu_percent=cpu_percent,
-            gpu_memory_mb=gpu_memory,
-            gpu_utilization_percent=None,
-            throughput_samples_per_sec=throughput
-        )
 
     def profile_ocr(self, ocr_tester, test_texts: List[str], include_glyph_time: bool = True) -> LatencyMetrics:
         """
@@ -590,6 +493,95 @@ class LatencyProfiler:
             gpu_memory_mb=gpu_memory,
             gpu_utilization_percent=None,
             throughput_samples_per_sec=throughput
+        )
+
+    def profile_attentioncnn(
+        self,
+        keras_model,
+        images: List,
+        batch_size: int = 32,
+    ) -> LatencyMetrics:
+        """
+        Profile latency of AttentionCNN (Keras image-based model).
+
+        Args:
+            keras_model: Loaded tf.keras model
+            images: List or numpy array of preprocessed images
+            batch_size: Batch size for inference
+
+        Returns:
+            LatencyMetrics
+        """
+        import numpy as np
+        import tensorflow as tf
+
+        model_name = "attentioncnn"
+        model_type = "KerasCNN"
+
+        # Ensure numpy array
+        images = np.asarray(images)
+
+        # Warmup
+        for _ in range(self.warmup_runs):
+            _ = keras_model.predict(
+                images[:batch_size],
+                batch_size=batch_size,
+                verbose=0,
+            )
+
+        latencies = []
+
+        for _ in range(self.num_runs):
+            start = time.perf_counter()
+
+            _ = keras_model.predict(
+                images[:batch_size],
+                batch_size=batch_size,
+                verbose=0,
+            )
+
+            end = time.perf_counter()
+            latencies.append((end - start) * 1000.0)
+
+        latencies = np.array(latencies)
+
+        mean_latency = float(latencies.mean())
+        min_latency = float(latencies.min())
+        max_latency = float(latencies.max())
+        std_latency = float(latencies.std())
+
+        throughput = (batch_size * 1000.0) / mean_latency
+
+        # CPU metrics
+        cpu_memory = self.process.memory_info().rss / 1024 / 1024
+        cpu_percent = self.process.cpu_percent(interval=0.1)
+
+        # TensorFlow GPU memory (safe)
+        try:
+            gpus = tf.config.experimental.list_physical_devices("GPU")
+            gpu_memory = None
+            if gpus:
+                info = tf.config.experimental.get_memory_info("GPU:0")
+                gpu_memory = info["current"] / 1024 / 1024
+        except Exception:
+            gpu_memory = None
+
+        return LatencyMetrics(
+            model_name=model_name,
+            model_type=model_type,
+            batch_size=batch_size,
+            mean_latency_ms=mean_latency,
+            min_latency_ms=min_latency,
+            max_latency_ms=max_latency,
+            std_latency_ms=std_latency,
+            memory_allocated_mb=gpu_memory or 0,
+            memory_reserved_mb=0,
+            peak_memory_mb=0,
+            cpu_memory_mb=cpu_memory,
+            cpu_percent=cpu_percent,
+            gpu_memory_mb=gpu_memory,
+            gpu_utilization_percent=None,
+            throughput_samples_per_sec=throughput,
         )
 
 
