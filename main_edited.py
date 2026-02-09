@@ -98,6 +98,8 @@ def main():
         default=0.84,
         help="Negative cosine margin: negatives want cos <= m_neg",
     )
+    parser.add_argument("--w_pos", type=float, default=1.0, help="Weight on positive term")
+    parser.add_argument("--w_neg", type=float, default=3.0, help="Weight on negative term (often > w_pos)")
 
     # Hyperparameter optimization parameters
     parser.add_argument("--n_trials", type=int, default=50, help="Number of trials for Optuna")
@@ -233,7 +235,9 @@ def main():
 
         criterion = ContrastiveLoss(
             m_pos=args.m_pos,
-            m_neg=args.m_neg
+            m_neg=args.m_neg,
+            w_pos=args.w_pos,
+            w_neg=args.w_neg,
         )
 
         if args.optimizer_name == "adam":
@@ -306,6 +310,8 @@ def main():
             "weight_decay": args.weight_decay,
             "m_pos": args.m_pos,
             "m_neg": args.m_neg,
+            "w_pos": args.w_pos,
+            "w_neg": args.w_neg,
             "epochs": args.epochs,
         }
         hparams_path = os.path.join(save_dir, "single_run_hparams.json")

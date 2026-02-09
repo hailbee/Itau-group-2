@@ -242,5 +242,5 @@ python text_to_image/evaluator2.py \
   --model-path saved_models/best_model.pt \
   --hidden-dim 1024 \
   --out-dim 768 \
-  --output text_to_image/evaluation/vate_validate_student_only.parquet
+  --output
 """

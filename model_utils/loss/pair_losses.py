@@ -5,42 +5,69 @@ import torch.nn.functional as F
 
 class ContrastiveLoss(nn.Module):
     """
-    Two-margin cosine contrastive hinge loss.
+    Two-margin hinge contrastive loss on cosine similarity.
 
-    y=1 (positive): penalize if cos < m_pos
-    y=0 (negative): penalize if cos > m_neg
+    Let c = cosine(z1, z2) in [-1, 1] (computed after L2-normalization).
 
-    REQUIRE: m_pos > m_neg
+    y = 1 (positive pair): want c >= m_pos  -> penalize relu(m_pos - c)^2
+    y = 0 (negative pair): want c <= m_neg  -> penalize relu(c - m_neg)^2
+
+    IMPORTANT:
+      - For cosine two-margin hinge, you should set m_pos > m_neg (a separation gap).
+      - If you accidentally set m_pos <= m_neg, you can create a "bad deadzone" where both
+        classes can satisfy constraints without improving separation.
+
+    Weights:
+      - w_pos / w_neg weight the positive vs negative terms.
+
+    Typical starting point (based on your histogram):
+      - m_pos ~ 0.90–0.95
+      - m_neg ~ 0.80–0.86
+      - w_neg >= w_pos (often 1–5x) if you want to suppress hard negatives
     """
-    def __init__(self, m_pos: float, m_neg: float):
+
+    def __init__(
+        self,
+        m_pos: float,
+        m_neg: float,
+        w_pos: float = 1.0,
+        w_neg: float = 1.0,
+        reduction: str = "mean",
+        enforce_gap: bool = True,
+    ):
         super().__init__()
         self.m_pos = float(m_pos)
         self.m_neg = float(m_neg)
-        if not (self.m_pos > self.m_neg):
-            raise ValueError(f"Need m_pos > m_neg, got m_pos={self.m_pos}, m_neg={self.m_neg}")
+        self.w_pos = float(w_pos)
+        self.w_neg = float(w_neg)
+
+        if reduction not in ("mean", "sum", "none"):
+            raise ValueError(f"reduction must be 'mean', 'sum', or 'none', got {reduction}")
+        self.reduction = reduction
+
+        if enforce_gap and not (self.m_pos > self.m_neg):
+            raise ValueError(
+                f"For cosine two-margin hinge, require m_pos > m_neg. Got m_pos={self.m_pos}, m_neg={self.m_neg}."
+            )
 
     def forward(self, z1: torch.Tensor, z2: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        # y can be {0,1} ints/bools; cast to float
         y = y.float()
 
+        # cosine similarity (safe even if inputs not normalized)
         z1 = F.normalize(z1, dim=1)
         z2 = F.normalize(z2, dim=1)
-        c = (z1 * z2).sum(dim=1)  # cosine similarity
+        c = (z1 * z2).sum(dim=1)  # [batch], in [-1, 1]
 
-        pos_loss = y * F.relu(self.m_pos - c).pow(2)
-        neg_loss = (1.0 - y) * F.relu(c - self.m_neg).pow(2)
+        # hinge penalties (two margins)
+        pos_loss = F.relu(self.m_pos - c).pow(2)  # only if positive similarity is below m_pos
+        neg_loss = F.relu(c - self.m_neg).pow(2)  # only if negative similarity is above m_neg
 
-        return (pos_loss + neg_loss).mean()
+        # weighted combine per example
+        loss = self.w_pos * y * pos_loss + self.w_neg * (1.0 - y) * neg_loss
 
-
-"""
-USAGE EXAMPLE
-
-loss_fn = ContrastiveLoss(m_pos=0.92, m_neg=0.84)
-
-z1 = torch.randn(32, 128)
-z2 = torch.randn(32, 128)
-y  = torch.randint(0, 2, (32,))
-
-loss = loss_fn(z1, z2, y)
-print(loss.item())
-"""
+        if self.reduction == "mean":
+            return loss.mean()
+        if self.reduction == "sum":
+            return loss.sum()
+        return loss
