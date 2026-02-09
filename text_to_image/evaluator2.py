@@ -195,43 +195,6 @@ def main():
     print(f"ROC AUC (best): {auc_best:.6f}  |  direction: {direction}")
     print("==============================\n")
 
-    # -------------------------
-    # Build output df
-    # -------------------------
-    fraud_cols_in = _sorted_prefixed_cols(df, args.fraud_txt_prefix)
-    real_cols_in = _sorted_prefixed_cols(df, args.real_txt_prefix)
-
-    if args.keep_original_embeddings:
-        base_df = df.reset_index(drop=True)
-    else:
-        drop_set = set(fraud_cols_in + real_cols_in)
-        keep_cols = [c for c in df.columns if c not in drop_set]
-        base_df = df[keep_cols].reset_index(drop=True)
-
-    out_cols = {}
-    for j in range(args.out_dim):
-        out_cols[f"{args.out_fraud_prefix}{j}"] = zf_all[:, j]
-        out_cols[f"{args.out_real_prefix}{j}"] = zr_all[:, j]
-
-    if args.save_unnormalized:
-        for j in range(args.out_dim):
-            out_cols[f"{args.out_fraud_prefix}{j}_raw"] = zf_raw_all[:, j]
-            out_cols[f"{args.out_real_prefix}{j}_raw"] = zr_raw_all[:, j]
-
-    out_cols["student_cos"] = sims
-
-    out_df = pd.concat([base_df, pd.DataFrame(out_cols)], axis=1)
-    _save_table(out_df, args.output)
-
-    print(f"[INFO] Wrote: {args.output}")
-    print(
-        f"[INFO] Added: {args.out_fraud_prefix}*, {args.out_real_prefix}*, student_cos"
-        + (" (+ *_raw)" if args.save_unnormalized else "")
-    )
-    if not args.keep_original_embeddings:
-        print(f"[INFO] Dropped original input embedding cols: {args.fraud_txt_prefix}* and {args.real_txt_prefix}*")
-
-
 if __name__ == "__main__":
     main()
 
@@ -242,5 +205,5 @@ python text_to_image/evaluator2.py \
   --model-path saved_models/best_model.pt \
   --hidden-dim 1024 \
   --out-dim 768 \
-  --output
+  --output mm
 """
