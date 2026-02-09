@@ -11,13 +11,14 @@ from scripts.baseline.ocr_tester import OCRTester
 from model_utils.models.learning.siamese import SiameseModelPairs
 from scripts.evaluation.evaluator import Evaluator
 from scripts.baseline.attentioncnn_tester import AttentionCNNTester
+from scripts.baseline.mobilenetcnn_tester import MobileNetCNNTester
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def main():
     parser = argparse.ArgumentParser(description='VLM-based and Image Encoder text similarity evaluation')
     parser.add_argument('--mode', type=str, 
-                      choices=['baseline', 'image_encoder', 'ocr', 'evaluate_saved', 'latency', 'attentioncnn'], 
+                      choices=['baseline', 'image_encoder', 'ocr', 'evaluate_saved', 'latency', 'attentioncnn', 'mobilenetcnn'], 
                       required=True,
                       help='Mode to run. "baseline" to test VLM models, "image_encoder" to test image encoders on glyphs, "ocr" to test OCR on glyphs, "evaluate_saved" to evaluate a trained Siamese model, "latency" to measure VLM latency')
     parser.add_argument('--test_filepath', type=str, required=True,
@@ -383,7 +384,45 @@ def main():
         
             print(latency_metrics)
 
+    elif args.mode == 'mobilenetcnn':
+        print("Evaluating MobileNet CNN...")
+        tester = MobileNetCNNTester()
 
+        metrics = tester.test(args.test_filepath)
+
+        print("\nMobileNet CNN Results:")
+        for k, v in metrics.items():
+            if k != "roc_curve":
+                print(f"{k}: {v}")
+                
+        # Measure latency if requested
+        
+        if args.measure_latency:
+            print("\n" + "="*60)
+            print("Measuring MobileNetCNN latency...")
+            print("="*60)
+            
+            from utils.latency_profiler import LatencyProfiler
+            import numpy as np
+        
+            profiler = LatencyProfiler(
+                num_runs=args.latency_num_runs,
+                warmup_runs=args.latency_warmup
+            )
+        
+            # Load test data
+            if args.test_filepath.endswith('.csv'):
+                df = pd.read_csv(args.test_filepath)
+            else:
+                df = pd.read_parquet(args.test_filepath)
+        
+            latency_metrics = profiler.profile_mobilenetcnn(
+                evaluator=tester.evaluator,
+                texts=df['fraudulent_name'].astype(str).tolist(),
+                batch_size=args.batch_size,
+            )
+        
+            print(latency_metrics)
             
     # Save misclassified
     if args.save_misclassified:

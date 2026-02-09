@@ -72,7 +72,7 @@ class LatencyMetrics:
             f"  CPU: {self.cpu_percent:.1f}%",
         ]
         
-        if self.gpu_memory_mb is not None:
+        if self.gpu_memory_mb is not None and self.gpu_utilization_percent is not None:
             lines.extend([
                 f"  GPU Memory: {self.gpu_memory_mb:.2f}",
                 f"  GPU Utilization: {self.gpu_utilization_percent:.1f}%",
@@ -583,6 +583,116 @@ class LatencyProfiler:
             gpu_utilization_percent=None,
             throughput_samples_per_sec=throughput,
         )
+        
+    def profile_mobilenetcnn(
+        self,
+        evaluator,             
+        texts,
+        batch_size: int = 32,
+        ) -> LatencyMetrics:
+        """
+        Profile latency of MobileNet CNN (text -> glyph -> MobileNet).
+    
+        Args:
+            evaluator: MobileNetEvaluator (has encode_texts_to_embeddings)
+            texts: List[str] input texts
+            batch_size: Batch size
+    
+        Returns:
+            LatencyMetrics
+        """
+        import numpy as np
+        import tensorflow as tf
+    
+        model_name = "mobilenetcnn"
+        model_type = evaluator.model.__class__.__name__
+    
+        texts = list(map(str, texts))
+        texts = texts[:batch_size]  
+    
+        print("Warmup runs...")
+        for i in range(self.warmup_runs):
+            _ = evaluator.encode_texts_to_embeddings(texts)
+            print(f"  Warmup {i+1}/{self.warmup_runs} done")
+    
+        latencies = []
+    
+        for i in range(self.num_runs):
+            start = time.perf_counter()
+    
+            _ = evaluator.encode_texts_to_embeddings(texts)
+    
+            end = time.perf_counter()
+            latency_ms = (end - start) * 1000.0
+            latencies.append(latency_ms)
+    
+            print(f"  Run {i+1}/{self.num_runs} finished ({latency_ms:.2f} ms)")
+    
+        latencies = np.array(latencies)
+    
+        mean_latency = float(latencies.mean())
+        min_latency = float(latencies.min())
+        max_latency = float(latencies.max())
+        std_latency = float(latencies.std())
+    
+        throughput = (batch_size * 1000.0) / mean_latency
+    
+        cpu_memory = self.process.memory_info().rss / 1024 / 1024
+        cpu_percent = self.process.cpu_percent(interval=0.1)
+    
+        gpu_memory = None
+        try:
+            gpus = tf.config.experimental.list_physical_devices("GPU")
+            if gpus:
+                info = tf.config.experimental.get_memory_info("GPU:0")
+                gpu_memory = info["current"] / 1024 / 1024
+        except Exception:
+            gpu_memory = None
+    
+        return LatencyMetrics(
+            model_name=model_name,
+            model_type=model_type,
+            batch_size=batch_size,
+            mean_latency_ms=mean_latency,
+            min_latency_ms=min_latency,
+            max_latency_ms=max_latency,
+            std_latency_ms=std_latency,
+            memory_allocated_mb=gpu_memory or 0,
+            memory_reserved_mb=0,
+            peak_memory_mb=0,
+            cpu_memory_mb=cpu_memory,
+            cpu_percent=cpu_percent,
+            gpu_memory_mb=gpu_memory,
+            gpu_utilization_percent=None,
+            throughput_samples_per_sec=throughput,
+        )
+
+
+def compare_models_latency(models: Dict[str, object], texts: List[str], batch_size: int = 32, num_runs: int = 10) -> List[LatencyMetrics]:
+    """
+    Compare latency across multiple models.
+    
+    Args:
+        models: Dictionary mapping model names to model wrappers
+        texts: List of texts to encode
+        batch_size: Batch size for encoding
+        num_runs: Number of runs per model
+        
+    Returns:
+        List of LatencyMetrics objects
+    """
+    profiler = LatencyProfiler(num_runs=num_runs)
+    results = []
+    
+    for model_name, model in models.items():
+        print(f"Profiling {model_name}...")
+        metrics = profiler.profile_text_encoder(model, texts, batch_size)
+        results.append(metrics)
+        print(metrics)
+        print()
+    
+    return results
+
 
 
 def compare_models_latency(models: Dict[str, object], texts: List[str], batch_size: int = 32, num_runs: int = 10) -> List[LatencyMetrics]:
