@@ -49,7 +49,8 @@ class AttentionCNNEvaluator:
             df = pd.read_csv(test_filepath)
         else:
             df = pd.read_parquet(test_filepath)
-            
+        
+        df = df.head(1024)
         real = [df['real_name'][i] for i in range(len(df)) if df['label'][i] == 0.0]
         fake = [df['fraudulent_name'][i] for i in range(len(df)) if df['label'][i] == 1.0]
         

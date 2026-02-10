@@ -114,7 +114,7 @@ class LatencyProfiler:
             self.nvml = None
             self.nvml_handle = None
     
-    def profile_text_encoder(self, model_wrapper, texts: List[str], batch_size: int = 32) -> LatencyMetrics:
+    def profile_text_encoder(self, model_wrapper, texts: List[str], batch_size: int = 100) -> LatencyMetrics:
         """
         Profile text encoder model.
         
@@ -319,8 +319,8 @@ class LatencyProfiler:
             throughput_samples_per_sec=throughput
         )
 
-    def profile_image_encoder(self, model, test_texts: List[str], batch_size: int, 
-                            glyph_size: Tuple[int, int], include_glyph_time: bool = True) -> LatencyMetrics:
+    def profile_image_encoder(self, model, test_texts: List[str], 
+                            glyph_size: Tuple[int, int], batch_size: int = 32, include_glyph_time: bool = True) -> LatencyMetrics:
         """
         Profile image encoder latency on glyph-based text encoding.
         
@@ -423,7 +423,7 @@ class LatencyProfiler:
         return LatencyMetrics(
             model_name=model_name + preprocessing_note,
             model_type=model_type,
-            batch_size=len(test_texts),
+            batch_size=min(len(test_texts), batch_size),
             mean_latency_ms=mean_latency,
             min_latency_ms=min_latency,
             max_latency_ms=max_latency,
@@ -541,16 +541,17 @@ class LatencyProfiler:
         self,
         keras_model,
         images,
-        batch_size: int = 32,
+        batch_size: int = 100,
     ) -> LatencyMetrics:
         import numpy as np
         import tensorflow as tf
-
+        import time
+    
         model_name = "attentioncnn"
         model_type = "KerasCNN"
-
+    
         images = np.asarray(images)
-
+    
         # Warmup
         for _ in range(self.warmup_runs):
             _ = keras_model.predict(
@@ -558,55 +559,53 @@ class LatencyProfiler:
                 batch_size=batch_size,
                 verbose=0,
             )
-
+    
         latencies = []
         gpu_utils = []
-
+    
         for _ in range(self.num_runs):
-            tf.experimental.sync_devices()
-
             start = time.perf_counter()
-
+    
             _ = keras_model.predict(
                 images[:batch_size],
                 batch_size=batch_size,
                 verbose=0,
             )
-
-            tf.experimental.sync_devices()
-
-            end = time.perf_counter()
-            latencies.append((end - start) * 1000.0)
-
-            # 🔽 GPU util sampling
+    
+            # Sample NVML GPU utilization (after predict is done)
             if self.nvml_handle is not None:
                 util = self.nvml.nvmlDeviceGetUtilizationRates(self.nvml_handle)
                 gpu_utils.append(util.gpu)
-
+    
+            end = time.perf_counter()
+            latencies.append((end - start) * 1000.0)
+    
         latencies = np.array(latencies)
-
+    
         mean_latency = float(latencies.mean())
         min_latency = float(latencies.min())
         max_latency = float(latencies.max())
         std_latency = float(latencies.std())
-
+    
         throughput = (batch_size * 1000.0) / mean_latency
-
+    
+        # CPU metrics
         cpu_memory = self.process.memory_info().rss / 1024 / 1024
         cpu_percent = self.process.cpu_percent(interval=0.2)
-
+    
         # TensorFlow GPU memory
-        gpu_memory = None
+        gpu_memory = gpu_peak = None
         try:
-            gpus = tf.config.experimental.list_physical_devices("GPU")
+            gpus = tf.config.list_physical_devices("GPU")
             if gpus:
                 info = tf.config.experimental.get_memory_info("GPU:0")
                 gpu_memory = info["current"] / 1024 / 1024
+                gpu_peak = info["peak"] / 1024 / 1024
         except Exception:
-            gpu_memory = None
-
+            pass
+    
         avg_gpu_util = float(sum(gpu_utils) / len(gpu_utils)) if gpu_utils else None
-
+    
         return LatencyMetrics(
             model_name=model_name,
             model_type=model_type,
@@ -617,7 +616,7 @@ class LatencyProfiler:
             std_latency_ms=std_latency,
             memory_allocated_mb=gpu_memory or 0,
             memory_reserved_mb=0,
-            peak_memory_mb=0,
+            peak_memory_mb=gpu_peak or 0,
             cpu_memory_mb=cpu_memory,
             cpu_percent=cpu_percent,
             gpu_memory_mb=gpu_memory,
@@ -625,12 +624,14 @@ class LatencyProfiler:
             throughput_samples_per_sec=throughput,
         )
 
+
+
             
     def profile_mobilenetcnn(
         self,
         evaluator,
         texts,
-        batch_size: int = 32,
+        batch_size: int = 100,
     ) -> LatencyMetrics:
         """
         Profile latency of MobileNet CNN (text -> glyph -> MobileNet).
@@ -691,14 +692,16 @@ class LatencyProfiler:
         cpu_percent = self.process.cpu_percent(interval=0.1)
 
         # TensorFlow GPU memory
-        gpu_memory = None
-        try:
-            gpus = tf.config.experimental.list_physical_devices("GPU")
-            if gpus:
-                info = tf.config.experimental.get_memory_info("GPU:0")
-                gpu_memory = info["current"] / 1024 / 1024
-        except Exception:
-            gpu_memory = None
+        import torch
+        
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            gpu_memory = torch.cuda.memory_allocated() / 1024 / 1024
+            gpu_reserved = torch.cuda.memory_reserved() / 1024 / 1024
+            gpu_peak = torch.cuda.max_memory_allocated() / 1024 / 1024
+        else:
+            gpu_memory = gpu_reserved = gpu_peak = None
+
 
         avg_gpu_util = float(sum(gpu_utils) / len(gpu_utils)) if gpu_utils else 0.0
 

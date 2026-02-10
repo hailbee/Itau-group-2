@@ -1,4 +1,4 @@
-# scripts/evaluation/mobilenetv4_evaluator.py
+# scripts/evaluation/mobilenetcnn_evaluator.py
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import pandas as pd
@@ -77,44 +77,51 @@ class MobileNetEvaluator:
     def encode_texts_to_embeddings(self, texts):
         """
         Convert texts to glyphs and encode them with PyTorch MobileNet.
-        
-        Args:
-            texts: List of strings
-        
-        Returns:
-            torch.Tensor: (num_texts, embedding_dim)
         """
         from model_utils.utils.text_to_glyph import text_to_glyphs_batch
+        from torchvision import transforms
         import torch
 
-        # Convert texts to glyph images
-        glyphs = text_to_glyphs_batch(texts, image_size=self.image_size)  # list of PIL images
-
-        # Define MobileNet preprocessing
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+        # Ensure model is on GPU
+        self.model = self.model.to(device)
+        self.model.eval()
+    
+        glyphs = text_to_glyphs_batch(texts, image_size=self.image_size)
+    
         preprocess = transforms.Compose([
-            transforms.Resize(self.image_size),                # Ensure consistent size
-            transforms.ToTensor(),                             # Convert PIL to [C,H,W] tensor
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],   # ImageNet mean
-                                std=[0.229, 0.224, 0.225])    # ImageNet std
+            transforms.Resize(self.image_size),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )
         ])
-
-        # Process in batches
+    
         all_embeddings = []
+    
         for i in range(0, len(glyphs), self.batch_size):
             batch_glyphs = glyphs[i:i + self.batch_size]
-
-            # Apply preprocessing to each image
-            batch_tensors = torch.stack([preprocess(img) for img in batch_glyphs])  # [B,C,H,W]
-
-            # Forward pass through the model
+    
+            # cpu -> gpu
+            batch_tensors = torch.stack(
+                [preprocess(img) for img in batch_glyphs]
+            ).to(device, non_blocking=True)
+    
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+    
             with torch.no_grad():
-                embeddings = self.model(batch_tensors)  # MobileNet wrapper should accept tensors
+                embeddings = self.model(batch_tensors)
+    
             all_embeddings.append(embeddings)
-
-            # Print progress
-            print(f"Processed batch {i // self.batch_size + 1} / {(len(glyphs) - 1) // self.batch_size + 1}")
-
-        # Concatenate all embeddings
+    
+            print(
+                f"Processed batch {i // self.batch_size + 1} / "
+                f"{(len(glyphs) - 1) // self.batch_size + 1}"
+            )
+    
+        # Concatenate on GPU
         embeddings = torch.cat(all_embeddings, dim=0)
         return embeddings
-
