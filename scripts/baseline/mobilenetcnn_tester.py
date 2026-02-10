@@ -5,7 +5,7 @@ Thin wrapper that runs evaluation using MobileNetCNNEvaluator.
 """
 
 import pandas as pd
-from scripts.evaluation.mobilenetcnn_evaluator import MobileNetEvaluator
+from scripts.evaluation.moblienetcnn_evaluator import MobileNetEvaluator
 import timm
 
 class MobileNetCNNTester:
