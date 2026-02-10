@@ -18,7 +18,7 @@ from siamese import SiameseEmbeddingModel
 
 
 # -------------------------
-# Basic IO / device
+# IO / device
 # -------------------------
 def pick_device(override: Optional[str]) -> torch.device:
     if override:
@@ -53,14 +53,13 @@ def write_table(df: pd.DataFrame, path: str) -> None:
 
 
 # -------------------------
-# Column helpers
+# Column helpers (evaluator2-like sorting)
 # -------------------------
 def _sorted_prefixed_cols(df: pd.DataFrame, prefix: str) -> List[str]:
     cols = [c for c in df.columns if isinstance(c, str) and c.startswith(prefix)]
     if not cols:
         raise KeyError(f"No columns found with prefix '{prefix}'")
 
-    # Try to sort by numeric suffix if present (matches evaluator2 idea)
     def key_fn(c: str):
         suf = c[len(prefix):]
         return int(suf) if re.fullmatch(r"-?\d+", suf) else 10**18
@@ -77,7 +76,7 @@ def mat_from_prefix(df: pd.DataFrame, prefix: str) -> np.ndarray:
 
 
 # -------------------------
-# Checkpoint loading (evaluator2-compatible)
+# Checkpoint loading (match evaluator2)
 # -------------------------
 def evaluator2_style_state(ckpt):
     return ckpt["model_state"] if isinstance(ckpt, dict) and "model_state" in ckpt else ckpt
@@ -102,7 +101,7 @@ def infer_hidden_dim_from_state(sd: Dict[str, torch.Tensor], text_dim: int) -> i
 
 
 # -------------------------
-# Name normalization
+# Names
 # -------------------------
 def normalize_name(s: str) -> str:
     if s is None:
@@ -114,8 +113,15 @@ def normalize_name(s: str) -> str:
 
 
 # -------------------------
-# Youden threshold (higher score => label 1)
+# Threshold helpers (robust to one-class)
 # -------------------------
+def _has_both_classes(y: np.ndarray) -> bool:
+    if y.size == 0:
+        return False
+    u = np.unique(y)
+    return (len(u) >= 2) and (0 in u) and (1 in u)
+
+
 def youden_threshold(y_true: np.ndarray, scores: np.ndarray) -> float:
     fpr, tpr, thresholds = roc_curve(y_true, scores)
     j = tpr - fpr
@@ -123,30 +129,36 @@ def youden_threshold(y_true: np.ndarray, scores: np.ndarray) -> float:
     return float(thresholds[best_idx])
 
 
-def has_both_classes(y: np.ndarray) -> bool:
-    y = y.astype(np.int32)
-    return (y.min() != y.max())
+def best_accuracy_threshold(y_true: np.ndarray, scores: np.ndarray) -> Tuple[float, float]:
+    fpr, tpr, thresholds = roc_curve(y_true, scores)
+    P = float(y_true.sum())
+    N = float(len(y_true) - y_true.sum())
+    accs = (tpr * P + (1.0 - fpr) * N) / (P + N + 1e-12)
+    best_idx = int(np.argmax(accs))
+    return float(thresholds[best_idx]), float(accs[best_idx])
+
+
+def metrics_report(y: np.ndarray, pred: np.ndarray) -> Tuple[float, float, float, np.ndarray]:
+    cm = confusion_matrix(y, pred, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    acc = float((pred == y).mean()) if y.size else float("nan")
+    tpr = tp / (tp + fn) if (tp + fn) > 0 else float("nan")
+    tnr = tn / (tn + fp) if (tn + fp) > 0 else float("nan")
+    return acc, tpr, tnr, cm
 
 
 # -------------------------
-# Core: max cosine excluding "self-name" candidates
+# Core: max cosine excluding same-name candidates (memory-safe)
 # -------------------------
 @torch.inference_mode()
 def max_cos_excluding_name(
     zq: torch.Tensor,                      # (N, D) normalized
     zk: torch.Tensor,                      # (M, D) normalized
-    key_name_ids: torch.Tensor,            # (M,) int64, group id for each key (normalized name)
-    query_name_ids: torch.Tensor,          # (N,) int64, group id for each query
+    key_name_ids: torch.Tensor,            # (M,) int64 group id per key
+    query_name_ids: torch.Tensor,          # (N,) int64 group id per query (-1 if not in bank)
     query_batch_size: int,
     key_chunk_size: int,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    For each query i:
-      score_i = max_j cos(zq[i], zk[j]) over j where key_name_ids[j] != query_name_ids[i].
-
-    Returns:
-      max_vals (N,), argmax_idxs (N,) (index into keys, -1 if no eligible keys)
-    """
     device = zq.device
     N = int(zq.shape[0])
     M = int(zk.shape[0])
@@ -159,21 +171,18 @@ def max_cos_excluding_name(
 
     for q0 in range(0, N, qbs):
         q1 = min(q0 + qbs, N)
-        q = zq[q0:q1]                    # (Q, D)
-        q_ids = query_name_ids[q0:q1]    # (Q,)
+        q = zq[q0:q1]
+        q_ids = query_name_ids[q0:q1]
 
         best = torch.full((q1 - q0,), -1e9, device=device)
         best_idx = torch.full((q1 - q0,), -1, device=device, dtype=torch.long)
 
         for k0 in range(0, M, kcs):
             k1 = min(k0 + kcs, M)
-            k = zk[k0:k1]                                # (K, D)
-            k_ids = key_name_ids[k0:k1].view(1, -1)      # (1, K)
+            k = zk[k0:k1]
+            k_ids = key_name_ids[k0:k1].view(1, -1)
 
-            scores = q @ k.T                              # (Q, K)
-
-            # Mask out keys whose name_id == query's name_id
-            # broadcast compare: (Q,1) vs (1,K) -> (Q,K)
+            scores = q @ k.T
             same = (q_ids.view(-1, 1) == k_ids)
             scores = scores.masked_fill(same, -1e9)
 
@@ -192,23 +201,40 @@ def max_cos_excluding_name(
 
 
 # -------------------------
+# Counts table printer
+# -------------------------
+def print_counts(name: str, y: np.ndarray, exact: np.ndarray) -> None:
+    # counts[label][exact]
+    c00 = int(np.sum((y == 0) & (exact == 0)))
+    c01 = int(np.sum((y == 0) & (exact == 1)))
+    c10 = int(np.sum((y == 1) & (exact == 0)))
+    c11 = int(np.sum((y == 1) & (exact == 1)))
+    print(f"[COUNTS] {name}:")
+    print(f"         label0_exact0={c00:,} | label0_exact1={c01:,}")
+    print(f"         label1_exact0={c10:,} | label1_exact1={c11:,}")
+
+
+# -------------------------
 # Main
 # -------------------------
 @torch.inference_mode()
 def main() -> None:
     ap = argparse.ArgumentParser(
         description=(
-            "Fix A: bank spoof score = max cosine similarity EXCLUDING candidates whose normalized real_name == "
-            "normalized fraudulent_name.\n"
-            "This removes trivial self-matches and should restore 'spoof => higher similarity'.\n"
-            "Prediction: pred=1 if score >= threshold (Youden by default).\n"
+            "Bank spoof inference (Fix A):\n"
+            "  score = max cosine to bank excluding same-name candidates\n"
+            "  policy (MANDATORY): if fraudulent_name is exactly in bank => pred=0\n"
+            "Reports BOTH:\n"
+            "  (1) SYSTEM metrics (includes policy)\n"
+            "  (2) NON-LAYUP metrics (excludes layup rows: label=0 AND exact_in_bank=1)\n"
+            "Also prints both Youden and Accuracy-opt thresholds.\n"
         )
     )
 
     ap.add_argument("--data", required=True)
     ap.add_argument("--output", required=True)
 
-    ap.add_argument("--label-col", default="label")  # 1=spoof, 0=non-spoof
+    ap.add_argument("--label-col", default="label")  # 1=spoof
     ap.add_argument("--fraud-name-col", default="fraudulent_name")
     ap.add_argument("--real-name-col", default="real_name")
 
@@ -226,20 +252,8 @@ def main() -> None:
     ap.add_argument("--query-batch-size", type=int, default=2048)
     ap.add_argument("--real-chunk-size", type=int, default=20000)
 
-    ap.add_argument("--threshold", type=float, default=None, help="If provided, use this threshold on score.")
-    ap.add_argument("--threshold-mode", choices=["youden"], default="youden")
-
-    ap.add_argument("--use-margin", action="store_true", help="Optional: require top1 - top2 >= margin (NOT used here).")
-    ap.add_argument("--margin", type=float, default=0.0)
-
-    # Important policy toggle:
-    # For Fix A experiment, default is NOT to force exact names to non-spoof;
-    # we are removing their self-match from scoring instead.
-    ap.add_argument(
-        "--force-exact-nonspoof",
-        action="store_true",
-        help="If set: if fraudulent_name is an exact real_name, force pred=0 (non-spoof). Default off.",
-    )
+    ap.add_argument("--calib-frac", type=float, default=0.2)
+    ap.add_argument("--seed", type=int, default=0)
 
     args = ap.parse_args()
 
@@ -253,42 +267,36 @@ def main() -> None:
 
     y_raw = df[args.label_col].to_numpy()
     y = (y_raw.astype(np.float32) >= 0.5).astype(np.int32)
-    print(f"[INFO] n={len(df):,} | spoof_rate(label=1)={float(y.mean()):.6f}")
+    n = len(df)
+    print(f"[INFO] n={n:,} | spoof_rate(label=1)={float(y.mean()):.6f}")
 
     fraud_np = mat_from_prefix(df, args.fraud_prefix)
     real_np = mat_from_prefix(df, args.real_prefix)
+    text_dim = int(fraud_np.shape[1])
+    if int(real_np.shape[1]) != text_dim:
+        raise ValueError("fraud and real embedding dims do not match")
 
-    n, text_dim = fraud_np.shape
-    n_real_full, text_dim2 = real_np.shape
-    if text_dim2 != text_dim:
-        raise ValueError(f"fraud_dim={text_dim} but real_dim={text_dim2}; expected same dim.")
-    print(f"[INFO] fraud_mat={fraud_np.shape} | real_mat(full)={real_np.shape}")
-
-    # -------------------------
-    # Build candidate bank: (real vectors, real names)
-    # -------------------------
+    # Build candidate bank
     real_names_full = df[args.real_name_col].astype(str).to_numpy()
-
     if args.dedup_real_names:
         seen = set()
         keep_idx: List[int] = []
         keep_names: List[str] = []
         for i, nm in enumerate(real_names_full):
-            key = normalize_name(nm)
-            if key not in seen:
-                seen.add(key)
+            k = normalize_name(nm)
+            if k not in seen:
+                seen.add(k)
                 keep_idx.append(i)
                 keep_names.append(nm)
         keep_idx_np = np.array(keep_idx, dtype=np.int64)
         real_np_bank = real_np[keep_idx_np]
         real_names_bank = np.array(keep_names, dtype=object)
-        print(f"[INFO] dedup_real_names: {n_real_full:,} -> {len(real_np_bank):,} candidates")
+        print(f"[INFO] dedup_real_names: {len(real_names_full):,} -> {len(real_np_bank):,} candidates")
     else:
         real_np_bank = real_np
         real_names_bank = real_names_full
 
-    # Name IDs (group ids) for exclusion masking
-    # Build a mapping from normalized name -> integer id
+    # Name IDs for exclusion masking
     name_to_id: Dict[str, int] = {}
     key_ids_list: List[int] = []
     for nm in real_names_bank.tolist():
@@ -299,25 +307,13 @@ def main() -> None:
     key_name_ids_np = np.array(key_ids_list, dtype=np.int64)
 
     fraud_names = df[args.fraud_name_col].astype(str).to_numpy()
-    query_ids_list: List[int] = []
-    for nm in fraud_names.tolist():
-        k = normalize_name(nm)
-        # If a query name isn't in bank at all, give it a special id that won't match any key
-        if k not in name_to_id:
-            query_ids_list.append(-1)
-        else:
-            query_ids_list.append(name_to_id[k])
-    query_name_ids_np = np.array(query_ids_list, dtype=np.int64)
-
+    query_name_ids_np = np.array([name_to_id.get(normalize_name(nm), -1) for nm in fraud_names.tolist()], dtype=np.int64)
     exact_in_bank = (query_name_ids_np != -1)
     print(f"[INFO] exact_in_bank_rate={float(exact_in_bank.mean()):.6f}")
 
-    # -------------------------
-    # Load student model (evaluator2 style)
-    # -------------------------
+    # Load model
     ckpt = torch.load(args.student_model_path, map_location=device)
     sd = as_state_dict(evaluator2_style_state(ckpt))
-
     inferred_hidden = infer_hidden_dim_from_state(sd, text_dim=text_dim)
     hidden_dim = inferred_hidden if args.hidden_dim is None else int(args.hidden_dim)
     if args.hidden_dim is not None and hidden_dim != int(inferred_hidden):
@@ -326,13 +322,12 @@ def main() -> None:
     model = SiameseEmbeddingModel(text_dim=text_dim, hidden_dim=hidden_dim, image_dim=int(args.out_dim)).to(device)
     load_info = model.load_state_dict(sd, strict=False)
     model.eval()
-    missing = getattr(load_info, "missing_keys", [])
-    unexpected = getattr(load_info, "unexpected_keys", [])
-    print(f"[INFO] load_state_dict: missing_keys={len(missing)} unexpected_keys={len(unexpected)}")
+    print(
+        f"[INFO] load_state_dict: missing_keys={len(getattr(load_info,'missing_keys',[]))} "
+        f"unexpected_keys={len(getattr(load_info,'unexpected_keys',[]))}"
+    )
 
-    # -------------------------
-    # Encode BOTH sides through student model (apples-to-apples)
-    # -------------------------
+    # Encode both sides through student model
     bs = max(1, int(args.batch_size))
 
     real_bank_t = torch.from_numpy(real_np_bank).to(device)
@@ -349,13 +344,11 @@ def main() -> None:
         z = model.encode_text(fraud_t[i0:i1])
         zf[i0:i1] = F.normalize(z, dim=1)
 
-    # -------------------------
-    # Score: max cosine excluding same-name candidates
-    # -------------------------
     key_name_ids = torch.from_numpy(key_name_ids_np).to(device)
     query_name_ids = torch.from_numpy(query_name_ids_np).to(device)
 
-    score_excl, argmax_idx = max_cos_excluding_name(
+    # Compute Fix-A score
+    score, argmax_idx = max_cos_excluding_name(
         zq=zf,
         zk=zr,
         key_name_ids=key_name_ids,
@@ -363,82 +356,129 @@ def main() -> None:
         query_batch_size=int(args.query_batch_size),
         key_chunk_size=int(args.real_chunk_size),
     )
+    score = np.clip(score, -1.0, 1.0)
 
-    # If a query is in-bank and the bank only contains that one name (rare), score may stay -1e9.
-    # Clamp to [-1, 1] range for sanity; -1e9 means "no eligible candidates".
-    score_excl_clamped = np.clip(score_excl, -1.0, 1.0)
+    # AUC on ALL (always defined if both classes exist in full data)
+    auc_all = float(roc_auc_score(y, score)) if _has_both_classes(y) else float("nan")
+    print(f"[METRIC] ROC AUC(top1_excl_self) ALL={auc_all:.6f} (higher => spoof)")
 
-    # -------------------------
-    # Threshold (Youden) on score_excl where higher => spoof
-    # -------------------------
-    if args.threshold is None:
-        # Prefer rows where the score is meaningful (argmax exists)
-        ok = (argmax_idx >= 0)
-        if ok.any() and has_both_classes(y[ok]):
-            thr = youden_threshold(y[ok], score_excl_clamped[ok])
-            thr_note = "Youden on score_excl (rows with eligible candidates)"
-        elif has_both_classes(y):
-            thr = youden_threshold(y, score_excl_clamped)
-            thr_note = "Youden on score_excl (ALL rows; ok-subset was one-class)"
-        else:
-            thr = float("inf")
-            thr_note = "degenerate: only one class exists"
+    # Split
+    rng = np.random.default_rng(int(args.seed))
+    idx = np.arange(n)
+    rng.shuffle(idx)
+    calib_n = int(max(1, round(float(args.calib_frac) * n)))
+    calib_idx = idx[:calib_n]
+    test_idx = idx[calib_n:]
+    print(f"[INFO] calib_n={len(calib_idx):,} | test_n={len(test_idx):,}")
+
+    # Define "layups" as EXACT matches that are truly NON-SPOOF: (label=0 AND exact=1)
+    layup = (y == 0) & exact_in_bank
+
+    # For reporting "non-layup" metrics: exclude layups
+    test_nonlayup = test_idx[~layup[test_idx]]
+
+    # For threshold calibration:
+    # Prefer calibrating on non-layups too (to avoid bias), BUT only if both classes exist.
+    calib_nonlayup = calib_idx[~layup[calib_idx]]
+
+    # Print counts to make this obvious
+    print_counts("FULL", y, exact_in_bank.astype(np.int32))
+    print_counts("CALIB", y[calib_idx], exact_in_bank[calib_idx].astype(np.int32))
+    print_counts("CALIB_NONLAYUP", y[calib_nonlayup], exact_in_bank[calib_nonlayup].astype(np.int32))
+    print_counts("TEST", y[test_idx], exact_in_bank[test_idx].astype(np.int32))
+    print_counts("TEST_NONLAYUP", y[test_nonlayup], exact_in_bank[test_nonlayup].astype(np.int32))
+
+    # Choose calibration set for thresholds robustly
+    if _has_both_classes(y[calib_nonlayup]):
+        thr_calib_idx = calib_nonlayup
+        thr_note = "calibrated on CALIB_NONLAYUP (excludes layups)"
     else:
-        thr = float(args.threshold)
-        thr_note = "user provided"
+        thr_calib_idx = calib_idx
+        thr_note = "calibrated on CALIB (fallback; nonlayup was one-class)"
 
-    pred = (score_excl_clamped >= thr).astype(np.int32)
+    # Compute thresholds
+    if not _has_both_classes(y[thr_calib_idx]):
+        # This should not happen if full data has both classes, but guard anyway.
+        thr_youden = float("inf")
+        thr_acc = float("inf")
+        calib_acc_est = float("nan")
+        print("[WARN] Calibration subset has one class; thresholds undefined (set to inf).")
+    else:
+        thr_youden = youden_threshold(y[thr_calib_idx], score[thr_calib_idx])
+        thr_acc, calib_acc_est = best_accuracy_threshold(y[thr_calib_idx], score[thr_calib_idx])
 
-    # Optional policy: force exact names to non-spoof
-    if args.force_exact_nonspoof:
-        pred[exact_in_bank] = 0
+    # Prediction with MANDATORY policy
+    def predict_system(scores_subset: np.ndarray, exact_subset: np.ndarray, thr: float) -> np.ndarray:
+        pred = (scores_subset >= thr).astype(np.int32)
+        pred[exact_subset] = 0
+        return pred
 
-    # -------------------------
+    # SYSTEM predictions (on TEST)
+    pred_y_test = predict_system(score[test_idx], exact_in_bank[test_idx], thr_youden)
+    pred_a_test = predict_system(score[test_idx], exact_in_bank[test_idx], thr_acc)
+
+    # NON-LAYUP predictions (same rule, just evaluated on subset)
+    pred_y_nonlay = predict_system(score[test_nonlayup], exact_in_bank[test_nonlayup], thr_youden)
+    pred_a_nonlay = predict_system(score[test_nonlayup], exact_in_bank[test_nonlayup], thr_acc)
+
     # Metrics
-    # -------------------------
-    try:
-        auc = float(roc_auc_score(y, score_excl_clamped))
-        auc_flip = float(roc_auc_score(y, -score_excl_clamped))
-        auc_best = max(auc, auc_flip)
-        direction = "score_higher_for_spoof" if auc >= auc_flip else "score_lower_for_spoof (use -score)"
-    except Exception:
-        auc = float("nan")
-        auc_flip = float("nan")
-        auc_best = float("nan")
-        direction = "n/a"
+    acc_y_sys, tpr_y_sys, tnr_y_sys, cm_y_sys = metrics_report(y[test_idx], pred_y_test)
+    acc_a_sys, tpr_a_sys, tnr_a_sys, cm_a_sys = metrics_report(y[test_idx], pred_a_test)
 
-    cm = confusion_matrix(y, pred, labels=[0, 1])
-    tn, fp, fn, tp = cm.ravel()
-    acc = float((pred == y).mean())
-    tpr = tp / (tp + fn) if (tp + fn) > 0 else float("nan")
-    tnr = tn / (tn + fp) if (tn + fp) > 0 else float("nan")
+    acc_y_nl, tpr_y_nl, tnr_y_nl, cm_y_nl = metrics_report(y[test_nonlayup], pred_y_nonlay)
+    acc_a_nl, tpr_a_nl, tnr_a_nl, cm_a_nl = metrics_report(y[test_nonlayup], pred_a_nonlay)
 
-    print(f"[METRIC] ROC AUC(score_excl)={auc:.6f} | flipped={auc_flip:.6f} | best={auc_best:.6f} | dir: {direction}")
-    print(f"[METRIC] threshold={thr:.6f} ({thr_note})")
-    if args.force_exact_nonspoof:
-        print("[METRIC] policy: force exact-in-bank queries to pred=0")
-    print(f"[METRIC] accuracy={acc:.6f} | TPR(spoof)= {tpr:.6f} | TNR(non-spoof)= {tnr:.6f}")
-    print(f"[METRIC] confusion_matrix [true0/true1 x pred0/pred1]:\n{cm}")
+    # AUC on non-layup subset if both classes exist
+    auc_nonlay = float(roc_auc_score(y[test_nonlayup], score[test_nonlayup])) if _has_both_classes(y[test_nonlayup]) else float("nan")
 
-    # Sanity: class means
-    if np.any(y == 0):
-        print(f"[METRIC] mean(score_excl) label0={float(score_excl_clamped[y==0].mean()):.6f}")
-    if np.any(y == 1):
-        print(f"[METRIC] mean(score_excl) label1={float(score_excl_clamped[y==1].mean()):.6f}")
+    print("\n==============================")
+    print("THRESHOLDS")
+    print("==============================")
+    print(f"[THR] youden_thr={thr_youden:.6f}")
+    print(f"[THR] acc_thr={thr_acc:.6f} | calib_acc_estimate={calib_acc_est:.6f}")
+    print(f"[THR] note: {thr_note}")
+    print("Policy: exact_in_bank => pred=0 (MANDATORY)")
+    print("==============================\n")
 
-    # -------------------------
-    # Save output
-    # -------------------------
+    print("==============================")
+    print("SYSTEM TEST METRICS (includes layups; production headline)")
+    print("==============================")
+    print(f"[YOUDEN] acc={acc_y_sys:.6f} | TPR(spoof)={tpr_y_sys:.6f} | TNR(non-spoof)={tnr_y_sys:.6f}")
+    print(f"[YOUDEN] cm [true0/true1 x pred0/pred1]:\n{cm_y_sys}")
+    print("------------------------------")
+    print(f"[ACC]    acc={acc_a_sys:.6f} | TPR(spoof)={tpr_a_sys:.6f} | TNR(non-spoof)={tnr_a_sys:.6f}")
+    print(f"[ACC]    cm [true0/true1 x pred0/pred1]:\n{cm_a_sys}")
+    print("==============================\n")
+
+    print("==============================")
+    print("NON-LAYUP TEST METRICS (excludes layups: label0 & exact_in_bank)")
+    print("==============================")
+    print(f"[NONLAYUP] ROC AUC={auc_nonlay:.6f} (nan means subset is one-class)")
+    print(f"[YOUDEN] acc={acc_y_nl:.6f} | TPR(spoof)={tpr_y_nl:.6f} | TNR(non-spoof)={tnr_y_nl:.6f}")
+    print(f"[YOUDEN] cm [true0/true1 x pred0/pred1]:\n{cm_y_nl}")
+    print("------------------------------")
+    print(f"[ACC]    acc={acc_a_nl:.6f} | TPR(spoof)={tpr_a_nl:.6f} | TNR(non-spoof)={tnr_a_nl:.6f}")
+    print(f"[ACC]    cm [true0/true1 x pred0/pred1]:\n{cm_a_nl}")
+    print("==============================\n")
+
+    # Save outputs
     out = df.copy()
-    out["score_excl_self"] = score_excl_clamped.astype(np.float32, copy=False)
+    out["top1_excl_self"] = score.astype(np.float32, copy=False)
+    out["exact_in_bank"] = exact_in_bank.astype(np.int32)
+    out["layup"] = layup.astype(np.int32)
+
     out["argmax_real_index_excl_self"] = argmax_idx
     out["argmax_real_name_excl_self"] = np.array(
         [real_names_bank[int(j)] if int(j) >= 0 else "" for j in argmax_idx],
         dtype=object,
     )
-    out["exact_in_bank"] = exact_in_bank.astype(np.int32)
-    out["pred_label"] = pred
-    out["used_threshold"] = float(thr)
+
+    out["youden_thr"] = float(thr_youden)
+    out["acc_thr"] = float(thr_acc)
+    out["thr_note"] = thr_note
+
+    out["pred_youden_system"] = predict_system(score, exact_in_bank, thr_youden)
+    out["pred_acc_system"] = predict_system(score, exact_in_bank, thr_acc)
 
     write_table(out, args.output)
     print(f"[INFO] wrote {args.output}")
@@ -449,7 +489,7 @@ if __name__ == "__main__":
 
 
 """
-Example:
+Run:
 
 python inference/inference.py \
   --data text_to_image/Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet \
@@ -459,8 +499,7 @@ python inference/inference.py \
   --fraud-prefix fraud_txt_emb_ \
   --real-prefix real_txt_emb_ \
   --dedup-real-names \
-  --output text_to_image/evaluation/bank_spoof_preds_excl_self.parquet
-
-If you want to also enforce your real-world policy (exact real names are never spoof):
-  --force-exact-nonspoof
+  --calib-frac 0.2 \
+  --seed 0 \
+  --output text_to_image/evaluation/bank_spoof_preds_report_both.parquet
 """
