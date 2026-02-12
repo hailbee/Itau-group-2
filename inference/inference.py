@@ -12,7 +12,11 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from sklearn.metrics import roc_curve
+from sklearn.metrics import (
+    roc_curve,
+    roc_auc_score,
+    average_precision_score,
+)
 
 from siamese import SiameseEmbeddingModel
 
@@ -39,17 +43,6 @@ def read_table(path: str) -> pd.DataFrame:
     if path.lower().endswith(".csv"):
         return pd.read_csv(path)
     raise ValueError(f"Unsupported file type: {path}")
-
-
-def write_table(df: pd.DataFrame, path: str) -> None:
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    if path.lower().endswith(".parquet"):
-        df.to_parquet(path, index=False)
-        return
-    if path.lower().endswith(".csv"):
-        df.to_csv(path, index=False)
-        return
-    raise ValueError(f"Unsupported output type: {path}")
 
 
 # -------------------------
@@ -107,19 +100,82 @@ def has_both_classes(y: np.ndarray) -> bool:
     return (len(u) >= 2) and (0 in u) and (1 in u)
 
 
-def best_accuracy_threshold(y_true: np.ndarray, scores: np.ndarray) -> Tuple[float, float]:
+# -------------------------
+# Threshold rules (picked on the same eval set, like your old evaluator.py)
+# -------------------------
+def youden_threshold(y_true: np.ndarray, scores: np.ndarray) -> Tuple[float, float]:
     """
-    Choose thr maximizing accuracy for pred=(scores>=thr) on the provided set.
-    Returns (thr, best_acc_estimate_on_that_set).
+    Choose thr maximizing Youden's J = TPR - FPR for pred=(scores>=thr).
+    Returns (thr, best_J).
     """
     if not has_both_classes(y_true):
-        raise ValueError("Cannot pick accuracy-max threshold: calibration set is one-class.")
+        raise ValueError("Cannot pick Youden threshold: evaluation set is one-class.")
+    fpr, tpr, thresholds = roc_curve(y_true, scores)
+    j = tpr - fpr
+    best_idx = int(np.argmax(j))
+    return float(thresholds[best_idx]), float(j[best_idx])
+
+
+def best_accuracy_threshold(y_true: np.ndarray, scores: np.ndarray) -> Tuple[float, float]:
+    """
+    Choose thr maximizing accuracy for pred=(scores>=thr).
+    Returns (thr, best_accuracy).
+    """
+    if not has_both_classes(y_true):
+        raise ValueError("Cannot pick accuracy-max threshold: evaluation set is one-class.")
     fpr, tpr, thresholds = roc_curve(y_true, scores)
     P = float(y_true.sum())
     N = float(len(y_true) - y_true.sum())
     accs = (tpr * P + (1.0 - fpr) * N) / (P + N + 1e-12)
     best_idx = int(np.argmax(accs))
     return float(thresholds[best_idx]), float(accs[best_idx])
+
+
+# -------------------------
+# Metrics helpers
+# -------------------------
+def _safe_div(num: float, den: float) -> float:
+    return float(num) / float(den) if den != 0 else float("nan")
+
+
+def confusion_counts(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[int, int, int, int]:
+    tp = int(np.sum((y_true == 1) & (y_pred == 1)))
+    fp = int(np.sum((y_true == 0) & (y_pred == 1)))
+    tn = int(np.sum((y_true == 0) & (y_pred == 0)))
+    fn = int(np.sum((y_true == 1) & (y_pred == 0)))
+    return tp, fp, tn, fn
+
+
+def mcc(tp: int, fp: int, tn: int, fn: int) -> float:
+    num = tp * tn - fp * fn
+    den = (tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)
+    return _safe_div(num, float(np.sqrt(den))) if den > 0 else float("nan")
+
+
+def report_threshold_metrics(title: str, thr: float, y_true: np.ndarray, scores: np.ndarray) -> None:
+    y_pred = (scores >= thr).astype(np.int32)
+    tp, fp, tn, fn = confusion_counts(y_true, y_pred)
+
+    tpr = _safe_div(tp, tp + fn)  # recall
+    fpr = _safe_div(fp, fp + tn)
+    tnr = _safe_div(tn, tn + fp)  # specificity
+    prec = _safe_div(tp, tp + fp)
+    f1 = _safe_div(2.0 * prec * tpr, prec + tpr) if np.isfinite(prec) and np.isfinite(tpr) else float("nan")
+    acc = _safe_div(tp + tn, tp + fp + tn + fn)
+    bacc = _safe_div(tpr + tnr, 2.0) if np.isfinite(tpr) and np.isfinite(tnr) else float("nan")
+    _mcc = mcc(tp, fp, tn, fn)
+    alert = float(np.mean(y_pred)) if y_pred.size > 0 else float("nan")
+
+    print("==============================")
+    print(f"THRESHOLD METRICS (EVAL-SET): {title}")
+    print("==============================")
+    print(f"[THR] threshold={thr:.6f}")
+    print(f"[CM ] TP={tp:,} | FP={fp:,} | TN={tn:,} | FN={fn:,}")
+    print(f"[RATE] TPR/Recall={tpr:.6f} | FPR={fpr:.6f} | TNR/Spec={tnr:.6f}")
+    print(f"[RATE] Precision={prec:.6f} | F1={f1:.6f}")
+    print(f"[SUM] Accuracy={acc:.6f} | BalancedAcc={bacc:.6f} | MCC={_mcc:.6f}")
+    print(f"[OPS] AlertRate(pred==1)={alert:.6f}")
+    print("==============================\n")
 
 
 # -------------------------
@@ -194,16 +250,16 @@ def max_cos_excluding_name(
 def main() -> None:
     ap = argparse.ArgumentParser(
         description=(
-            "Bank spoof inference (Fix A) and report ONLY the metric you asked for:\n"
-            "  spoof recall on hard spoof traffic: y==1 & exact_in_bank==0.\n\n"
-            "Score: max cosine to bank excluding same-name candidates.\n"
-            "Mandatory policy: exact_in_bank => pred=0.\n"
-            "Threshold: provide --threshold OR auto-pick accuracy-max threshold on calib (full calib, since hard-only is one-class in your dataset).\n"
+            "Bank spoof inference with Option B evaluation (NO calibration split):\n"
+            "  - Simulate open-set negatives by evaluating on open_mask = ~(exact_in_bank & y==1).\n"
+            "  - Compute AUROC/AUPRC on that eval set.\n"
+            "  - Pick Youden and Max-Accuracy thresholds on that SAME eval set (like evaluator.py).\n"
+            "  - Report confusion-matrix-derived metrics at each threshold.\n"
         )
     )
 
     ap.add_argument("--data", required=True)
-    ap.add_argument("--output", required=True)
+    ap.add_argument("--output", default=None, help="Unused; kept for compatibility.")
 
     ap.add_argument("--label-col", default="label")  # 1=spoof
     ap.add_argument("--fraud-name-col", default="fraudulent_name")
@@ -223,14 +279,11 @@ def main() -> None:
     ap.add_argument("--query-batch-size", type=int, default=2048)
     ap.add_argument("--real-chunk-size", type=int, default=20000)
 
-    ap.add_argument("--calib-frac", type=float, default=0.2)
-    ap.add_argument("--seed", type=int, default=0)
-
     ap.add_argument(
         "--threshold",
         type=float,
         default=None,
-        help="If provided, use pred=1 iff score>=threshold (then apply exact_in_bank=>0 policy).",
+        help="If provided, also report metrics at this threshold (on the same eval set).",
     )
 
     args = ap.parse_args()
@@ -287,11 +340,13 @@ def main() -> None:
     key_name_ids_np = np.array(key_ids_list, dtype=np.int64)
 
     fraud_names = df[args.fraud_name_col].astype(str).to_numpy()
-    query_name_ids_np = np.array([name_to_id.get(normalize_name(nm), -1) for nm in fraud_names.tolist()], dtype=np.int64)
+    query_name_ids_np = np.array(
+        [name_to_id.get(normalize_name(nm), -1) for nm in fraud_names.tolist()],
+        dtype=np.int64,
+    )
     exact_in_bank = (query_name_ids_np != -1)
     print(f"[INFO] exact_in_bank_rate={float(exact_in_bank.mean()):.6f}")
 
-    # Layups (for reference only): exact matches that are truly non-spoof
     layup = (y == 0) & exact_in_bank
     print(f"[INFO] layup_rate(label0 & exact)= {float(layup.mean()):.6f}")
 
@@ -335,7 +390,7 @@ def main() -> None:
     key_name_ids = torch.from_numpy(key_name_ids_np).to(device)
     query_name_ids = torch.from_numpy(query_name_ids_np).to(device)
 
-    score, argmax_idx = max_cos_excluding_name(
+    score, _ = max_cos_excluding_name(
         zq=zf,
         zk=zr,
         key_name_ids=key_name_ids,
@@ -346,80 +401,105 @@ def main() -> None:
     score = np.clip(score, -1.0, 1.0)
 
     # -------------------------
-    # Split calib/test (only to pick threshold if needed)
+    # Option B eval mask (no split):
+    #   Evaluate only on open_mask = ~(exact_in_bank & y==1)
+    #   i.e., exclude in-bank positives; keep all negatives + hard positives.
     # -------------------------
-    rng = np.random.default_rng(int(args.seed))
-    idx = np.arange(n)
-    rng.shuffle(idx)
-    calib_n = int(max(1, round(float(args.calib_frac) * n)))
-    calib_idx = idx[:calib_n]
-    test_idx = idx[calib_n:]
-    print(f"[INFO] calib_n={len(calib_idx):,} | test_n={len(test_idx):,}")
+    eval_exact_in_bank = exact_in_bank & (y == 1)
+    open_mask = ~eval_exact_in_bank
 
-    # -------------------------
-    # Choose threshold (NO Youden)
-    # -------------------------
-    if args.threshold is not None:
-        thr = float(args.threshold)
-        thr_note = "user_provided"
-        calib_acc_est = float("nan")
-    else:
-        # Your "hard" subset is one-class, so we cannot tune thr there.
-        # Fallback: tune on full calibration by maximizing accuracy.
-        if not has_both_classes(y[calib_idx]):
-            raise RuntimeError("Calibration split is one-class; cannot auto-select threshold. Provide --threshold.")
-        thr, calib_acc_est = best_accuracy_threshold(y[calib_idx], score[calib_idx])
-        thr_note = "acc_opt_on_full_calib (hard-only calib is one-class in this dataset)"
+    y_eval = y[open_mask]
+    s_eval = score[open_mask]
+
+    open_n = int(open_mask.sum())
+    open_pos = int(y_eval.sum())
+    open_neg = int(open_n - open_pos)
+    excl_inbank_pos = int(np.sum((y == 1) & exact_in_bank))
 
     print("\n==============================")
-    print("THRESHOLD (no Youden)")
+    print("OPTION B EVALUATION SET (NO CALIB SPLIT)")
     print("==============================")
-    print(f"[THR] threshold={thr:.6f} | source={thr_note}")
-    if not np.isnan(calib_acc_est):
-        print(f"[THR] calib_acc_estimate(full calib)={calib_acc_est:.6f}")
-    print("Policy (MANDATORY): exact_in_bank => pred=0")
+    print("eval_exact_in_bank = exact_in_bank & (y==1)")
+    print("open_mask = ~eval_exact_in_bank")
+    print(f"[EVAL] n={open_n:,} | pos(y=1)={open_pos:,} | neg(y=0)={open_neg:,}")
+    print(f"[EVAL] excluded_in-bank_positives(y=1 & exact_in_bank)={excl_inbank_pos:,}")
     print("==============================\n")
 
     # -------------------------
-    # Predict (with mandatory policy)
+    # Threshold-free metrics (on eval set)
     # -------------------------
-    pred = (score >= thr).astype(np.int32)
-    pred[exact_in_bank] = 0  # mandatory policy
+    print("==============================")
+    print("THRESHOLD-FREE METRICS (EVAL SET)")
+    print("==============================")
+    if has_both_classes(y_eval):
+        auroc = float(roc_auc_score(y_eval, s_eval))
+        auprc = float(average_precision_score(y_eval, s_eval))
+        print(f"[AUC] AUROC={auroc:.6f}")
+        print(f"[AUC] AUPRC(AP)={auprc:.6f}")
+    else:
+        print("[AUC] AUROC/AUPRC undefined (evaluation set is one-class).")
+    print("==============================\n")
 
     # -------------------------
-    # Metric you asked for: spoof recall on hard spoof traffic
-    # hard_spoof = (label==1) & (exact_in_bank==0)
+    # Thresholds on the same eval set (like evaluator.py)
+    # -------------------------
+    thresholds: List[Tuple[str, float]] = []
+    if args.threshold is not None:
+        thresholds.append(("user_provided", float(args.threshold)))
+
+    if has_both_classes(y_eval):
+        thr_y, best_j = youden_threshold(y_eval, s_eval)
+        thr_a, best_acc = best_accuracy_threshold(y_eval, s_eval)
+        thresholds.append(("youden_J_on_eval_set", thr_y))
+        thresholds.append(("max_accuracy_on_eval_set", thr_a))
+
+        print("==============================")
+        print("THRESHOLDS (PICKED ON EVAL SET)")
+        print("==============================")
+        print(f"[THR] Youden:       thr={thr_y:.6f} | best_J={best_j:.6f}")
+        print(f"[THR] Max-Accuracy: thr={thr_a:.6f} | best_acc={best_acc:.6f}")
+        if args.threshold is not None:
+            print(f"[THR] User-provided thr={float(args.threshold):.6f}")
+        print("==============================\n")
+    else:
+        print("[WARN] Cannot compute Youden/max-accuracy thresholds: eval set is one-class.\n")
+
+    if len(thresholds) == 0:
+        print("[WARN] No thresholds available to evaluate (provide --threshold or ensure eval set has both classes).")
+        return
+
+    for name, thr in thresholds:
+        report_threshold_metrics(name, thr, y_eval, s_eval)
+
+    # -------------------------
+    # Hard spoof slice (original definition)
     # -------------------------
     hard_spoof_mask = (y == 1) & (~exact_in_bank)
-    hard_test_mask = hard_spoof_mask & np.isin(np.arange(n), test_idx)
+    hard_idx = np.where(hard_spoof_mask)[0]
+    hard_n = int(len(hard_idx))
 
-    hard_test_idx = np.where(hard_test_mask)[0]
-    hard_n = int(len(hard_test_idx))
-    if hard_n == 0:
-        print("[METRIC] HARD SPOOF RECALL: undefined (no hard spoof samples in test split).")
-        hard_recall = float("nan")
+    print("==============================")
+    print("HARD SPOOF SLICE (ORIGINAL DEFINITION)")
+    print("==============================")
+    print("Hard spoof set = (y==1) & (exact_in_bank==0)")
+    print(f"[SLICE] hard_n={hard_n:,}")
+    if hard_n > 0:
+        print(f"[SLICE] mean(score)={float(score[hard_idx].mean()):.6f}")
+        print(f"[SLICE] median(score)={float(np.median(score[hard_idx])):.6f}")
+        for name, thr in thresholds:
+            hard_recall = float(np.mean((score[hard_idx] >= thr).astype(np.float32)))
+            print(f"[SLICE] hard_spoof_recall at {name} thr = {hard_recall:.6f}")
     else:
-        hard_recall = float(pred[hard_test_idx].mean())  # since all are y==1, recall = P(pred==1)
-        print("==============================")
-        print("PRIMARY METRIC")
-        print("==============================")
-        print("Hard spoof set = (label==1) & (exact_in_bank==0)")
-        print(f"[METRIC] hard_test_n={hard_n:,}")
-        print(f"[METRIC] hard_spoof_recall(TPR)={hard_recall:.6f}")
-        print(f"[METRIC] mean(score) on hard spoofs={float(score[hard_test_idx].mean()):.6f}")
-        print(f"[METRIC] median(score) on hard spoofs={float(np.median(score[hard_test_idx])):.6f}")
-        print("==============================\n")
+        print("[SLICE] No hard spoof samples present.")
+    print("==============================\n")
 
-    # Optional: alert rate (what fraction of ALL traffic gets flagged)
-    alert_rate_test = float(pred[test_idx].mean())
-    print(f"[INFO] alert_rate on TEST (fraction pred==1) = {alert_rate_test:.6f}")
 
 if __name__ == "__main__":
     main()
 
 
 """
-Example:
+Example (no calibration split; thresholds picked on the eval set):
 
 python inference/inference.py \
   --data text_to_image/Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet \
@@ -428,12 +508,9 @@ python inference/inference.py \
   --out-dim 768 \
   --fraud-prefix fraud_txt_emb_ \
   --real-prefix real_txt_emb_ \
-  --dedup-real-names \
-  --calib-frac 0.2 \
-  --seed 0 \
-  --output text_to_image/evaluation/hard_spoof_recall.parquet
+  --dedup-real-names
 
-If you want to force a specific threshold:
+Optionally also evaluate a fixed threshold:
 
 python inference/inference.py \
   --data ... \
@@ -443,6 +520,5 @@ python inference/inference.py \
   --fraud-prefix fraud_txt_emb_ \
   --real-prefix real_txt_emb_ \
   --dedup-real-names \
-  --threshold 0.976462 \
-  --output ...
+  --threshold 0.976462
 """
