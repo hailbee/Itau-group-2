@@ -45,6 +45,13 @@ from transformers import AutoProcessor, SiglipVisionModel
 
 import time
 
+def upload_fonts(path):
+    font_dirs = [path]
+    font_files = font_manager.findSystemFonts(fontpaths=font_dirs)
+
+    for font_file in font_files:
+        font_manager.fontManager.addfont(font_file)
+
 def heartbeat(last, every=30):
     now = time.time()
     if now - last >= every:
@@ -53,17 +60,19 @@ def heartbeat(last, every=30):
     return last
 
 
-def _get_unicode_font(font_size: int = 14) -> ImageFont.FreeTypeFont:
+def _get_unicode_font(font: str, font_size: int = 14) -> ImageFont.FreeTypeFont:
     """Return a font that supports a wide range of Unicode (cached)."""
     try:
-        path = font_manager.findfont("DejaVu Sans", fallback_to_default=True)
+        path = font_manager.findfont(font, fallback_to_default=True)
         return ImageFont.truetype(path, font_size)
     except Exception:
+        print('default')
         return ImageFont.load_default()
 
 
 def generate_glyph_image(
     text: str,
+    font: str,
     image_size: Tuple[int, int] = (224, 224),
     font_size: int = 14,
 ) -> Image.Image:
@@ -71,7 +80,7 @@ def generate_glyph_image(
     text = unicodedata.normalize("NFC", str(text))
     image = Image.new("RGB", image_size, color=(0, 0, 0))
     draw = ImageDraw.Draw(image)
-    font = _get_unicode_font(font_size=font_size)
+    font = _get_unicode_font(font, font_size=font_size)
 
     # Pillow compatibility
     try:
@@ -126,6 +135,7 @@ def embed_unique_names(
     device: torch.device,
     batch_size: int,
     font_size: int,
+    font: str,
     memmap_path: Optional[str] = None,
 ) -> Tuple[np.ndarray, str]:
     """Embed unique names -> (N, D) float32 array (or memmap), returned on CPU."""
@@ -138,7 +148,7 @@ def embed_unique_names(
 
     # First batch: infer D
     first_chunk = uniq_names[: min(batch_size, n)]
-    first_imgs = [generate_glyph_image(name, font_size=font_size) for name in first_chunk]
+    first_imgs = [generate_glyph_image(name, font=font, font_size=font_size) for name in first_chunk]
     first_batch = processor(images=first_imgs, return_tensors="pt")
     first_batch = {k: v.to(device, non_blocking=True) for k, v in first_batch.items()}
 
@@ -171,7 +181,7 @@ def embed_unique_names(
         
             chunk = uniq_names[start : start + batch_size]
         
-            imgs = [generate_glyph_image(name, font_size=font_size) for name in chunk]
+            imgs = [generate_glyph_image(name, font=font, font_size=font_size) for name in chunk]
         
             batch = processor(images=imgs, return_tensors="pt")
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -189,6 +199,7 @@ def main() -> None:
     parser.add_argument("--input", required=True, help="Input CSV/Parquet containing name pairs")
     parser.add_argument("--output", required=True, help="Output Parquet/CSV path")
     parser.add_argument("--batch-size", type=int, default=128, help="Embedding batch size")
+    parser.add_argument("--font", type=str, required=True, default="DejaVu Sans")
     parser.add_argument("--model", default="google/siglip-base-patch16-224", help="HuggingFace model name")
     parser.add_argument("--device", default=None, help='Override device: "cuda", "cpu", or "mps"')
     parser.add_argument("--font-size", type=int, default=14, help="Font size for glyph rendering")
@@ -197,6 +208,15 @@ def main() -> None:
     parser.add_argument("--no-strip-com", action="store_true", help="Disable auto-stripping of .com")
     parser.add_argument("--memmap-path", default=None, help="Optional path to store the embedding matrix as a memmap file")
     args = parser.parse_args()
+    
+    
+    
+    # Upload fonts to font manager
+    font_dirs = ["/home/valxin/Itau-group-2/font_files"] 
+    font_files = font_manager.findSystemFonts(fontpaths=font_dirs)
+
+    for font_file in font_files:
+        font_manager.fontManager.addfont(font_file)
 
     df = load_table(args.input)
 
@@ -277,6 +297,7 @@ def main() -> None:
         device=device,
         batch_size=int(args.batch_size),
         font_size=int(args.font_size),
+        font=args.font,
         memmap_path=args.memmap_path,
     )
     if backing_path:
