@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.metrics import roc_auc_score
 
 from siamese import SiameseEmbeddingModel
 
@@ -51,20 +51,6 @@ def _save_table(df: pd.DataFrame, path: str) -> None:
         df.to_csv(path, index=False)
     else:
         raise ValueError("Output file must end with .parquet or .csv")
-
-
-def _youden_threshold(y_true: np.ndarray, scores: np.ndarray):
-    fpr, tpr, thresholds = roc_curve(y_true, scores)
-    youden_j = tpr - fpr
-    best_idx = int(np.argmax(youden_j))
-
-    best_threshold = float(thresholds[best_idx])
-    best_tpr = float(tpr[best_idx])
-    best_fpr = float(fpr[best_idx])
-    best_specificity = float(1.0 - best_fpr)
-    best_j = float(youden_j[best_idx])
-
-    return best_threshold, best_j, best_tpr, best_fpr, best_specificity
 
 
 # -------------------------
@@ -201,58 +187,13 @@ def main():
     auc_best = max(auc_pos, auc_neg)
     direction = "score_higher_for_label1" if auc_pos >= auc_neg else "score_lower_for_label1 (use -score)"
 
-    # choose correct scoring direction for threshold
-    if auc_pos >= auc_neg:
-        scores_for_threshold = sims
-        threshold_note = "threshold applies to cosine similarity score directly"
-    else:
-        scores_for_threshold = -sims
-        threshold_note = "threshold applies to flipped score (-cosine similarity)"
-
-    best_thresh, best_j, best_tpr, best_fpr, best_spec = _youden_threshold(y, scores_for_threshold)
-
     print("\n==============================")
     print(" STUDENT EMBEDDING EVALUATION")
     print("==============================")
     print(f"ROC AUC (cosine): {auc_pos:.6f}")
     print(f"ROC AUC (cosine, flipped): {auc_neg:.6f}")
     print(f"ROC AUC (best): {auc_best:.6f}  |  direction: {direction}")
-    print("------------------------------")
-    print(" Youden Threshold (ROC Optimal)")
-    print("------------------------------")
-    print(f"Best threshold: {best_thresh:.6f}")
-    print(f"Youden J:       {best_j:.6f}")
-    print(f"TPR (recall):   {best_tpr:.6f}")
-    print(f"FPR:            {best_fpr:.6f}")
-    print(f"Specificity:    {best_spec:.6f}")
-    print(f"[INFO] {threshold_note}")
     print("==============================\n")
-
-    # -------------------------
-    # SAVE OUTPUT DATAFRAME (FIX)
-    # -------------------------
-    out_df = df.copy()
-
-    # optionally drop original embedding columns
-    if not args.keep_original_embeddings:
-        fraud_cols = _sorted_prefixed_cols(out_df, args.fraud_txt_prefix)
-        real_cols = _sorted_prefixed_cols(out_df, args.real_txt_prefix)
-        out_df = out_df.drop(columns=fraud_cols + real_cols)
-
-    # add normalized student embeddings
-    for j in range(args.out_dim):
-        out_df[f"{args.out_fraud_prefix}{j}"] = zf_all[:, j]
-        out_df[f"{args.out_real_prefix}{j}"] = zr_all[:, j]
-
-    # add unnormalized student embeddings if requested
-    if args.save_unnormalized:
-        for j in range(args.out_dim):
-            out_df[f"{args.out_fraud_prefix}{j}_raw"] = zf_raw_all[:, j]
-            out_df[f"{args.out_real_prefix}{j}_raw"] = zr_raw_all[:, j]
-
-    _save_table(out_df, args.output)
-    print(f"[INFO] Saved output table to: {args.output}")
-
 
 if __name__ == "__main__":
     main()
@@ -264,5 +205,5 @@ python text_to_image/evaluator2.py \
   --model-path saved_models/best_model.pt \
   --hidden-dim 1024 \
   --out-dim 768 \
-  --output text_to_image/evaluation/vate_test_student_only.parquet
+  --output mm
 """

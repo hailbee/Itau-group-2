@@ -74,8 +74,8 @@ def main():
     # ---------------------------
     # Find embedding columns
     # ---------------------------
-    fraud_cols = [c for c in vate_df.columns if c.startswith("fraud_emb_")]
-    real_cols  = [c for c in vate_df.columns if c.startswith("real_emb_")]
+    fraud_cols = [c for c in vate_df.columns if c.startswith("fraud_txt_emb_")]
+    real_cols  = [c for c in vate_df.columns if c.startswith("real_txt_emb_")]
 
     if not fraud_cols or not real_cols:
         raise RuntimeError("VATE parquet missing fraud_emb_* or real_emb_* columns")
