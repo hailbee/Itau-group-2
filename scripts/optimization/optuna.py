@@ -31,31 +31,55 @@ except Exception:
 
     class CosineContrastiveTwoMargin(nn.Module):
         """
-        Two-margin cosine contrastive hinge loss.
-    
-        y=1 (positive): penalize if cos < m_pos
-        y=0 (negative): penalize if cos > m_neg
-    
-        REQUIRE: m_pos > m_neg
+        Two-margin hinge contrastive loss on cosine similarity.
+
+        Let c = cosine(z1, z2) in [-1, 1] after L2-normalization.
+
+        y = 1 (positive): want c >= m_pos  -> relu(m_pos - c)^2
+        y = 0 (negative): want c <= m_neg  -> relu(c - m_neg)^2
+
+        Require: m_pos > m_neg
         """
-        def __init__(self, m_pos: float, m_neg: float):
+
+        def __init__(
+            self,
+            m_pos: float,
+            m_neg: float,
+            w_pos: float = 1.0,
+            w_neg: float = 1.0,
+            reduction: str = "mean",
+            enforce_gap: bool = True,
+        ):
             super().__init__()
             self.m_pos = float(m_pos)
             self.m_neg = float(m_neg)
-            if not (self.m_pos > self.m_neg):
-                raise ValueError(f"Need m_pos > m_neg, got m_pos={self.m_pos}, m_neg={self.m_neg}")
-    
+            self.w_pos = float(w_pos)
+            self.w_neg = float(w_neg)
+
+            if reduction not in ("mean", "sum", "none"):
+                raise ValueError(f"reduction must be 'mean', 'sum', or 'none', got {reduction}")
+            self.reduction = reduction
+
+            if enforce_gap and not (self.m_pos > self.m_neg):
+                raise ValueError(f"Need m_pos > m_neg. Got m_pos={self.m_pos}, m_neg={self.m_neg}")
+
         def forward(self, z1: torch.Tensor, z2: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
             y = y.float()
-    
             z1 = F.normalize(z1, dim=1)
             z2 = F.normalize(z2, dim=1)
-            c = (z1 * z2).sum(dim=1)  # cosine similarity
-    
-            pos_loss = y * F.relu(self.m_pos - c).pow(2)
-            neg_loss = (1.0 - y) * F.relu(c - self.m_neg).pow(2)
-    
-            return (pos_loss + neg_loss).mean()
+            c = (z1 * z2).sum(dim=1)
+
+            pos_loss = F.relu(self.m_pos - c).pow(2)
+            neg_loss = F.relu(c - self.m_neg).pow(2)
+
+            loss = self.w_pos * y * pos_loss + self.w_neg * (1.0 - y) * neg_loss
+
+            if self.reduction == "mean":
+                return loss.mean()
+            if self.reduction == "sum":
+                return loss.sum()
+            return loss
+
 
 class OptunaOptimizer(BaseOptimizer):
     """
@@ -120,6 +144,8 @@ class OptunaOptimizer(BaseOptimizer):
 
             m_pos = float(params["m_pos"])
             m_neg = float(params["m_neg"])
+            w_pos = float(params.get("w_pos", 1.0))
+            w_neg = float(params.get("w_neg", 1.0))
 
             if not (m_pos > m_neg):
                 raise ValueError(f"Invalid margins: need m_pos > m_neg, got m_pos={m_pos}, m_neg={m_neg}")
@@ -128,7 +154,7 @@ class OptunaOptimizer(BaseOptimizer):
                 f"Testing params: "
                 f"LR={lr:.6f}, Batch={batch_size}, Hidden={hidden_dim}, OutDim={out_dim}, "
                 f"Opt={params['optimizer']}, WD={float(params['weight_decay']):.2e}, "
-                f"m_pos={m_pos:.4f}, m_neg={m_neg:.4f}"
+                f"m_pos={m_pos:.4f}, m_neg={m_neg:.4f}, w_pos={w_pos:.3f}, w_neg={w_neg:.3f}"
             )
 
             run_tag = (
@@ -143,6 +169,7 @@ class OptunaOptimizer(BaseOptimizer):
                 f"_Opt={params['optimizer']}"
                 f"_mPos={m_pos:.3f}"
                 f"_mNeg={m_neg:.3f}"
+                f"_wNeg={w_neg:.2f}"
                 f"_Ep={int(epochs)}"
             )
 
@@ -162,7 +189,9 @@ class OptunaOptimizer(BaseOptimizer):
 
             criterion = CosineContrastiveTwoMargin(
                 m_pos=m_pos,
-                m_neg=m_neg
+                m_neg=m_neg,
+                w_pos=w_pos,
+                w_neg=w_neg,
             )
 
             trainer = Trainer(
@@ -203,6 +232,8 @@ class OptunaOptimizer(BaseOptimizer):
                 "loss_type": loss_type,
                 "m_pos": m_pos,
                 "m_neg": m_neg,
+                "w_pos": w_pos,
+                "w_neg": w_neg,
 
                 # losses
                 "best_train_loss": train_metrics.get("best_train_loss"),
@@ -280,12 +311,12 @@ class OptunaOptimizer(BaseOptimizer):
         """
 
         # Core hyperparameters
-        lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
-        batch_size = trial.suggest_categorical("batch_size", [64, 128, 256, 512, 1024])
-        internal_layer_size = trial.suggest_categorical("internal_layer_size", [256, 512, 768, 1024])
-        output_dim = trial.suggest_categorical("output_dim", [128, 256, 768])
+        lr = trial.suggest_float("lr", 1e-4, 1e-3, log=True)
+        batch_size = trial.suggest_categorical("batch_size", [1024])
+        internal_layer_size = trial.suggest_categorical("internal_layer_size", [1024])
+        output_dim = trial.suggest_categorical("output_dim", [768])
 
-        optimizer_name = trial.suggest_categorical("optimizer", ["adam", "adamw"])
+        optimizer_name = trial.suggest_categorical("optimizer", ["adamw"])
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
 
         params = {
@@ -309,13 +340,18 @@ class OptunaOptimizer(BaseOptimizer):
             #
             # Given your histogram overlap, reasonable bands:
             #   m_neg ~ 0.78–0.88, gap ~ 0.04–0.14  => m_pos ~ 0.82–1.02 (we clamp)
-            m_neg = trial.suggest_float("m_neg", 0.78, 0.88)
-            gap = trial.suggest_float("gap", 0.04, 0.14)
+            m_neg = trial.suggest_float("m_neg", 0.80, 0.85)
+            gap = trial.suggest_float("gap", 0.10, 0.12)
             m_pos = min(float(m_neg + gap), 0.99)
+
+            w_pos = trial.suggest_float("w_pos", 1.0, 1.0)
+            w_neg = trial.suggest_float("w_neg", 1.0, 2.0, log=True)
 
             params["m_neg"] = float(m_neg)
             params["m_pos"] = float(m_pos)
             params["gap"] = float(gap)          # logged for interpretability
+            params["w_pos"] = float(w_pos)
+            params["w_neg"] = float(w_neg)
 
         try:
             print(f"\n{'='*50}")
