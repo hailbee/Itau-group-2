@@ -43,34 +43,19 @@ python -m main_edited \
   --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" \
   --epochs 50 \
   --batch_size 1024 \
-  --lr 0.00022401563440758678 \
+  --lr 0.0002319754023753831 \
   --internal_layer_size 1024 \
   --output_dim 768 \
   --optimizer_name adamw \
-  --weight_decay 0.0002830347672748398 \
-  --m_neg 0.8485533231059866 \
-  --m_pos 0.9634736726360237 \
-  --w_pos 1.0 \
-  --w_neg 1.7309116094699046
-
-{
-  "lr": 0.00022401563440758678,
-  "batch_size": 1024,
-  "internal_layer_size": 1024,
-  "output_dim": 768,
-  "optimizer": "adamw",
-  "weight_decay": 0.0002830347672748398,
-  "m_neg": 0.8485533231059866,
-  "m_pos": 0.9634736726360237,
-  "gap": 0.11492034953003706,
-  "w_pos": 1.0,
-  "w_neg": 1.7309116094699046
-}
+  --weight_decay 2.7710255005918065e-05 \
+  --m_neg 0.8706522279582501 \
+  --m_pos 0.9772440687834018 \
+  --w_pos 1.1894043571038706 \
+  --w_neg 3.1518113351588117
 
   python text_to_image/optuna_distill.py \
   --train text_to_image/Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet \
   --val   text_to_image/Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet
-
 
 python text_to_image/main_edited_text2img.py \
   --training_filepath text_to_image/Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet \
