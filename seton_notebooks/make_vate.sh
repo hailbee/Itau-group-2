@@ -11,34 +11,28 @@ chmod +x seton_notebooks/make_vate.sh
 "
 
 python seton_notebooks/create_VATE.py \
-  --input text_to_image/Golden/golden_embeddings_validate.parquet \
-  --output text_to_image/Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet \
+  --input ../Downloads/validate_pairs_with_siglip_embeddings.parquet \
   --vate-only-output ../Downloads/vate_validate.parquet \
   --vate-include-keys fraudulent_name real_name label \
   --backbone siglip \
   --model-weights weights/best_model_siglip_pair.pt \
   --batch-size 256 \
-  --device cuda \
   --overwrite-cols
   
   python seton_notebooks/create_VATE.py \
-  --input text_to_image/Golden/golden_embeddings_train.parquet \
-  --output text_to_image/Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet \
+  --input ../Downloads/train_pairs_with_siglip_embeddings.parquet \
   --vate-only-output ../Downloads/vate_train.parquet \
   --vate-include-keys fraudulent_name real_name label \
   --backbone siglip \
   --model-weights weights/best_model_siglip_pair.pt \
   --batch-size 256 \
-  --device cuda \
   --overwrite-cols
   
   python seton_notebooks/create_VATE.py \
-  --input text_to_image/Golden/golden_embeddings_test.parquet \
-  --output text_to_image/Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet \
+  --input ../Downloads/test_pairs_with_siglip_embeddings.parquet \
   --vate-only-output ../Downloads/vate_test.parquet \
   --vate-include-keys fraudulent_name real_name label \
   --backbone siglip \
   --model-weights weights/best_model_siglip_pair.pt \
   --batch-size 256 \
-  --device cuda \
   --overwrite-cols

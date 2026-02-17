@@ -39,7 +39,12 @@ class BaselineTester:
             batch_size: Batch size for processing
             device: Device to run on (auto-detected if None)
         """
-        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(
+            device if device else
+            "cuda" if torch.cuda.is_available() else
+            "mps" if torch.backends.mps.is_available() else
+            "cpu"
+        )
         self.batch_size = batch_size
         self.model_type = model_type
 

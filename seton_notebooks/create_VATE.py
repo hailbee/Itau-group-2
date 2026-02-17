@@ -9,21 +9,18 @@ Key properties (to match Evaluator / fix AUC):
 - Prints sanity ROC AUC (Evaluator-style).
 
 I/O behavior:
-- OVERWRITES --output if it exists (always).
 - If --vate-only-output is provided, OVERWRITES it if it exists (always).
 - By default, hard-fails on embedding column collisions.
 - With --overwrite-cols, overwrites fraud_txt_emb_* / real_txt_emb_* if they already exist.
 
 Example:
-python seton_notebooks/create_VATE.py \
-  --input text_to_image/Golden/golden_embeddings_validate.parquet \
-  --output text_to_image/Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet \
+python3 seton_notebooks/create_VATE.py \
+  --input ../../Downloads/validate_pairs_with_siglip_embeddings.parquet \
   --vate-only-output ../Downloads/vate_validate.parquet \
   --vate-include-keys fraudulent_name real_name label \
   --backbone siglip \
   --model-weights weights/best_model_siglip_pair.pt \
   --batch-size 256 \
-  --device cuda \
   --overwrite-cols
 """
 
@@ -108,7 +105,6 @@ def load_state_dict_robust(model: torch.nn.Module, sd: Dict[str, torch.Tensor]) 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
-    ap.add_argument("--output", required=True)
 
     ap.add_argument("--backbone", default="siglip", choices=["clip", "coca", "flava", "siglip"])
     ap.add_argument("--model-weights", required=True)
@@ -145,7 +141,7 @@ def main() -> None:
 
     args = ap.parse_args()
 
-    device = torch.device(args.device) if args.device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(args.device) if args.device else torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     print(f"[INFO] device={device}")
 
     df = load_table(args.input).copy()
@@ -229,10 +225,6 @@ def main() -> None:
     )
 
     out_df = pd.concat([df, text_df], axis=1)
-
-    # Write main output (OVERWRITES by default)
-    save_table(out_df, args.output)
-    print(f"[INFO] wrote full file → {args.output}")
 
     # Optional VATE-only output (OVERWRITES by default)
     if args.vate_only_output is not None:

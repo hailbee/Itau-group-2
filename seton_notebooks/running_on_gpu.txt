@@ -86,34 +86,11 @@ python text_to_image/evaluator2.py \
 git clone --branch training --single-branch git@github.com:hailbee/Itau-group-2.git
 cd Itau-group-2
 
-cd Itau-group-2
-git remote set-url origin git@github.com:hailbee/Itau-group-2.git
-git fetch origin
-git switch training
-# if it doesn't exist locally yet:
-git switch -c training --track origin/training
-
-git branch --show-current
-git log -1 --oneline
-
-cd Itau-group-2
-git branch --show-current
-git status
 git add -A
 git commit -m "Correct loading of VATE"
 git push -u origin training
 
 git pull
-
-ssh orcd-login
-tmux new -s gpu
-tmux attach -t gpu
-salloc -p mit_preemptable \
-  --gres=gpu:1 \
-  -c 8 --mem=128G \
-  -t 04:00:00
-Copy node name
-Ctrl-b then d
 
 cd ~/Itau-group-2
 conda activate itau
@@ -123,3 +100,6 @@ export PYTHONPATH=$(pwd)
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 git reset --hard HEAD
+
+chmod +x seton_notebooks/make_vate.sh
+./seton_notebooks/make_vate.sh
