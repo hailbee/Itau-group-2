@@ -36,7 +36,7 @@ python -m main_edited \
   --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
   --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet"
   
-python -m main_edited \
+python3 -m main_edited \
   --mode train --optuna False \
   --training_filepath "../Downloads/train_pairs_with_siglip_embeddings.parquet" \
   --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
@@ -87,7 +87,7 @@ git clone --branch training --single-branch git@github.com:hailbee/Itau-group-2.
 cd Itau-group-2
 
 git add -A
-git commit -m "Correct loading of VATE"
+git commit -m "fixed create VATE logic"
 git push -u origin training
 
 git pull
