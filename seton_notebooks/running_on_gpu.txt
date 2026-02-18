@@ -53,41 +53,60 @@ python3 -m main_edited \
   --w_pos 1.1894043571038706 \
   --w_neg 3.1518113351588117
 
+{
+  "lr": 0.00022401563440758678,
+  "batch_size": 1024,
+  "internal_layer_size": 1024,
+  "output_dim": 768,
+  "optimizer": "adamw",
+  "weight_decay": 0.0002830347672748398,
+  "m_neg": 0.8485533231059866,
+  "m_pos": 0.9634736726360237,
+  "gap": 0.11492034953003706,
+  "w_pos": 1.0,
+  "w_neg": 1.7309116094699046
+}
+
   python text_to_image/optuna_distill.py \
   --train text_to_image/Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet \
   --val   text_to_image/Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet
 
+
 python text_to_image/main_edited_text2img.py \
   --training_filepath text_to_image/Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet \
   --validate_filepath text_to_image/Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet \
-  --lr 8.250464883920907e-05 \
-  --batch_size 128 \
-  --hidden_dim 1024 \
-  --optimizer adam \
-  --weight_decay 2.4259391979923205e-07 \
-  --align_margin 0.5691887325275329 \
-  --pos_pair_margin 0.9712854502509488 \
-  --neg_pair_margin 0.9494789823073525 \
-  --pair_weight 3.0280613664155895 \
+  --lr 7.137353436532222e-05 \
+  --batch_size 64 \
+  --hidden_dim 768 \
+  --optimizer adamw \
+  --weight_decay 6.630733879618744e-07 \
+  --align_margin 0.6209565969442453 \
+  --pos_pair_margin 0.931637672481773 \
+  --neg_pair_margin 0.8989225461605445 \
+  --pair_weight 3.016611636269181 \
   --epochs 50
   
 python text_to_image/evaluator2.py \
   --test text_to_image/Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet  \
   --model-path saved_models/best_model.pt \
-  --hidden-dim 1024 \
+  --hidden-dim 768 \
   --out-dim 768 \
   --output text_to_image/evaluation/vate_test_student_only.parquet
 
-[OPTUNA] best params: {'lr': 8.250464883920907e-05, 'batch_size': 128, 'hidden_dim': 1024, 'optimizer': 'adam', 'weight_decay': 2.4259391979923205e-07, 
-'align_margin': 0.5691887325275329, 'pos_pair_margin': 0.9712854502509488, 'neg_pair_margin': 0.9494789823073525, 'pair_weight': 3.0280613664155895}
-[OPTUNA] best value (val ROC AUC): 0.9740252277690872
-[OPTUNA] best trial attrs: {'val_loss': 0.0070268620966780415}
+[OPTUNA] best params: {'lr': 7.137353436532222e-05, 'batch_size': 64, 'hidden_dim': 768, 'optimizer': 'adamw', 'weight_decay': 6.630733879618744e-07, 
+'align_margin': 0.6209565969442453, 'pos_pair_margin': 0.931637672481773, 'neg_pair_margin': 0.8989225461605445, 'pair_weight': 3.016611636269181}
+[OPTUNA] best value (val ROC AUC): 0.9744895180825557
+[OPTUNA] best trial attrs: {'val_loss': 0.009619894243219192}
 
 git clone --branch training --single-branch git@github.com:hailbee/Itau-group-2.git
 cd Itau-group-2
 
 git add -A
+<<<<<<< HEAD
 git commit -m "fixed create VATE logic"
+=======
+git commit -m "pacifico 0.953433"
+>>>>>>> 473a2e0 (pacifico 0.953433)
 git push -u origin training
 
 git pull
