@@ -416,7 +416,7 @@ if __name__ == "__main__":
 USAGE EXAMPLE
 
 python inference/inference.py \
-  --data ../Test/deja_test_pairs_with_img_and_vate_txt_embs.parquet \
+  --data ../Downloads/vate_test.parquet \
   --student-model-path saved_models/deja_best_model.pt \
   --hidden-dim 1024 \
   --out-dim 768 \
