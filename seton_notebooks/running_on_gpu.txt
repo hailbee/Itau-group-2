@@ -100,7 +100,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "no optimization sourcecodepro 0.953086"
+git commit -m "no optimization sourcecodepro 0.953274"
 git push -u origin training
 
 git pull
