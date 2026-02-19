@@ -417,7 +417,7 @@ USAGE EXAMPLE
 
 python inference/inference.py \
   --data ../Downloads/vate_test.parquet \
-  --student-model-path saved_models/deja_best_model.pt \
+  --student-model-path saved_models/source_best_model.pt \
   --hidden-dim 1024 \
   --out-dim 768 \
   --fraud-prefix fraud_txt_emb_ \
