@@ -72,11 +72,10 @@ python text_to_image/main_edited_text2img.py \
   --epochs 50
   
 python text_to_image/evaluator2.py \
-  --test text_to_image/Golden_and_Text/test_pairs_with_img_and_vate_txt_embs.parquet  \
-  --model-path saved_models/deja_best_model.pt \
+  --test ../Downloads/vate_test.parquet \
+  --model-path saved_models/source_best_model.pt \
   --hidden-dim 1024 \
-  --out-dim 768 \
-  --output text_to_image/evaluation/vate_test_student_only.parquet
+  --out-dim 768
 
 [OPTUNA] best params: {'lr': 8.250464883920907e-05, 'batch_size': 128, 'hidden_dim': 1024, 'optimizer': 'adam', 'weight_decay': 2.4259391979923205e-07, 
 'align_margin': 0.5691887325275329, 'pos_pair_margin': 0.9712854502509488, 'neg_pair_margin': 0.9494789823073525, 'pair_weight': 3.0280613664155895}
@@ -100,7 +99,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "sourcecodepro 0.953443"
+git commit -m "new error analysis"
 git push -u origin training
 
 git pull
