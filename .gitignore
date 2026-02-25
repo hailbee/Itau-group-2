@@ -21,3 +21,4 @@ text_to_image/Golden/*.parquet
 text_to_image/Golden_and_Text/*.parquet
 # Ignore evaluation parquet files
 text_to_image/evaluation/*.parquet
+for_paper/*.parquet

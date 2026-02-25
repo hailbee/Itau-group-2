@@ -1,0 +1,83 @@
+data=for_paper/vate_onehot_with_3aligned.parquet
+tags=['deja', 'source', 'pacifico']
+n_rows=256,886
+n_flags=16
+exclude_identical_spoof=True
+
+Per-model thresholds (Youden):
+  vate: 0.941113
+  aligned_deja: 0.965699
+  aligned_source: 0.965085
+  aligned_pacifico: 0.965356
+
+=== aligned_deja vs vate ===
+  Top improvements (lowest delta_error_rate):
+    non_ascii                      n= 105807 d_err=-0.0142 d_werr=-0.0007 net_fix=+0.0142
+    deletion                       n=  68149 d_err=-0.0137 d_werr=-0.0009 net_fix=+0.0137
+    unicode_homoglyph              n=  30014 d_err=-0.0135 d_werr=-0.0004 net_fix=+0.0135
+    unicode_marks_only             n=  30014 d_err=-0.0135 d_werr=-0.0004 net_fix=+0.0135
+    substitution                   n= 216256 d_err=-0.0115 d_werr=-0.0008 net_fix=+0.0115
+    digit_change                   n=  17083 d_err=-0.0087 d_werr=-0.0010 net_fix=+0.0087
+    hyphen_change                  n=  18186 d_err=-0.0074 d_werr=-0.0007 net_fix=+0.0074
+    insertion                      n=  86261 d_err=-0.0051 d_werr=-0.0008 net_fix=+0.0051
+    transposition                  n=   1213 d_err=-0.0041 d_werr=-0.0005 net_fix=+0.0041
+    digit_substitution             n=   3279 d_err=-0.0009 d_werr=-0.0013 net_fix=+0.0009
+  Top regressions (highest delta_error_rate):
+    punycode                       n=    210 d_err=+0.0048 d_werr=-0.0033 net_fix=-0.0048
+    identical                      n=   1468 d_err=+0.0000 d_werr=+0.0000 net_fix=+0.0000
+    digit_substitution             n=   3279 d_err=-0.0009 d_werr=-0.0013 net_fix=+0.0009
+    transposition                  n=   1213 d_err=-0.0041 d_werr=-0.0005 net_fix=+0.0041
+    insertion                      n=  86261 d_err=-0.0051 d_werr=-0.0008 net_fix=+0.0051
+    hyphen_change                  n=  18186 d_err=-0.0074 d_werr=-0.0007 net_fix=+0.0074
+    digit_change                   n=  17083 d_err=-0.0087 d_werr=-0.0010 net_fix=+0.0087
+    substitution                   n= 216256 d_err=-0.0115 d_werr=-0.0008 net_fix=+0.0115
+    unicode_marks_only             n=  30014 d_err=-0.0135 d_werr=-0.0004 net_fix=+0.0135
+    unicode_homoglyph              n=  30014 d_err=-0.0135 d_werr=-0.0004 net_fix=+0.0135
+
+=== aligned_source vs vate ===
+  Top improvements (lowest delta_error_rate):
+    non_ascii                      n= 105807 d_err=-0.0191 d_werr=-0.0007 net_fix=+0.0191
+    unicode_marks_only             n=  30014 d_err=-0.0173 d_werr=-0.0004 net_fix=+0.0173
+    unicode_homoglyph              n=  30014 d_err=-0.0173 d_werr=-0.0004 net_fix=+0.0173
+    digit_change                   n=  17083 d_err=-0.0158 d_werr=-0.0011 net_fix=+0.0158
+    deletion                       n=  68149 d_err=-0.0138 d_werr=-0.0009 net_fix=+0.0138
+    substitution                   n= 216256 d_err=-0.0137 d_werr=-0.0008 net_fix=+0.0137
+    transposition                  n=   1213 d_err=-0.0132 d_werr=-0.0005 net_fix=+0.0132
+    punycode                       n=    210 d_err=-0.0095 d_werr=-0.0031 net_fix=+0.0095
+    insertion                      n=  86261 d_err=-0.0095 d_werr=-0.0009 net_fix=+0.0095
+    hyphen_change                  n=  18186 d_err=-0.0071 d_werr=-0.0007 net_fix=+0.0071
+  Top regressions (highest delta_error_rate):
+    identical                      n=   1468 d_err=+0.0000 d_werr=+0.0000 net_fix=+0.0000
+    digit_substitution             n=   3279 d_err=-0.0015 d_werr=-0.0013 net_fix=+0.0015
+    hyphen_change                  n=  18186 d_err=-0.0071 d_werr=-0.0007 net_fix=+0.0071
+    insertion                      n=  86261 d_err=-0.0095 d_werr=-0.0009 net_fix=+0.0095
+    punycode                       n=    210 d_err=-0.0095 d_werr=-0.0031 net_fix=+0.0095
+    transposition                  n=   1213 d_err=-0.0132 d_werr=-0.0005 net_fix=+0.0132
+    substitution                   n= 216256 d_err=-0.0137 d_werr=-0.0008 net_fix=+0.0137
+    deletion                       n=  68149 d_err=-0.0138 d_werr=-0.0009 net_fix=+0.0138
+    digit_change                   n=  17083 d_err=-0.0158 d_werr=-0.0011 net_fix=+0.0158
+    unicode_marks_only             n=  30014 d_err=-0.0173 d_werr=-0.0004 net_fix=+0.0173
+
+=== aligned_pacifico vs vate ===
+  Top improvements (lowest delta_error_rate):
+    non_ascii                      n= 105807 d_err=-0.0220 d_werr=-0.0007 net_fix=+0.0220
+    unicode_marks_only             n=  30014 d_err=-0.0193 d_werr=-0.0004 net_fix=+0.0193
+    unicode_homoglyph              n=  30014 d_err=-0.0193 d_werr=-0.0004 net_fix=+0.0193
+    substitution                   n= 216256 d_err=-0.0144 d_werr=-0.0008 net_fix=+0.0144
+    digit_change                   n=  17083 d_err=-0.0135 d_werr=-0.0011 net_fix=+0.0135
+    deletion                       n=  68149 d_err=-0.0119 d_werr=-0.0009 net_fix=+0.0119
+    transposition                  n=   1213 d_err=-0.0107 d_werr=-0.0005 net_fix=+0.0107
+    insertion                      n=  86261 d_err=-0.0099 d_werr=-0.0009 net_fix=+0.0099
+    hyphen_change                  n=  18186 d_err=-0.0080 d_werr=-0.0007 net_fix=+0.0080
+    identical                      n=   1468 d_err=+0.0000 d_werr=+0.0000 net_fix=+0.0000
+  Top regressions (highest delta_error_rate):
+    digit_substitution             n=   3279 d_err=+0.0040 d_werr=-0.0014 net_fix=-0.0040
+    identical                      n=   1468 d_err=+0.0000 d_werr=+0.0000 net_fix=+0.0000
+    punycode                       n=    210 d_err=+0.0000 d_werr=-0.0030 net_fix=+0.0000
+    hyphen_change                  n=  18186 d_err=-0.0080 d_werr=-0.0007 net_fix=+0.0080
+    insertion                      n=  86261 d_err=-0.0099 d_werr=-0.0009 net_fix=+0.0099
+    transposition                  n=   1213 d_err=-0.0107 d_werr=-0.0005 net_fix=+0.0107
+    deletion                       n=  68149 d_err=-0.0119 d_werr=-0.0009 net_fix=+0.0119
+    digit_change                   n=  17083 d_err=-0.0135 d_werr=-0.0011 net_fix=+0.0135
+    substitution                   n= 216256 d_err=-0.0144 d_werr=-0.0008 net_fix=+0.0144
+    unicode_marks_only             n=  30014 d_err=-0.0193 d_werr=-0.0004 net_fix=+0.0193
