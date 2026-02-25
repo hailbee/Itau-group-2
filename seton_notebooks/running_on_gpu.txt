@@ -99,7 +99,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "error analysis multi hot"
+git commit -m "added in baseline analysis"
 git push -u origin training
 
 git pull

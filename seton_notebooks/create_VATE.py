@@ -15,7 +15,7 @@ I/O behavior:
 
 Example:
 python3 seton_notebooks/create_VATE.py \
-  --input ../../Downloads/validate_pairs_with_siglip_embeddings.parquet \
+  --input ../Downloads/validate_pairs_with_siglip_embeddings.parquet \
   --vate-only-output ../Downloads/vate_validate.parquet \
   --vate-include-keys fraudulent_name real_name label \
   --backbone siglip \
