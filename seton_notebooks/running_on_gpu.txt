@@ -99,7 +99,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "added in baseline analysis"
+git commit -m "ensemble methods (check if accuracy methodology correct)"
 git push -u origin training
 
 git pull
@@ -117,6 +117,7 @@ Ctrl-b then d
 cd ~/Itau-group-2
 conda activate itau
 touch scripts/__init__.py
+touch text_to_image/__init__.py
 touch scripts/training/__init__.py
 export PYTHONPATH=$(pwd)
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH

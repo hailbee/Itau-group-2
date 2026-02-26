@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.metrics import roc_auc_score, average_precision_score, roc_curve
 
-from siamese import SiameseEmbeddingModel
+from text_to_image.siamese import SiameseEmbeddingModel
 
 
 # -------------------------
