@@ -590,14 +590,6 @@ def main():
     # A sample is "exact in bank" if ANY font contains it
     exact_in_bank_all = np.logical_or.reduce(exact_masks)
     
-    # IMPORTANT:
-    # final_test already corresponds to stacked multi-font fusion.
-    # So we must also concatenate per-font final_test BEFORE fusion.
-    # If your fusion assumed identical ordering across fonts,
-    # then final_test already matches y_all ordering.
-    # Otherwise you must also concatenate per-font test scores before fusion.
-    
-    # For your current structure (aligned datasets assumed):
     s_all = final_test
     
     eval_exact_in_bank = exact_in_bank_all & (y_all == 1)
