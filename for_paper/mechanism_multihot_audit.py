@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-mechanism_onehot_audit.py
+mechanism_multihot_audit.py
 
 Compute multi-label (multi-hot) mechanism flags for (fraudulent_name, real_name) pairs and export:
 
@@ -14,7 +14,7 @@ This script is intentionally self-contained (no dependency on for_paper/mechanis
 Example:
   python for_paper/mechanism_multihot_audit.py \
     --data ../Downloads/vate_test.parquet \
-    --out-parquet for_paper/deja_onehot.parquet \
+    --out-parquet for_paper/deja_multihot.parquet \
     --font-tag deja
 """
 
@@ -109,14 +109,9 @@ LEET_CHARS: set[str] = set(LEET_MAP.keys())
 # Order matters for combo_id bit positions.
 # Existing keys first (unchanged), then new keys appended at the end.
 FLAG_KEYS: List[str] = [
-    "identical",
-    "extension",
     "punycode",
     "non_ascii",
-    "unicode_marks_only",
     "unicode_homoglyph",
-    "case_change_only",
-    "whitespace_change",
     "hyphen_change",
     "digit_change",
     "transposition",
@@ -125,7 +120,6 @@ FLAG_KEYS: List[str] = [
     "substitution",
     "digit_substitution",
     # NEW (appended to preserve existing bit positions)
-    "zero_width_or_format",
     "mixed_script",
     "separator_change",
     "repeat_char",
@@ -210,26 +204,6 @@ def _is_single_adjacent_swap(a: str, b: str) -> bool:
     aa = list(a)
     aa[i], aa[j] = aa[j], aa[i]
     return "".join(aa) == b
-
-
-def _is_extension_like(f: str, r: str) -> bool:
-    def split_suffix(x: str) -> Tuple[str, str]:
-        if "." not in x:
-            return x, ""
-        base, suf = x.rsplit(".", 1)
-        return base, suf.lower()
-
-    fb, ft = split_suffix(f)
-    rb, rt = split_suffix(r)
-
-    if ft in COMMON_SUFFIXES and fb == r:
-        return True
-    if rt in COMMON_SUFFIXES and rb == f:
-        return True
-    if ft in COMMON_SUFFIXES and rt in COMMON_SUFFIXES and fb == rb and ft != rt:
-        return True
-    return False
-
 
 def _diff_ops(real_s: str, fraud_s: str) -> Tuple[int, int, int]:
     """
@@ -337,9 +311,6 @@ def mechanism_flags(fraudulent: str, real: str) -> Dict[str, int]:
     f = _nfkc(f_raw)
     r = _nfkc(r_raw)
 
-    if f == r:
-        out["identical"] = 1
-
     if not f and not r:
         return out
 
@@ -347,23 +318,14 @@ def mechanism_flags(fraudulent: str, real: str) -> Dict[str, int]:
     out["punycode"] = int(("xn--" in f) or ("xn--" in r))
     out["non_ascii"] = int(_has_non_ascii(f) or _has_non_ascii(r))
     out["hyphen_change"] = int(("-" in f) ^ ("-" in r))
-    out["whitespace_change"] = int((any(ch.isspace() for ch in f)) ^ (any(ch.isspace() for ch in r)))
     out["digit_change"] = int((any(ch.isdigit() for ch in f)) ^ (any(ch.isdigit() for ch in r)))
-
-    # extension-like (domain/tld or file extension)
-    out["extension"] = int(_is_extension_like(f, r))
 
     # unicode marks / diacritics relationship (preserved)
     f_stripped = _strip_marks(f)
     r_stripped = _strip_marks(r)
     if (f_stripped.casefold() == r_stripped.casefold()) and (f.casefold() != r.casefold()):
-        out["unicode_marks_only"] = 1
         if out["non_ascii"]:
             out["unicode_homoglyph"] = 1  # legacy behavior (name is imperfect but preserved)
-
-    # case-only changes
-    if (f.casefold() == r.casefold()) and (f != r):
-        out["case_change_only"] = 1
 
     # adjacent transposition (single swap)
     out["transposition"] = int(_is_single_adjacent_swap(r, f) or _is_single_adjacent_swap(f, r))
@@ -389,7 +351,6 @@ def mechanism_flags(fraudulent: str, real: str) -> Dict[str, int]:
     # New buckets (visual spoofing style)
     # -------------------------
 
-    out["zero_width_or_format"] = int(_contains_invisible_or_format(f_raw) or _contains_invisible_or_format(r_raw))
     out["mixed_script"] = int(_has_mixed_script(f) or _has_mixed_script(r))
 
     # separator-only changes
@@ -543,10 +504,26 @@ def main() -> None:
     else:
         df["_font"] = str(args.font_tag) if args.font_tag is not None else "NA"
 
-    fraud = df[args.fraud_name_col].astype(str).to_numpy()
-    real = df[args.real_name_col].astype(str).to_numpy()
-
-    flags = mechanism_flags_df(fraud, real)
+    fraud_col = args.fraud_name_col
+    real_col = args.real_name_col
+    label_col = args.label_col if args.label_col in df.columns else None
+    
+    # Initialize all-zero flags
+    flags = pd.DataFrame(0, index=df.index, columns=FLAG_KEYS)
+    
+    # Only compute mechanisms for positives
+    if label_col is not None:
+        mask_pos = df[label_col] == 1
+    else:
+        raise ValueError("Label column required to restrict mechanisms to positives.")
+    
+    flags_pos = mechanism_flags_df(
+        df.loc[mask_pos, fraud_col].astype(str),
+        df.loc[mask_pos, real_col].astype(str),
+    )
+    
+    flags.loc[mask_pos] = flags_pos.values
+    
     df = pd.concat([df.reset_index(drop=True), flags.reset_index(drop=True)], axis=1)
 
     # Optional: add edit-op counts as numeric features (not part of FLAG_KEYS)
@@ -626,17 +603,17 @@ if __name__ == "__main__":
 USAGE EXAMPLES
 
 # Single-font parquet (use a tag)
-python for_paper/mechanism_onehot_audit.py \
+python for_paper/mechanism_multihot_audit.py \
   --data ../Downloads/vate_test.parquet \
-  --out-parquet for_paper/vate_onehot.parquet \
+  --out-parquet for_paper/vate_multihot.parquet \
   --font-tag vate \
   --add-op-counts
 
 # If your parquet already contains a font column (e.g., 'font')
-python for_paper/mechanism_onehot_audit.py \
+python for_paper/mechanism_multihot_audit.py \
   --data ../Downloads/vate_all_fonts.parquet \
-  --out-parquet for_paper/allfonts_onehot.parquet \
+  --out-parquet for_paper/allfonts_multihot.parquet \
   --font-col font \
-  --out-summary-csv for_paper/allfonts_onehot_combo_summary.csv \
+  --out-summary-csv for_paper/allfonts_multihot_combo_summary.csv \
   --add-op-counts
 """

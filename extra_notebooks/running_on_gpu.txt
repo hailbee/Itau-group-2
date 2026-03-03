@@ -38,9 +38,9 @@ python -m main_edited \
   
 python -m main_edited \
   --mode train --optuna False \
-  --training_filepath "../Downloads/text_train.parquet" \
-  --validate_filepath "../Downloads/text_validate.parquet" \
-  --test_filepath "../Downloads/text_test.parquet" \
+  --training_filepath "../Downloads/train_pairs_with_siglip_embeddings.parquet" \
+  --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
+  --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" \
   --epochs 50 \
   --batch_size 64 \
   --lr 1.6329930316442967e-05 \
@@ -82,7 +82,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "fixed multihot"
+git commit -m "dejavu sans 0.9869559373943819"
 git push -u origin training
 
 git pull
