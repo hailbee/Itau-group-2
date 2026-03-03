@@ -82,7 +82,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "vate text tuned 0.97399"
+git commit -m "fixed multihot"
 git push -u origin training
 
 git pull
