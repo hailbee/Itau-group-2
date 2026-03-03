@@ -1,1 +1,0 @@
-{"m_pos": 0.49483, "m_neg": 0.6489432454109192, "q_pos": 0.75, "q_neg": 0.3, "lr": 0.0005070334317710387, "batch_size": 1024, "internal_layer_size": 1024, "output_dim": 256, "optimizer": "adamw", "weight_decay": 0.0003153297160668713}

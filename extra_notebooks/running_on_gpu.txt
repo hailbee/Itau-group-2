@@ -38,23 +38,32 @@ python -m main_edited \
   
 python -m main_edited \
   --mode train --optuna False \
-  --training_filepath "../Downloads/train_pairs_with_siglip_embeddings.parquet" \
-  --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
-  --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" \
+  --training_filepath "../Downloads/text_train.parquet" \
+  --validate_filepath "../Downloads/text_validate.parquet" \
+  --test_filepath "../Downloads/text_test.parquet" \
   --epochs 50 \
   --batch_size 64 \
-  --lr 1.3950604106079609e-05 \
+  --lr 1.6329930316442967e-05 \
   --internal_layer_size 1024 \
   --output_dim 768 \
   --optimizer_name adam \
-  --weight_decay 1.6978380615623284e-06 \
-  --m_neg 0.9488603853402834 \
-  --m_pos 0.99 \
+  --weight_decay 2.2918398375698742e-06 \
+  --m_neg 0.7798193704854415 \
+  --m_pos 0.9065208215862959 \
   --w_pos 1.0 \
-  --w_neg 2.7714406622639345
+  --w_neg 1.5084936984781199
 
-[DEBUG] Best hyperparameters (global): {'lr': 1.3950604106079609e-05, 'batch_size': 64, 'internal_layer_size': 1024, 'output_dim': 768, 'optimizer': 'adam', 
-'weight_decay': 1.6978380615623284e-06, 'm_neg': 0.9488603853402834, 'm_pos': 0.99, 'gap': 0.0465596194651053, 'w_pos': 1.0, 'w_neg': 2.7714406622639345}
+  "lr": 1.6329930316442967e-05,
+  "batch_size": 64,
+  "internal_layer_size": 1024,
+  "output_dim": 768,
+  "optimizer": "adam",
+  "weight_decay": 2.2918398375698742e-06,
+  "m_neg": 0.7798193704854415,
+  "m_pos": 0.9065208215862959,
+  "gap": 0.12670145110085435,
+  "w_pos": 1.0,
+  "w_neg": 1.5084936984781199
 
 git clone --branch training --single-branch git@github.com:hailbee/Itau-group-2.git
 cd Itau-group-2
@@ -73,7 +82,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "ensemble methods (check if accuracy methodology correct)"
+git commit -m "vate text tuned 0.97399"
 git push -u origin training
 
 git pull
@@ -97,3 +106,39 @@ export PYTHONPATH=$(pwd)
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 git reset --hard HEAD
+
+
+#!/bin/bash
+#SBATCH -p mit_preemptable
+#SBATCH --gres=gpu:1
+#SBATCH -c 8
+#SBATCH --mem=256G
+#SBATCH -t 10:00:00
+#SBATCH -J itau_train
+#SBATCH -o logs/%x_%j.out
+#SBATCH -e logs/%x_%j.err
+
+# Fail on error
+set -e
+
+echo "Job started at $(date)"
+echo "Running on $(hostname)"
+
+cd ~/Itau-group-2
+
+source ~/.bashrc
+conda activate itau
+
+touch scripts/__init__.py
+touch scripts/training/__init__.py
+
+export PYTHONPATH=$(pwd)
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+
+python -m main_edited \
+  --mode train --optuna True \
+  --training_filepath "../Downloads/train_pairs_with_siglip_embeddings.parquet" \
+  --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
+  --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet"
+
+echo "Job finished at $(date)"
