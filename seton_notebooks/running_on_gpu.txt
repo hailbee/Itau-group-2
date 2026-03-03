@@ -42,45 +42,19 @@ python -m main_edited \
   --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
   --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet" \
   --epochs 50 \
-  --batch_size 1024 \
-  --lr 0.0002319754023753831 \
+  --batch_size 64 \
+  --lr 1.3950604106079609e-05 \
   --internal_layer_size 1024 \
   --output_dim 768 \
-  --optimizer_name adamw \
-  --weight_decay 2.7710255005918065e-05 \
-  --m_neg 0.8706522279582501 \
-  --m_pos 0.9772440687834018 \
-  --w_pos 1.1894043571038706 \
-  --w_neg 3.1518113351588117
+  --optimizer_name adam \
+  --weight_decay 1.6978380615623284e-06 \
+  --m_neg 0.9488603853402834 \
+  --m_pos 0.99 \
+  --w_pos 1.0 \
+  --w_neg 2.7714406622639345
 
-  python text_to_image/optuna_distill.py \
-  --train text_to_image/Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet \
-  --val   text_to_image/Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet
-
-python text_to_image/main_edited_text2img.py \
-  --training_filepath text_to_image/Golden_and_Text/train_pairs_with_img_and_vate_txt_embs.parquet \
-  --validate_filepath text_to_image/Golden_and_Text/validate_pairs_with_img_and_vate_txt_embs.parquet \
-  --lr 8.250464883920907e-05 \
-  --batch_size 128 \
-  --hidden_dim 1024 \
-  --optimizer adam \
-  --weight_decay 2.4259391979923205e-07 \
-  --align_margin 0.5691887325275329 \
-  --pos_pair_margin 0.9712854502509488 \
-  --neg_pair_margin 0.9494789823073525 \
-  --pair_weight 3.0280613664155895 \
-  --epochs 50
-  
-python text_to_image/evaluator2.py \
-  --test ../Downloads/vate_test.parquet \
-  --model-path saved_models/source_best_model.pt \
-  --hidden-dim 1024 \
-  --out-dim 768
-
-[OPTUNA] best params: {'lr': 8.250464883920907e-05, 'batch_size': 128, 'hidden_dim': 1024, 'optimizer': 'adam', 'weight_decay': 2.4259391979923205e-07, 
-'align_margin': 0.5691887325275329, 'pos_pair_margin': 0.9712854502509488, 'neg_pair_margin': 0.9494789823073525, 'pair_weight': 3.0280613664155895}
-[OPTUNA] best value (val ROC AUC): 0.9740252277690872
-[OPTUNA] best trial attrs: {'val_loss': 0.0070268620966780415}
+[DEBUG] Best hyperparameters (global): {'lr': 1.3950604106079609e-05, 'batch_size': 64, 'internal_layer_size': 1024, 'output_dim': 768, 'optimizer': 'adam', 
+'weight_decay': 1.6978380615623284e-06, 'm_neg': 0.9488603853402834, 'm_pos': 0.99, 'gap': 0.0465596194651053, 'w_pos': 1.0, 'w_neg': 2.7714406622639345}
 
 git clone --branch training --single-branch git@github.com:hailbee/Itau-group-2.git
 cd Itau-group-2
@@ -109,8 +83,8 @@ tmux new -s gpu
 tmux attach -t gpu
 salloc -p mit_preemptable \
   --gres=gpu:1 \
-  -c 8 --mem=128G \
-  -t 04:00:00
+  -c 8 --mem=256G \
+  -t 10:00:00
 Copy node name
 Ctrl-b then d
 

@@ -26,61 +26,7 @@ try:
     # this import will use it directly.
     from model_utils.loss.pair_losses import ContrastiveLoss as CosineContrastiveTwoMargin
 except Exception:
-    import torch.nn as nn
-    import torch.nn.functional as F
-
-    class CosineContrastiveTwoMargin(nn.Module):
-        """
-        Two-margin hinge contrastive loss on cosine similarity.
-
-        Let c = cosine(z1, z2) in [-1, 1] after L2-normalization.
-
-        y = 1 (positive): want c >= m_pos  -> relu(m_pos - c)^2
-        y = 0 (negative): want c <= m_neg  -> relu(c - m_neg)^2
-
-        Require: m_pos > m_neg
-        """
-
-        def __init__(
-            self,
-            m_pos: float,
-            m_neg: float,
-            w_pos: float = 1.0,
-            w_neg: float = 1.0,
-            reduction: str = "mean",
-            enforce_gap: bool = True,
-        ):
-            super().__init__()
-            self.m_pos = float(m_pos)
-            self.m_neg = float(m_neg)
-            self.w_pos = float(w_pos)
-            self.w_neg = float(w_neg)
-
-            if reduction not in ("mean", "sum", "none"):
-                raise ValueError(f"reduction must be 'mean', 'sum', or 'none', got {reduction}")
-            self.reduction = reduction
-
-            if enforce_gap and not (self.m_pos > self.m_neg):
-                raise ValueError(f"Need m_pos > m_neg. Got m_pos={self.m_pos}, m_neg={self.m_neg}")
-
-        def forward(self, z1: torch.Tensor, z2: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-            y = y.float()
-            z1 = F.normalize(z1, dim=1)
-            z2 = F.normalize(z2, dim=1)
-            c = (z1 * z2).sum(dim=1)
-
-            pos_loss = F.relu(self.m_pos - c).pow(2)
-            neg_loss = F.relu(c - self.m_neg).pow(2)
-
-            loss = self.w_pos * y * pos_loss + self.w_neg * (1.0 - y) * neg_loss
-
-            if self.reduction == "mean":
-                return loss.mean()
-            if self.reduction == "sum":
-                return loss.sum()
-            return loss
-
-
+    print("Exception")
 class OptunaOptimizer(BaseOptimizer):
     """
     Optuna-based hyperparameter optimization.
@@ -311,12 +257,12 @@ class OptunaOptimizer(BaseOptimizer):
         """
 
         # Core hyperparameters
-        lr = trial.suggest_float("lr", 1e-4, 1e-3, log=True)
-        batch_size = trial.suggest_categorical("batch_size", [1024])
-        internal_layer_size = trial.suggest_categorical("internal_layer_size", [1024])
-        output_dim = trial.suggest_categorical("output_dim", [768])
+        lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
+        batch_size = trial.suggest_categorical("batch_size", [64, 128, 256, 512, 1024])
+        internal_layer_size = trial.suggest_categorical("internal_layer_size", [256, 512, 768, 1024])
+        output_dim = trial.suggest_categorical("output_dim", [128, 256, 768])
 
-        optimizer_name = trial.suggest_categorical("optimizer", ["adamw"])
+        optimizer_name = trial.suggest_categorical("optimizer", ["adam", "adamw"])
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
 
         params = {
@@ -338,14 +284,12 @@ class OptunaOptimizer(BaseOptimizer):
             # We parametrize as: m_neg + gap => m_pos = m_neg + gap
             # This guarantees m_pos > m_neg and avoids "bad deadzone" configs.
             #
-            # Given your histogram overlap, reasonable bands:
-            #   m_neg ~ 0.78–0.88, gap ~ 0.04–0.14  => m_pos ~ 0.82–1.02 (we clamp)
-            m_neg = trial.suggest_float("m_neg", 0.80, 0.85)
-            gap = trial.suggest_float("gap", 0.10, 0.12)
+            m_neg = trial.suggest_float("m_neg", 0.75, 0.95)
+            gap = trial.suggest_float("gap", 0.01, 0.2)
             m_pos = min(float(m_neg + gap), 0.99)
 
             w_pos = trial.suggest_float("w_pos", 1.0, 1.0)
-            w_neg = trial.suggest_float("w_neg", 1.0, 2.0, log=True)
+            w_neg = trial.suggest_float("w_neg", 0.04, 25.0, log=True)
 
             params["m_neg"] = float(m_neg)
             params["m_pos"] = float(m_pos)
@@ -493,11 +437,7 @@ class OptunaOptimizer(BaseOptimizer):
             with open(best_hparams_path, "r", encoding="utf-8") as f:
                 best_params = json.load(f)
 
-            rounded_best_params = {
-                k: (round(v, 4) if isinstance(v, (float, int)) else v)
-                for k, v in best_params.items()
-            }
-            print(f"[DEBUG] Best hyperparameters (global): {rounded_best_params}")
+            print(f"[DEBUG] Best hyperparameters (global): {best_params}")
 
             hidden_dim = int(best_params.get("internal_layer_size", 512))
             out_dim = int(best_params.get("output_dim", 128))

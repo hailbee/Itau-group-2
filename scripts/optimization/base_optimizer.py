@@ -25,31 +25,54 @@ except Exception:
 
     class CosineContrastiveTwoMargin(nn.Module):
         """
-        Two-margin cosine contrastive hinge loss.
-    
-        y=1 (positive): penalize if cos < m_pos
-        y=0 (negative): penalize if cos > m_neg
-    
-        REQUIRE: m_pos > m_neg
+        Two-margin hinge contrastive loss on cosine similarity.
+
+        Let c = cosine(z1, z2) in [-1, 1] after L2-normalization.
+
+        y = 1 (positive): want c >= m_pos  -> relu(m_pos - c)^2
+        y = 0 (negative): want c <= m_neg  -> relu(c - m_neg)^2
+
+        Require: m_pos > m_neg
         """
-        def __init__(self, m_pos: float, m_neg: float):
+
+        def __init__(
+            self,
+            m_pos: float,
+            m_neg: float,
+            w_pos: float = 1.0,
+            w_neg: float = 1.0,
+            reduction: str = "mean",
+            enforce_gap: bool = True,
+        ):
             super().__init__()
             self.m_pos = float(m_pos)
             self.m_neg = float(m_neg)
-            if not (self.m_pos > self.m_neg):
-                raise ValueError(f"Need m_pos > m_neg, got m_pos={self.m_pos}, m_neg={self.m_neg}")
-    
+            self.w_pos = float(w_pos)
+            self.w_neg = float(w_neg)
+
+            if reduction not in ("mean", "sum", "none"):
+                raise ValueError(f"reduction must be 'mean', 'sum', or 'none', got {reduction}")
+            self.reduction = reduction
+
+            if enforce_gap and not (self.m_pos > self.m_neg):
+                raise ValueError(f"Need m_pos > m_neg. Got m_pos={self.m_pos}, m_neg={self.m_neg}")
+
         def forward(self, z1: torch.Tensor, z2: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
             y = y.float()
-    
             z1 = F.normalize(z1, dim=1)
             z2 = F.normalize(z2, dim=1)
             c = (z1 * z2).sum(dim=1)  # cosine similarity
-    
-            pos_loss = y * F.relu(self.m_pos - c).pow(2)
-            neg_loss = (1.0 - y) * F.relu(c - self.m_neg).pow(2)
-    
-            return (pos_loss + neg_loss).mean()
+
+            pos_loss = F.relu(self.m_pos - c).pow(2)
+            neg_loss = F.relu(c - self.m_neg).pow(2)
+
+            loss = self.w_pos * y * pos_loss + self.w_neg * (1.0 - y) * neg_loss
+
+            if self.reduction == "mean":
+                return loss.mean()
+            if self.reduction == "sum":
+                return loss.sum()
+            return loss
 
 
 # ============================================================
@@ -194,6 +217,9 @@ class BaseOptimizer:
             gap = float(np.random.uniform(0.04, 0.14))
             m_pos = float(min(m_neg + gap, 0.99))
 
+            w_pos = float(np.random.uniform(0.5, 2.0))
+            w_neg = float(np.exp(np.random.uniform(np.log(1.0), np.log(12.0))))
+
             samples.append({
                 "lr": lr,
                 "batch_size": batch_size,
@@ -203,7 +229,9 @@ class BaseOptimizer:
                 "weight_decay": weight_decay,
                 "m_neg": m_neg,
                 "gap": gap,       # keep for interpretability
-                "m_pos": m_pos   # explicit; ensures m_pos > m_neg
+                "m_pos": m_pos,   # explicit; ensures m_pos > m_neg
+                "w_pos": w_pos,
+                "w_neg": w_neg,
             })
 
         return samples
@@ -269,12 +297,15 @@ class BaseOptimizer:
             if not (m_pos > m_neg):
                 raise ValueError(f"Need m_pos > m_neg. Got m_pos={m_pos}, m_neg={m_neg}")
 
+            w_pos = float(params.get("w_pos", 1.0))
+            w_neg = float(params.get("w_neg", 1.0))
+
             print(
                 f"Testing params: "
                 f"LR={lr:.6f}, Batch={batch_size}, "
                 f"Hidden={hidden_dim}, OutDim={out_dim}, "
                 f"Opt={params.get('optimizer')}, WD={float(params.get('weight_decay', 0.0)):.2e}, "
-                f"m_pos={m_pos:.4f}, m_neg={m_neg:.4f}"
+                f"m_pos={m_pos:.4f}, m_neg={m_neg:.4f}, w_pos={w_pos:.3f}, w_neg={w_neg:.3f}"
             )
 
             run_tag = (
@@ -313,7 +344,9 @@ class BaseOptimizer:
 
             criterion = CosineContrastiveTwoMargin(
                 m_pos=m_pos,
-                m_neg=m_neg
+                m_neg=m_neg,
+                w_pos=w_pos,
+                w_neg=w_neg,
             )
 
             trainer = Trainer(
@@ -355,6 +388,8 @@ class BaseOptimizer:
                 # TWO-MARGIN params
                 "m_pos": m_pos,
                 "m_neg": m_neg,
+                "w_pos": w_pos,
+                "w_neg": w_neg,
 
                 # losses
                 "best_train_loss": train_metrics.get("best_train_loss"),
