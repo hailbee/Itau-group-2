@@ -89,26 +89,22 @@ def _max_fitting_font_size(
 ) -> Tuple[int, int, int, int, int]:
     """
     Find the LARGEST integer font size that fits within (allowed_w, allowed_h).
-    One line only. No truncation. No clipping.
+    One line only. No truncation. No clipping if possible.
 
     Returns (fs, w, h, x0, y0) measured at that fs.
     """
-
     min_fs = max(1, int(min_font_size))
     cap_fs = max(min_fs, int(max_font_cap))
     base_fs = max(min_fs, min(cap_fs, int(base_font_size)))
 
-    # Estimate a near-optimal size from a single measurement at base_fs
     font0 = _get_font(base_fs)
     w0, h0, _, _ = _measure_text(draw, text, font0)
 
-    # Degenerate bbox: just return min_fs
     if w0 <= 0 or h0 <= 0:
         font = _get_font(min_fs)
         w, h, x0, y0 = _measure_text(draw, text, font)
         return min_fs, w, h, x0, y0
 
-    # Allow scale > 1 (this was a key mistake before)
     scale = min(allowed_w / w0, allowed_h / h0)
     est = int(base_fs * scale)
     est = max(min_fs, min(cap_fs, est))
@@ -118,45 +114,30 @@ def _max_fitting_font_size(
         w, h, _, _ = _measure_text(draw, text, font)
         return (w <= allowed_w) and (h <= allowed_h)
 
-    # Ensure est fits (rounding can make it overflow)
     fs = est
     while fs > min_fs and not fits(fs):
         fs -= 1
 
-    # If even min_fs doesn't fit, we still return min_fs (it will clip; unavoidable with this constraint)
     if fs == min_fs and not fits(fs):
         font = _get_font(min_fs)
         w, h, x0, y0 = _measure_text(draw, text, font)
         return min_fs, w, h, x0, y0
 
-    # Find an upper bound by doubling until it overflows or hits cap
+    # Grow upper bound quickly
     lo = fs
-    hi = min(cap_fs, max(lo + 1, lo))
+    hi = min(cap_fs, lo + 1)
     while hi < cap_fs and fits(hi):
         lo = hi
         hi = min(cap_fs, hi * 2)
 
-    # Now binary search (lo fits, hi may not fit or hi==cap_fs)
+    # If we hit cap and it still fits, cap is best.
     if fits(hi):
-        lo = hi  # hi fits and is cap_fs
-
-    left = lo
-    right = hi if not fits(hi) else lo
-
-    if right == left:
-        font = _get_font(left)
+        font = _get_font(hi)
         w, h, x0, y0 = _measure_text(draw, text, font)
-        return left, w, h, x0, y0
+        return hi, w, h, x0, y0
 
-    # Ensure right is the first non-fitting size (or cap)
-    if fits(right):
-        # Shouldn't happen, but guard
-        font = _get_font(right)
-        w, h, x0, y0 = _measure_text(draw, text, font)
-        return right, w, h, x0, y0
-
-    low = left
-    high = right  # high does NOT fit
+    # Binary search: lo fits, hi does not fit
+    low, high = lo, hi
     while low + 1 < high:
         mid = (low + high) // 2
         if fits(mid):
@@ -175,25 +156,28 @@ def _max_fitting_font_size(
 def generate_glyph_image(
     text: str,
     image_size: Tuple[int, int] = (224, 224),
-    pad: int = 0,                    # FIXED: default low padding
-    min_font_size: int = 1,          # allow tiny fonts to avoid clipping
-    base_font_size: int = 120,       # starting point for the estimate
-    max_font_cap: int = 1024,        # search cap; binary search keeps this fast
-    hd_enabled: bool = True,         # FIXED: HD fallback default ON
-    hd_threshold: int = 8,           # trigger 2× when the best font at 224 is <= this
-    hd_scale: int = 2,               # quickest useful HD
+    pad: int = 4,                    # small padding helps stability
+    min_font_size: int = 1,
+    base_font_size: int = 120,
+    max_font_cap: int = 1024,
+    hd_enabled: bool = True,
+    hd_threshold: int = 10,          # trigger HD when native best font <= this
+    hd_min_scale: int = 2,           # at least 2× when HD triggers
+    hd_max_scale: int = 8,           # allow bigger upscale for tiny fonts
+    hd_target_font_px: int = 28,     # try to render so "effective" font is at least this
 ) -> Image.Image:
     """
-    Returns exactly (W,H) image (default 224x224), one line, no truncation, no clipping if possible.
+    Returns exactly (W,H) image, one line, no truncation, no clipping if possible.
 
-    HD fallback: if the best-fitting font at native resolution is very small, render at 2× and downsample.
+    Adaptive HD: if the best-fitting font at native resolution is small,
+    render at S× (2..hd_max_scale) to try to reach hd_target_font_px, then downsample.
     """
     text = unicodedata.normalize("NFC", str(text))
 
     W, H = int(image_size[0]), int(image_size[1])
     pad = int(pad)
 
-    # ----- First decide if we should use HD fallback (based on native best font size) -----
+    # Native measurement for trigger + adaptive scale selection
     tmp = Image.new("RGB", (W, H), (0, 0, 0))
     tmp_draw = ImageDraw.Draw(tmp)
     allowed_w = max(1, W - 2 * pad)
@@ -209,12 +193,11 @@ def generate_glyph_image(
         max_font_cap=max_font_cap,
     )
 
-    use_hd = bool(hd_enabled and (hd_scale >= 2) and (fs_native <= int(hd_threshold)))
+    use_hd = bool(hd_enabled and (fs_native <= int(hd_threshold)) and (hd_max_scale >= 2))
 
     if not use_hd:
         img = Image.new("RGB", (W, H), (0, 0, 0))
         draw = ImageDraw.Draw(img)
-
         fs, w, h, x0, y0 = _max_fitting_font_size(
             draw=draw,
             text=text,
@@ -224,14 +207,19 @@ def generate_glyph_image(
             min_font_size=min_font_size,
             max_font_cap=max_font_cap,
         )
-
         x = (W - w) // 2 - x0
         y = (H - h) // 2 - y0
         draw.text((x, y), text, font=_get_font(fs), fill=(255, 255, 255))
         return img
 
-    # ----- HD fallback: render at 2× (or hd_scale×), then downsample to 224 -----
-    S = int(hd_scale)
+    # Adaptive scale: aim for fs_native * S >= hd_target_font_px
+    # (clamped into [hd_min_scale, hd_max_scale])
+    target = max(1, int(hd_target_font_px))
+    denom = max(1, int(fs_native))
+    needed = int(np.ceil(target / denom))
+    S = int(max(int(hd_min_scale), needed))
+    S = int(min(int(hd_max_scale), max(2, S)))
+
     WR, HR = W * S, H * S
     pad_r = pad * S
     allowed_wr = max(1, WR - 2 * pad_r)
@@ -254,16 +242,18 @@ def generate_glyph_image(
     y_r = (HR - h_r) // 2 - y0_r
     draw_r.text((x_r, y_r), text, font=_get_font(fs_r), fill=(255, 255, 255))
 
-    # fastest decent downsample
-    return img_r.resize((W, H), resample=Image.Resampling.BILINEAR)
+    # sharper downsample
+    return img_r.resize((W, H), resample=Image.Resampling.LANCZOS)
 
 
 # -----------------------------
 # I/O helpers
 # -----------------------------
 def normalize_name(x: object, strip_com: bool) -> str:
-    s = unicodedata.normalize("NFC", str(x))
-    s = s.lstrip("-").strip()
+    # Prevent embedding "nan"/"None" as real tokens.
+    if x is None or pd.isna(x):
+        return ""
+    s = unicodedata.normalize("NFC", str(x)).strip()
     if strip_com:
         s = re.sub(r"\.com$", "", s, flags=re.IGNORECASE)
     return s
@@ -307,7 +297,9 @@ def embed_unique_names(
     max_font_cap: int,
     hd_enabled: bool,
     hd_threshold: int,
-    hd_scale: int,
+    hd_min_scale: int,
+    hd_max_scale: int,
+    hd_target_font_px: int,
     memmap_path: Optional[str] = None,
 ) -> Tuple[np.ndarray, str]:
     n = len(uniq_names)
@@ -329,12 +321,16 @@ def embed_unique_names(
             max_font_cap=max_font_cap,
             hd_enabled=hd_enabled,
             hd_threshold=hd_threshold,
-            hd_scale=hd_scale,
+            hd_min_scale=hd_min_scale,
+            hd_max_scale=hd_max_scale,
+            hd_target_font_px=hd_target_font_px,
         )
         for name in first_chunk
     ]
     first_batch = processor(images=first_imgs, return_tensors="pt")
-    first_batch = {k: v.to(device, non_blocking=True) for k, v in first_batch.items()}
+
+    non_blocking = device.type == "cuda"
+    first_batch = {k: v.to(device, non_blocking=non_blocking) for k, v in first_batch.items()}
 
     with autocast_ctx:
         out0 = model(**first_batch)
@@ -372,13 +368,15 @@ def embed_unique_names(
                     max_font_cap=max_font_cap,
                     hd_enabled=hd_enabled,
                     hd_threshold=hd_threshold,
-                    hd_scale=hd_scale,
+                    hd_min_scale=hd_min_scale,
+                    hd_max_scale=hd_max_scale,
+                    hd_target_font_px=hd_target_font_px,
                 )
                 for name in chunk
             ]
 
             batch = processor(images=imgs, return_tensors="pt")
-            batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+            batch = {k: v.to(device, non_blocking=non_blocking) for k, v in batch.items()}
 
             with autocast_ctx:
                 out = model(**batch)
@@ -402,16 +400,18 @@ def main() -> None:
     parser.add_argument("--device", default=None, help='Override device: "cuda", "cpu", or "mps"')
     parser.add_argument("--max-rows", type=int, default=None, help="Optional cap on number of rows processed (debug)")
 
-    # Rendering knobs (defaults fixed per your request)
-    parser.add_argument("--pad", type=int, default=0, help="Padding around text inside 224 canvas (DEFAULT 0)")
+    # Rendering knobs
+    parser.add_argument("--pad", type=int, default=4, help="Padding around text inside 224 canvas (DEFAULT 4)")
     parser.add_argument("--min-font-size", type=int, default=1, help="Minimum font size (DEFAULT 1)")
     parser.add_argument("--base-font-size", type=int, default=120, help="Base font size for estimating scale (DEFAULT 120)")
     parser.add_argument("--max-font-cap", type=int, default=1024, help="Max font size search cap (DEFAULT 1024)")
 
-    # HD fallback (DEFAULT ON)
+    # Adaptive HD (DEFAULT ON)
     parser.add_argument("--no-hd", action="store_true", help="Disable HD fallback")
-    parser.add_argument("--hd-threshold", type=int, default=8, help="Use HD fallback if best native font <= this (DEFAULT 8)")
-    parser.add_argument("--hd-scale", type=int, default=2, help="HD render scale factor (DEFAULT 2)")
+    parser.add_argument("--hd-threshold", type=int, default=10, help="Use HD if best native font <= this (DEFAULT 10)")
+    parser.add_argument("--hd-min-scale", type=int, default=2, help="Minimum HD scale factor (DEFAULT 2)")
+    parser.add_argument("--hd-max-scale", type=int, default=8, help="Maximum HD scale factor (DEFAULT 8)")
+    parser.add_argument("--hd-target-font-px", type=int, default=28, help="Try to render with at least this font px in HD (DEFAULT 28)")
 
     # .com stripping
     parser.add_argument("--strip-com", action="store_true", help='Force stripping trailing ".com" per row')
@@ -504,7 +504,9 @@ def main() -> None:
         max_font_cap=int(args.max_font_cap),
         hd_enabled=hd_enabled,
         hd_threshold=int(args.hd_threshold),
-        hd_scale=int(args.hd_scale),
+        hd_min_scale=int(args.hd_min_scale),
+        hd_max_scale=int(args.hd_max_scale),
+        hd_target_font_px=int(args.hd_target_font_px),
         memmap_path=args.memmap_path,
     )
     if backing_path:
