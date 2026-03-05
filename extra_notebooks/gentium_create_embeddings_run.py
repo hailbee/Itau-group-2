@@ -56,7 +56,8 @@ def heartbeat(last, every=30):
 # -----------------------------
 @lru_cache(maxsize=1)
 def _get_font_path() -> str:
-    return font_manager.findfont("DejaVu Sans", fallback_to_default=True)
+    print("Using font:", "extra_notebooks/gentium.ttf")
+    return "extra_notebooks/gentium.ttf"
 
 
 @lru_cache(maxsize=2048)
@@ -64,7 +65,7 @@ def _get_font(font_size: int) -> ImageFont.FreeTypeFont:
     try:
         return ImageFont.truetype(_get_font_path(), int(font_size))
     except Exception:
-        return ImageFont.load_default()
+        print("Not found.")
 
 
 # -----------------------------

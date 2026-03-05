@@ -1,4 +1,0 @@
-n_all_zero=0
-flags=identical,extension,punycode,non_ascii,unicode_marks_only,unicode_homoglyph,case_change_only,whitespace_change,hyphen_change,digit_change,transposition,insertion,deletion,substitution,digit_substitution
-
-(No all-zero rows.)
