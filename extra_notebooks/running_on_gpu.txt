@@ -70,7 +70,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "cousine 0.9874252855046233"
+git commit -m "gentium 0.9877025298135458"
 git push -u origin training
 
 git pull
