@@ -53,18 +53,6 @@ python -m main_edited \
   --w_pos 1.0 \
   --w_neg 1.5084936984781199
 
-  "lr": 1.6329930316442967e-05,
-  "batch_size": 64,
-  "internal_layer_size": 1024,
-  "output_dim": 768,
-  "optimizer": "adam",
-  "weight_decay": 2.2918398375698742e-06,
-  "m_neg": 0.7798193704854415,
-  "m_pos": 0.9065208215862959,
-  "gap": 0.12670145110085435,
-  "w_pos": 1.0,
-  "w_neg": 1.5084936984781199
-
 git clone --branch training --single-branch git@github.com:hailbee/Itau-group-2.git
 cd Itau-group-2
 
