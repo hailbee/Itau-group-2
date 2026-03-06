@@ -70,7 +70,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "Doulos 0.9871272419157745"
+git commit -m "Exo2 0.9845706772172433"
 git push -u origin training
 
 git pull
