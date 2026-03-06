@@ -70,7 +70,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "exo2 0.9865274664328492"
+git commit -m "Unifont 0.9832726641576826"
 git push -u origin training
 
 git pull
@@ -95,38 +95,64 @@ export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 git reset --hard HEAD
 
-
 #!/bin/bash
 #SBATCH -p mit_preemptable
 #SBATCH --gres=gpu:1
 #SBATCH -c 8
-#SBATCH --mem=256G
-#SBATCH -t 10:00:00
+#SBATCH --mem=128G
+#SBATCH -t 5:00:00
 #SBATCH -J itau_train
 #SBATCH -o logs/%x_%j.out
 #SBATCH -e logs/%x_%j.err
 
-# Fail on error
-set -e
+set -eo pipefail
 
 echo "Job started at $(date)"
 echo "Running on $(hostname)"
 
-cd ~/Itau-group-2
+cd ~/Itau-group-2 || exit 1
+pwd
 
-source ~/.bashrc
+# safer than sourcing full ~/.bashrc
+eval "$(conda shell.bash hook)"
 conda activate itau
 
+mkdir -p logs
 touch scripts/__init__.py
 touch scripts/training/__init__.py
 
-export PYTHONPATH=$(pwd)
-export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+export PYTHONPATH="$(pwd)"
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+
+NAME="Unifont"
+HP_JSON="$(pwd)/saved_models/optuna/results/best_hparams_pairwise_contrastive_pair.json"
+
+echo "Using NAME=$NAME"
+echo "Using HP_JSON=$HP_JSON"
 
 python -m main_edited \
   --mode train --optuna True \
-  --training_filepath "../Downloads/train_pairs_with_siglip_embeddings.parquet" \
-  --validate_filepath "../Downloads/validate_pairs_with_siglip_embeddings.parquet" \
-  --test_filepath "../Downloads/test_pairs_with_siglip_embeddings.parquet"
+  --training_filepath "../${NAME}/train_pairs_with_siglip_embeddings.parquet" \
+  --validate_filepath "../${NAME}/validate_pairs_with_siglip_embeddings.parquet" \
+  --test_filepath "../${NAME}/test_pairs_with_siglip_embeddings.parquet"
+
+test -f "$HP_JSON"
+
+python -m main_edited \
+  --mode train --optuna False \
+  --training_filepath "../${NAME}/train_pairs_with_siglip_embeddings.parquet" \
+  --validate_filepath "../${NAME}/validate_pairs_with_siglip_embeddings.parquet" \
+  --test_filepath "../${NAME}/test_pairs_with_siglip_embeddings.parquet" \
+  --epochs 50 \
+  --batch_size "$(python -c "import json; print(json.load(open('$HP_JSON'))['batch_size'])")" \
+  --lr "$(python -c "import json; print(json.load(open('$HP_JSON'))['lr'])")" \
+  --internal_layer_size "$(python -c "import json; print(json.load(open('$HP_JSON'))['internal_layer_size'])")" \
+  --output_dim "$(python -c "import json; print(json.load(open('$HP_JSON'))['output_dim'])")" \
+  --optimizer_name "$(python -c "import json; print(json.load(open('$HP_JSON'))['optimizer'])")" \
+  --weight_decay "$(python -c "import json; print(json.load(open('$HP_JSON'))['weight_decay'])")" \
+  --m_neg "$(python -c "import json; print(json.load(open('$HP_JSON'))['m_neg'])")" \
+  --m_pos "$(python -c "import json; print(json.load(open('$HP_JSON'))['m_pos'])")" \
+  --w_pos "$(python -c "import json; print(json.load(open('$HP_JSON'))['w_pos'])")" \
+  --w_neg "$(python -c "import json; print(json.load(open('$HP_JSON'))['w_neg'])")"
 
 echo "Job finished at $(date)"

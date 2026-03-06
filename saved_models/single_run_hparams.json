@@ -1,13 +1,13 @@
 {
-  "lr": 1.1981020281466342e-05,
-  "batch_size": 64,
-  "internal_layer_size": 512,
-  "output_dim": 768,
-  "optimizer": "adam",
-  "weight_decay": 2.4473806776167325e-06,
+  "lr": 5.105507080640726e-05,
+  "batch_size": 128,
+  "internal_layer_size": 1024,
+  "output_dim": 256,
+  "optimizer": "adamw",
+  "weight_decay": 1.4593655671586455e-06,
   "m_pos": 0.99,
-  "m_neg": 0.9420765968458845,
+  "m_neg": 0.9081008318989215,
   "w_pos": 1.0,
-  "w_neg": 2.7334847761149526,
+  "w_neg": 6.9463741941554735,
   "epochs": 50
 }
