@@ -1,13 +1,13 @@
 {
-  "lr": 5.105507080640726e-05,
-  "batch_size": 128,
-  "internal_layer_size": 1024,
-  "output_dim": 256,
-  "optimizer": "adamw",
-  "weight_decay": 1.4593655671586455e-06,
-  "m_neg": 0.9081008318989215,
+  "lr": 2.9902021154965183e-05,
+  "batch_size": 256,
+  "internal_layer_size": 768,
+  "output_dim": 768,
+  "optimizer": "adam",
+  "weight_decay": 3.3494260913450435e-06,
+  "m_neg": 0.9225854643706505,
   "m_pos": 0.99,
-  "gap": 0.10134622614374357,
+  "gap": 0.16133536212525162,
   "w_pos": 1.0,
-  "w_neg": 6.9463741941554735
+  "w_neg": 2.500502125163551
 }
