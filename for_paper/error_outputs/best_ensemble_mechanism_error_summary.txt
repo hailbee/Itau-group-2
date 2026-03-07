@@ -1,13 +1,13 @@
 total_positive_test_examples=134
-total_false_negative_test_examples=8
+total_false_negative_test_examples=4
 
 mechanism | n_positive_with_type | n_false_negative_with_type | prevalence_among_positive_pct | false_negative_rate_within_type_pct
-insertion | 63 | 7 | 47.014925 | 11.111111
-affix | 27 | 4 | 20.149254 | 14.814815
-hyphen_change | 14 | 3 | 10.447761 | 21.428571
-substitution | 52 | 1 | 38.805970 | 1.923077
-deletion | 45 | 1 | 33.582090 | 2.222222
-digit_change | 13 | 1 | 9.701493 | 7.692308
+insertion | 63 | 4 | 47.014925 | 6.349206
+affix | 27 | 3 | 20.149254 | 11.111111
+hyphen_change | 14 | 2 | 10.447761 | 14.285714
+substitution | 52 | 0 | 38.805970 | 0.000000
+deletion | 45 | 0 | 33.582090 | 0.000000
+digit_change | 13 | 0 | 9.701493 | 0.000000
 repeat_char | 10 | 0 | 7.462687 | 0.000000
 transposition | 10 | 0 | 7.462687 | 0.000000
 digit_substitution | 7 | 0 | 5.223881 | 0.000000

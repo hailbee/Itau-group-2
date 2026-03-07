@@ -883,21 +883,9 @@ def main() -> None:
     ap.add_argument("--unifont-test", required=True)
     ap.add_argument("--unifont-pt", required=True)
 
-    ap.add_argument("--libre-train", required=True)
-    ap.add_argument("--libre-test", required=True)
-    ap.add_argument("--libre-pt", required=True)
-
-    ap.add_argument("--exo2-train", required=True)
-    ap.add_argument("--exo2-test", required=True)
-    ap.add_argument("--exo2-pt", required=True)
-
-    ap.add_argument("--doulos-train", required=True)
-    ap.add_argument("--doulos-test", required=True)
-    ap.add_argument("--doulos-pt", required=True)
-
-    ap.add_argument("--cousine-train", required=True)
-    ap.add_argument("--cousine-test", required=True)
-    ap.add_argument("--cousine-pt", required=True)
+    ap.add_argument("--gentium-train", required=True)
+    ap.add_argument("--gentium-test", required=True)
+    ap.add_argument("--gentium-pt", required=True)
 
     ap.add_argument("--device", default=None, help="cuda | mps | cpu (default: auto)")
     ap.add_argument("--pt-batch-size", type=int, default=8192)
@@ -917,14 +905,8 @@ def main() -> None:
     ap.add_argument("--deja-real-prefix", default="real_emb_")
     ap.add_argument("--unifont-fraud-prefix", default="fraud_emb_")
     ap.add_argument("--unifont-real-prefix", default="real_emb_")
-    ap.add_argument("--libre-fraud-prefix", default="fraud_emb_")
-    ap.add_argument("--libre-real-prefix", default="real_emb_")
-    ap.add_argument("--exo2-fraud-prefix", default="fraud_emb_")
-    ap.add_argument("--exo2-real-prefix", default="real_emb_")
-    ap.add_argument("--doulos-fraud-prefix", default="fraud_emb_")
-    ap.add_argument("--doulos-real-prefix", default="real_emb_")
-    ap.add_argument("--cousine-fraud-prefix", default="fraud_emb_")
-    ap.add_argument("--cousine-real-prefix", default="real_emb_")
+    ap.add_argument("--gentium-fraud-prefix", default="fraud_emb_")
+    ap.add_argument("--gentium-real-prefix", default="real_emb_")
 
     ap.add_argument("--error-output-dir", default="for_paper/error_outputs")
 
@@ -955,26 +937,14 @@ def main() -> None:
     df_tr_uf = load_table(args.unifont_train)
     df_te_uf = load_table(args.unifont_test)
 
-    df_tr_li = load_table(args.libre_train)
-    df_te_li = load_table(args.libre_test)
-
-    df_tr_ex = load_table(args.exo2_train)
-    df_te_ex = load_table(args.exo2_test)
-
-    df_tr_do = load_table(args.doulos_train)
-    df_te_do = load_table(args.doulos_test)
-
-    df_tr_co = load_table(args.cousine_train)
-    df_te_co = load_table(args.cousine_test)
+    df_tr_ge = load_table(args.gentium_train)
+    df_te_ge = load_table(args.gentium_test)
 
     for df in (
         df_tr_txt, df_te_txt,
         df_tr_dj, df_te_dj,
         df_tr_uf, df_te_uf,
-        df_tr_li, df_te_li,
-        df_tr_ex, df_te_ex,
-        df_tr_do, df_te_do,
-        df_tr_co, df_te_co,
+        df_tr_ge, df_te_ge,
     ):
         if args.label_col not in df.columns:
             raise RuntimeError(f"Missing label_col={args.label_col!r} in one of the tables.")
@@ -990,29 +960,23 @@ def main() -> None:
     if (
         len(df_tr_dj) != n_tr
         or len(df_tr_uf) != n_tr
-        or len(df_tr_li) != n_tr
-        or len(df_tr_ex) != n_tr
-        or len(df_tr_do) != n_tr
-        or len(df_tr_co) != n_tr
+        or len(df_tr_ge) != n_tr
     ):
         raise RuntimeError(
             "Train row-count mismatch: "
             f"Downloads={n_tr} Deja={len(df_tr_dj)} Unifont={len(df_tr_uf)} "
-            f"Libre={len(df_tr_li)} Exo2={len(df_tr_ex)} Doulos={len(df_tr_do)} Cousine={len(df_tr_co)}"
+            f"Gentium={len(df_tr_ge)}"
         )
 
     if (
         len(df_te_dj) != n_te
         or len(df_te_uf) != n_te
-        or len(df_te_li) != n_te
-        or len(df_te_ex) != n_te
-        or len(df_te_do) != n_te
-        or len(df_te_co) != n_te
+        or len(df_te_ge) != n_te
     ):
         raise RuntimeError(
             "Test row-count mismatch: "
             f"Downloads={n_te} Deja={len(df_te_dj)} Unifont={len(df_te_uf)} "
-            f"Libre={len(df_te_li)} Exo2={len(df_te_ex)} Doulos={len(df_te_do)} Cousine={len(df_te_co)}"
+            f"Gentium={len(df_te_ge)}"
         )
 
     # Label checks
@@ -1022,10 +986,7 @@ def main() -> None:
     for name, df in [
         ("Deja train", df_tr_dj),
         ("Unifont train", df_tr_uf),
-        ("Libre train", df_tr_li),
-        ("Exo2 train", df_tr_ex),
-        ("Doulos train", df_tr_do),
-        ("Cousine train", df_tr_co),
+        ("Gentium train", df_tr_ge),
     ]:
         y = (df[args.label_col].to_numpy() == args.positive_label).astype(np.int32)
         if not np.array_equal(y_tr, y):
@@ -1034,10 +995,7 @@ def main() -> None:
     for name, df in [
         ("Deja test", df_te_dj),
         ("Unifont test", df_te_uf),
-        ("Libre test", df_te_li),
-        ("Exo2 test", df_te_ex),
-        ("Doulos test", df_te_do),
-        ("Cousine test", df_te_co),
+        ("Gentium test", df_te_ge),
     ]:
         y = (df[args.label_col].to_numpy() == args.positive_label).astype(np.int32)
         if not np.array_equal(y_te, y):
@@ -1047,10 +1005,7 @@ def main() -> None:
     proj_txt, in_dim_txt = load_golden_projector(args.downloads_pt, device=device)
     proj_dj, in_dim_dj = load_golden_projector(args.deja_pt, device=device)
     proj_uf, in_dim_uf = load_golden_projector(args.unifont_pt, device=device)
-    proj_li, in_dim_li = load_golden_projector(args.libre_pt, device=device)
-    proj_ex, in_dim_ex = load_golden_projector(args.exo2_pt, device=device)
-    proj_do, in_dim_do = load_golden_projector(args.doulos_pt, device=device)
-    proj_co, in_dim_co = load_golden_projector(args.cousine_pt, device=device)
+    proj_ge, in_dim_ge = load_golden_projector(args.gentium_pt, device=device)
 
     # Build text-side features: [text cosine, token_set_ratio, levenshtein_distance_score, partial_ratio]
     X_tr_txt, y_tr_txt = build_text_features(
@@ -1080,7 +1035,7 @@ def main() -> None:
         pt_batch_size=args.pt_batch_size,
     )
 
-    # Build image-side features: 6 cosine features using the exact image-ensemble fonts
+    # Build image-side features: 3 cosine features using the exact image-ensemble fonts
     cos_tr_dj, y_tr_dj = build_single_font_cosine(
         df=df_tr_dj,
         label_col=args.label_col,
@@ -1127,94 +1082,25 @@ def main() -> None:
         batch_size=args.pt_batch_size,
     )
 
-    cos_tr_li, y_tr_li = build_single_font_cosine(
-        df=df_tr_li,
+    cos_tr_ge, y_tr_ge = build_single_font_cosine(
+        df=df_tr_ge,
         label_col=args.label_col,
         positive_label=args.positive_label,
-        fraud_prefix=args.libre_fraud_prefix,
-        real_prefix=args.libre_real_prefix,
-        projector=proj_li,
-        projector_in_dim=in_dim_li,
+        fraud_prefix=args.gentium_fraud_prefix,
+        real_prefix=args.gentium_real_prefix,
+        projector=proj_ge,
+        projector_in_dim=in_dim_ge,
         device=device,
         batch_size=args.pt_batch_size,
     )
-    cos_te_li, y_te_li = build_single_font_cosine(
-        df=df_te_li,
+    cos_te_ge, y_te_ge = build_single_font_cosine(
+        df=df_te_ge,
         label_col=args.label_col,
         positive_label=args.positive_label,
-        fraud_prefix=args.libre_fraud_prefix,
-        real_prefix=args.libre_real_prefix,
-        projector=proj_li,
-        projector_in_dim=in_dim_li,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
-
-    cos_tr_ex, y_tr_ex = build_single_font_cosine(
-        df=df_tr_ex,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.exo2_fraud_prefix,
-        real_prefix=args.exo2_real_prefix,
-        projector=proj_ex,
-        projector_in_dim=in_dim_ex,
-        device=device,
-        batch_size=args.pt-batch_size if False else args.pt_batch_size,
-    )
-    cos_te_ex, y_te_ex = build_single_font_cosine(
-        df=df_te_ex,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.exo2_fraud_prefix,
-        real_prefix=args.exo2_real_prefix,
-        projector=proj_ex,
-        projector_in_dim=in_dim_ex,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
-
-    cos_tr_do, y_tr_do = build_single_font_cosine(
-        df=df_tr_do,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.doulos_fraud_prefix,
-        real_prefix=args.doulos_real_prefix,
-        projector=proj_do,
-        projector_in_dim=in_dim_do,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
-    cos_te_do, y_te_do = build_single_font_cosine(
-        df=df_te_do,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.doulos_fraud_prefix,
-        real_prefix=args.doulos_real_prefix,
-        projector=proj_do,
-        projector_in_dim=in_dim_do,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
-
-    cos_tr_co, y_tr_co = build_single_font_cosine(
-        df=df_tr_co,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.cousine_fraud_prefix,
-        real_prefix=args.cousine_real_prefix,
-        projector=proj_co,
-        projector_in_dim=in_dim_co,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
-    cos_te_co, y_te_co = build_single_font_cosine(
-        df=df_te_co,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.cousine_fraud_prefix,
-        real_prefix=args.cousine_real_prefix,
-        projector=proj_co,
-        projector_in_dim=in_dim_co,
+        fraud_prefix=args.gentium_fraud_prefix,
+        real_prefix=args.gentium_real_prefix,
+        projector=proj_ge,
+        projector_in_dim=in_dim_ge,
         device=device,
         batch_size=args.pt_batch_size,
     )
@@ -1224,10 +1110,7 @@ def main() -> None:
         ("text train", y_tr_txt),
         ("deja train", y_tr_dj),
         ("unifont train", y_tr_uf),
-        ("libre train", y_tr_li),
-        ("exo2 train", y_tr_ex),
-        ("doulos train", y_tr_do),
-        ("cousine train", y_tr_co),
+        ("gentium train", y_tr_ge),
     ]:
         if not np.array_equal(y_tr, y_other):
             raise RuntimeError(f"Train labels mismatch after feature extraction: {name}")
@@ -1236,25 +1119,19 @@ def main() -> None:
         ("text test", y_te_txt),
         ("deja test", y_te_dj),
         ("unifont test", y_te_uf),
-        ("libre test", y_te_li),
-        ("exo2 test", y_te_ex),
-        ("doulos test", y_te_do),
-        ("cousine test", y_te_co),
+        ("gentium test", y_te_ge),
     ]:
         if not np.array_equal(y_te, y_other):
             raise RuntimeError(f"Test labels mismatch after feature extraction: {name}")
 
     # Final ensemble feature matrix:
-    # 4 text-side features + 6 image-side cosine features
+    # 4 text-side features + 3 image-side cosine features
     X_tr = np.column_stack(
         [
             X_tr_txt,
             cos_tr_dj,
             cos_tr_uf,
-            cos_tr_li,
-            cos_tr_ex,
-            cos_tr_do,
-            cos_tr_co,
+            cos_tr_ge,
         ]
     ).astype(np.float32, copy=False)
 
@@ -1263,10 +1140,7 @@ def main() -> None:
             X_te_txt,
             cos_te_dj,
             cos_te_uf,
-            cos_te_li,
-            cos_te_ex,
-            cos_te_do,
-            cos_te_co,
+            cos_te_ge,
         ]
     ).astype(np.float32, copy=False)
 
@@ -1292,13 +1166,30 @@ def main() -> None:
         f"test_accuracy={acc:.6f} test_precision={prec:.6f} test_recall={rec:.6f}"
     )
 
-    # Error analysis
+    # Build debug test dataframe with component values
     yhat_te = (s_te >= thr_test).astype(np.int32)
 
+    df_te_debug = df_te_txt.copy().reset_index(drop=True)
+    df_te_debug["text_cosine_pt"] = X_te_txt[:, 0]
+    df_te_debug["token_set_ratio"] = X_te_txt[:, 1]
+    df_te_debug["levenshtein_distance_score"] = X_te_txt[:, 2]
+    df_te_debug["partial_ratio"] = X_te_txt[:, 3]
+
+    df_te_debug["deja_cosine_pt"] = cos_te_dj
+    df_te_debug["unifont_cosine_pt"] = cos_te_uf
+    df_te_debug["gentium_cosine_pt"] = cos_te_ge
+
+    df_te_debug["ensemble_score"] = s_te
+    df_te_debug["threshold_used"] = thr_test
+    df_te_debug["pred_label"] = yhat_te
+    df_te_debug["true_label_binary"] = y_te
+    df_te_debug["is_false_negative"] = ((y_te == 1) & (yhat_te == 0)).astype(np.int32)
+
+    # Error analysis
     os.makedirs(args.error_output_dir, exist_ok=True)
 
     df_pos, df_fn = build_positive_mechanism_tables(
-        df_test=df_te_txt,
+        df_test=df_te_debug,
         y_true=y_te,
         y_pred=yhat_te,
         fraud_col=args.fraud_col,
@@ -1309,6 +1200,8 @@ def main() -> None:
 
     summary_df = build_mechanism_error_summary(df_pos=df_pos, df_fn=df_fn)
 
+    all_test_parquet = os.path.join(args.error_output_dir, "best_ensemble_test_predictions_with_components.parquet")
+    all_test_csv = os.path.join(args.error_output_dir, "best_ensemble_test_predictions_with_components.csv")
     positives_parquet = os.path.join(args.error_output_dir, "best_ensemble_test_positives_multihot.parquet")
     fn_parquet = os.path.join(args.error_output_dir, "best_ensemble_false_negatives_multihot.parquet")
     summary_csv = os.path.join(args.error_output_dir, "best_ensemble_mechanism_error_summary.csv")
@@ -1316,6 +1209,8 @@ def main() -> None:
     scatter_png = os.path.join(args.error_output_dir, "best_ensemble_mechanism_error_scatter.png")
     bar_png = os.path.join(args.error_output_dir, "best_ensemble_mechanism_error_bar.png")
 
+    df_te_debug.to_parquet(all_test_parquet, index=False)
+    df_te_debug.to_csv(all_test_csv, index=False)
     df_pos.to_parquet(positives_parquet, index=False)
     df_fn.to_parquet(fn_parquet, index=False)
     summary_df.to_csv(summary_csv, index=False)
@@ -1329,6 +1224,8 @@ def main() -> None:
     save_grouped_bar_chart(summary_df=summary_df, out_png=bar_png)
 
     print()
+    print(f"[OK] wrote full test predictions with components parquet: {all_test_parquet}")
+    print(f"[OK] wrote full test predictions with components csv: {all_test_csv}")
     print(f"[OK] wrote positives multihot parquet: {positives_parquet}")
     print(f"[OK] wrote false-negative multihot parquet: {fn_parquet}")
     print(f"[OK] wrote mechanism summary csv: {summary_csv}")
@@ -1351,18 +1248,9 @@ python3 for_paper/best_ensemble_saved.py \
   --unifont-train   ../Unifont/train_pairs_with_siglip_embeddings.parquet \
   --unifont-test    ../Unifont/test_pairs_with_siglip_embeddings.parquet \
   --unifont-pt      ../Unifont/single_run_model.pt \
-  --libre-train     ../Libre/train_pairs_with_siglip_embeddings.parquet \
-  --libre-test      ../Libre/test_pairs_with_siglip_embeddings.parquet \
-  --libre-pt        ../Libre/single_run_model.pt \
-  --exo2-train      ../Exo2/train_pairs_with_siglip_embeddings.parquet \
-  --exo2-test       ../Exo2/test_pairs_with_siglip_embeddings.parquet \
-  --exo2-pt         ../Exo2/single_run_model.pt \
-  --doulos-train    ../Doulos/train_pairs_with_siglip_embeddings.parquet \
-  --doulos-test     ../Doulos/test_pairs_with_siglip_embeddings.parquet \
-  --doulos-pt       ../Doulos/single_run_model.pt \
-  --cousine-train   ../Cousine/train_pairs_with_siglip_embeddings.parquet \
-  --cousine-test    ../Cousine/test_pairs_with_siglip_embeddings.parquet \
-  --cousine-pt      ../Cousine/single_run_model.pt \
+  --gentium-train   ../Gentium/train_pairs_with_siglip_embeddings.parquet \
+  --gentium-test    ../Gentium/test_pairs_with_siglip_embeddings.parquet \
+  --gentium-pt      ../Gentium/single_run_model.pt \
   --model adaboost
 """
 
@@ -1377,17 +1265,8 @@ python3 for_paper/best_ensemble_saved.py \
   --unifont-train   ../Unifont/train_pairs_with_siglip_embeddings.parquet \
   --unifont-test    ../Unifont/typosquat_test_pairs_with_siglip_embeddings.parquet \
   --unifont-pt      ../Unifont/single_run_model.pt \
-  --libre-train     ../Libre/train_pairs_with_siglip_embeddings.parquet \
-  --libre-test      ../Libre/typosquat_test_pairs_with_siglip_embeddings.parquet \
-  --libre-pt        ../Libre/single_run_model.pt \
-  --exo2-train      ../Exo2/train_pairs_with_siglip_embeddings.parquet \
-  --exo2-test       ../Exo2/typosquat_test_pairs_with_siglip_embeddings.parquet \
-  --exo2-pt         ../Exo2/single_run_model.pt \
-  --doulos-train    ../Doulos/train_pairs_with_siglip_embeddings.parquet \
-  --doulos-test     ../Doulos/typosquat_test_pairs_with_siglip_embeddings.parquet \
-  --doulos-pt       ../Doulos/single_run_model.pt \
-  --cousine-train   ../Cousine/train_pairs_with_siglip_embeddings.parquet \
-  --cousine-test    ../Cousine/typosquat_test_pairs_with_siglip_embeddings.parquet \
-  --cousine-pt      ../Cousine/single_run_model.pt \
+  --gentium-train   ../Gentium/train_pairs_with_siglip_embeddings.parquet \
+  --gentium-test    ../Gentium/typosquat_test_pairs_with_siglip_embeddings.parquet \
+  --gentium-pt      ../Gentium/single_run_model.pt \
   --model adaboost
 """

@@ -45,6 +45,11 @@ python extra_notebooks/unifont_create_embeddings_run.py \
     --input ../Ref/typosquat_ref.parquet \
     --output ../Unifont/typosquat_test_pairs_with_siglip_embeddings.parquet \
     --batch-size 128
+
+python extra_notebooks/gentium_create_embeddings_run.py \
+    --input ../Ref/typosquat_ref.parquet \
+    --output ../Gentium/typosquat_test_pairs_with_siglip_embeddings.parquet \
+    --batch-size 128
 """
 
 from __future__ import annotations

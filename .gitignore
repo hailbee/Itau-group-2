@@ -23,3 +23,4 @@ text_to_image/Golden_and_Text/*.parquet
 text_to_image/evaluation/*.parquet
 for_paper/*.parquet
 for_paper/error_outputs/*.parquet
+for_paper/error_outputs/*.csv
