@@ -22,12 +22,12 @@ salloc -p mit_preemptable \
 
 salloc -p mit_preemptable \
   --gres=gpu:a100:1 \
-  -c 8 --mem=128G \
+  -c 8 --mem=256G \
   -t 02:00:00
 
 salloc -p mit_preemptable \
   --gres=gpu:1 \
-  -c 8 --mem=128G \
+  -c 8 --mem=256G \
   -t 04:00:00
 
 python -m main_edited \
@@ -70,7 +70,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "Exo2 0.9845706772172433"
+git commit -m "error analysis"
 git push -u origin training
 
 git pull
@@ -81,7 +81,7 @@ tmux attach -t gpu
 salloc -p mit_preemptable \
   --gres=gpu:1 \
   -c 8 --mem=256G \
-  -t 10:00:00
+  -t 4:00:00
 Copy node name
 Ctrl-b then d
 

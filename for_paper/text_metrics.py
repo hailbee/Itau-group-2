@@ -245,13 +245,6 @@ def main() -> None:
         args.label_col,
         args.positive_label,
     )
-    X_va, y_va, _ = build_features(
-        df_va,
-        args.fraud_col,
-        args.real_col,
-        args.label_col,
-        args.positive_label,
-    )
     X_te, y_te, _ = build_features(
         df_te,
         args.fraud_col,
@@ -265,7 +258,6 @@ def main() -> None:
     # -----------------------------
     rows: List[SingleFeatureRow] = []
     for j, name in enumerate(feat_names):
-        s_va = X_va[:, j].astype(np.float64)
         s_te = X_te[:, j].astype(np.float64)
 
         test_auroc = float(roc_auc_score(y_te, s_te))
@@ -292,7 +284,7 @@ def main() -> None:
     # -----------------------------
     # Ensemble (always prints)
     #
-    # If classifier: train on train, score on test with predict_proba
+    # Train on train, score on test with predict_proba
     # Threshold for accuracy is test-Youden (paper style)
     # -----------------------------
     if args.model == "none":
@@ -302,7 +294,6 @@ def main() -> None:
     clf = make_model(args.model, args.seed)
     clf.fit(X_tr, y_tr)
 
-    s_va = model_scores(clf, X_va).astype(np.float64)
     s_te = model_scores(clf, X_te).astype(np.float64)
 
     test_auroc = float(roc_auc_score(y_te, s_te))

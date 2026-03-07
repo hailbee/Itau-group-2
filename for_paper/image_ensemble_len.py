@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
-from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
@@ -38,7 +39,7 @@ def _sorted_prefixed_cols(df: pd.DataFrame, prefix: str) -> List[str]:
         raise KeyError(f"No columns found with prefix '{prefix}'")
 
     def key_fn(c: str) -> int:
-        suf = c[len(prefix) :]
+        suf = c[len(prefix):]
         if re.fullmatch(r"-?\d+", suf):
             return int(suf)
         return 10**18
@@ -92,10 +93,8 @@ def load_checkpoint_safely(path: str, map_location: torch.device) -> Any:
 
 def extract_state_dict(ckpt: Any) -> Dict[str, torch.Tensor]:
     if isinstance(ckpt, dict):
-        # raw state dict
         if ckpt and all(isinstance(v, torch.Tensor) for v in ckpt.values()):
             return ckpt
-        # common wrappers
         for k in ("model_state", "state_dict", "model_state_dict", "model", "net"):
             if k in ckpt and isinstance(ckpt[k], dict) and ckpt[k]:
                 sd = ckpt[k]
@@ -114,7 +113,7 @@ def strip_known_prefixes(sd: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]
             changed = False
             for p in prefixes:
                 if kk.startswith(p):
-                    kk = kk[len(p) :]
+                    kk = kk[len(p):]
                     changed = True
         out[kk] = v
     return out
@@ -262,16 +261,174 @@ def model_scores(model: object, X: np.ndarray) -> np.ndarray:
 
 
 # =========================
-# Tables
+# Length analysis
 # =========================
-@dataclass
-class SingleFeatureRow:
-    feature: str
-    test_auroc: float
-    youden_thr_test: float
-    test_accuracy: float
-    test_precision: float
-    test_recall: float
+def build_length_analysis_df(
+    df_test: pd.DataFrame,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    fraud_col: str,
+    real_col: str,
+) -> pd.DataFrame:
+    fraud_names = df_test[fraud_col].fillna("").astype(str)
+    real_names = df_test[real_col].fillna("").astype(str)
+
+    fraud_len = fraud_names.str.len().astype(float)
+    real_len = real_names.str.len().astype(float)
+    avg_len = (fraud_len + real_len) / 2.0
+
+    out = df_test[[fraud_col, real_col]].copy().reset_index(drop=True)
+    out["fraud_len"] = fraud_len.to_numpy()
+    out["real_len"] = real_len.to_numpy()
+    out["avg_len"] = avg_len.to_numpy()
+    out["y_true"] = y_true.astype(np.int32)
+    out["y_pred"] = y_pred.astype(np.int32)
+    out["is_correct"] = (y_true == y_pred).astype(np.int32)
+    out["is_positive"] = (y_true == 1).astype(np.int32)
+    out["is_negative"] = (y_true == 0).astype(np.int32)
+    return out
+
+
+def summarize_length_accuracy(length_df: pd.DataFrame, max_bins: int = 12) -> pd.DataFrame:
+    work = length_df.copy()
+
+    unique_lengths = np.sort(work["avg_len"].dropna().unique())
+    n_unique = int(len(unique_lengths))
+
+    if n_unique == 0:
+        raise RuntimeError("No valid average string lengths found.")
+
+    if n_unique <= max_bins:
+        work["length_bucket"] = work["avg_len"]
+        grouped = work.groupby("length_bucket", as_index=False)
+        summary = grouped.agg(
+            length_mean=("avg_len", "mean"),
+            length_min=("avg_len", "min"),
+            length_max=("avg_len", "max"),
+            n_samples=("is_correct", "size"),
+            n_correct=("is_correct", "sum"),
+            n_positive=("is_positive", "sum"),
+            n_negative=("is_negative", "sum"),
+        )
+    else:
+        q = min(max_bins, n_unique)
+        work["length_bucket"] = pd.qcut(work["avg_len"], q=q, duplicates="drop")
+        grouped = work.groupby("length_bucket", observed=False)
+        summary = grouped.agg(
+            length_mean=("avg_len", "mean"),
+            length_min=("avg_len", "min"),
+            length_max=("avg_len", "max"),
+            n_samples=("is_correct", "size"),
+            n_correct=("is_correct", "sum"),
+            n_positive=("is_positive", "sum"),
+            n_negative=("is_negative", "sum"),
+        ).reset_index(drop=True)
+
+    work_pos = work.loc[work["is_positive"] == 1].copy()
+    work_neg = work.loc[work["is_negative"] == 1].copy()
+
+    if n_unique <= max_bins:
+        pos_summary = (
+            work_pos.groupby("length_bucket", as_index=False)["is_correct"]
+            .agg(n_positive_correct="sum")
+        )
+        neg_summary = (
+            work_neg.groupby("length_bucket", as_index=False)["is_correct"]
+            .agg(n_negative_correct="sum")
+        )
+        summary = summary.merge(pos_summary, on="length_bucket", how="left")
+        summary = summary.merge(neg_summary, on="length_bucket", how="left")
+    else:
+        if len(work_pos) > 0:
+            pos_summary = (
+                work_pos.groupby("length_bucket", observed=False)["is_correct"]
+                .agg(n_positive_correct="sum")
+                .reset_index(drop=True)
+            )
+            summary["n_positive_correct"] = pos_summary["n_positive_correct"]
+        else:
+            summary["n_positive_correct"] = 0
+
+        if len(work_neg) > 0:
+            neg_summary = (
+                work_neg.groupby("length_bucket", observed=False)["is_correct"]
+                .agg(n_negative_correct="sum")
+                .reset_index(drop=True)
+            )
+            summary["n_negative_correct"] = neg_summary["n_negative_correct"]
+        else:
+            summary["n_negative_correct"] = 0
+
+    summary["n_positive_correct"] = summary["n_positive_correct"].fillna(0).astype(int)
+    summary["n_negative_correct"] = summary["n_negative_correct"].fillna(0).astype(int)
+
+    summary["pct_correct"] = 100.0 * summary["n_correct"] / summary["n_samples"]
+    summary["positive_recall_pct"] = np.where(
+        summary["n_positive"] > 0,
+        100.0 * summary["n_positive_correct"] / summary["n_positive"],
+        np.nan,
+    )
+    summary["negative_accuracy_pct"] = np.where(
+        summary["n_negative"] > 0,
+        100.0 * summary["n_negative_correct"] / summary["n_negative"],
+        np.nan,
+    )
+
+    summary = summary.sort_values("length_mean").reset_index(drop=True)
+    return summary
+
+
+def save_length_curve_plot(summary_df: pd.DataFrame, out_png: str) -> None:
+    x = summary_df["length_mean"].to_numpy(dtype=float)
+    y = summary_df["pct_correct"].to_numpy(dtype=float)
+    counts = summary_df["n_samples"].to_numpy(dtype=float)
+
+    size_scale = 30.0
+    sizes = size_scale + 8.0 * np.sqrt(np.maximum(counts, 1.0))
+
+    fig, ax1 = plt.subplots(figsize=(12, 7))
+    ax2 = ax1.twinx()
+
+    ax2.bar(x, counts, width=np.maximum(0.4, 0.08 * np.ptp(x) / max(len(x), 1)) if len(x) > 1 else 0.4, alpha=0.25)
+    ax1.plot(x, y, marker="o")
+    ax1.scatter(x, y, s=sizes)
+
+    for xi, yi, n in zip(x, y, counts.astype(int)):
+        ax1.annotate(str(n), (xi, yi), xytext=(0, 8), textcoords="offset points", ha="center", fontsize=8)
+
+    ax1.set_xlabel("Average string length")
+    ax1.set_ylabel("% correct")
+    ax2.set_ylabel("Number of test samples")
+    ax1.set_title("Image ensemble accuracy vs average string length")
+    ax1.set_ylim(bottom=0, top=max(100, float(np.nanmax(y)) + 5.0 if len(y) else 100))
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
+def save_length_bar_plot(summary_df: pd.DataFrame, out_png: str) -> None:
+    labels = [
+        f"{row.length_min:.1f}-{row.length_max:.1f}"
+        if row.length_min != row.length_max
+        else f"{row.length_mean:.1f}"
+        for row in summary_df.itertuples(index=False)
+    ]
+    y = summary_df["pct_correct"].to_numpy(dtype=float)
+
+    plt.figure(figsize=(14, 7))
+    x = np.arange(len(labels))
+    plt.bar(x, y)
+    plt.xticks(x, labels, rotation=45, ha="right")
+    plt.ylabel("% correct")
+    plt.xlabel("Average string length bucket")
+    plt.title("Image ensemble % correct by average string length bucket")
+
+    for xi, yi in zip(x, y):
+        plt.annotate(f"{yi:.1f}", (xi, yi), xytext=(0, 5), textcoords="offset points", ha="center", fontsize=8)
+
+    plt.tight_layout()
+    plt.savefig(out_png, dpi=200, bbox_inches="tight")
+    plt.close()
 
 
 # =========================
@@ -280,12 +437,6 @@ class SingleFeatureRow:
 def main() -> None:
     ap = argparse.ArgumentParser()
 
-    # Downloads (always included)
-    ap.add_argument("--downloads-train", required=True)
-    ap.add_argument("--downloads-test", required=True)
-    ap.add_argument("--downloads-pt", required=True)
-
-    # Fonts (6)
     ap.add_argument("--deja-train", required=True)
     ap.add_argument("--deja-test", required=True)
     ap.add_argument("--deja-pt", required=True)
@@ -316,14 +467,11 @@ def main() -> None:
     ap.add_argument("--model", default="adaboost", choices=["adaboost", "gboost", "none"])
     ap.add_argument("--seed", type=int, default=0)
 
+    ap.add_argument("--fraud-col", default="fraudulent_name")
+    ap.add_argument("--real-col", default="real_name")
     ap.add_argument("--label-col", default="label")
     ap.add_argument("--positive-label", type=int, default=1)
 
-    # Prefixes (Downloads differs)
-    ap.add_argument("--downloads-fraud-prefix", default="fraud_txt_emb_")
-    ap.add_argument("--downloads-real-prefix", default="real_txt_emb_")
-
-    # Font folders (default)
     ap.add_argument("--deja-fraud-prefix", default="fraud_emb_")
     ap.add_argument("--deja-real-prefix", default="real_emb_")
     ap.add_argument("--unifont-fraud-prefix", default="fraud_emb_")
@@ -336,6 +484,9 @@ def main() -> None:
     ap.add_argument("--doulos-real-prefix", default="real_emb_")
     ap.add_argument("--cousine-fraud-prefix", default="fraud_emb_")
     ap.add_argument("--cousine-real-prefix", default="real_emb_")
+
+    ap.add_argument("--output-dir", default="for_paper/error_outputs")
+    ap.add_argument("--max-length-bins", type=int, default=12)
 
     args = ap.parse_args()
 
@@ -351,9 +502,6 @@ def main() -> None:
         device = torch.device(args.device)
 
     # Load data
-    df_tr_dl = load_table(args.downloads_train)
-    df_te_dl = load_table(args.downloads_test)
-
     df_tr_dj = load_table(args.deja_train)
     df_te_dj = load_table(args.deja_test)
 
@@ -372,13 +520,12 @@ def main() -> None:
     df_tr_co = load_table(args.cousine_train)
     df_te_co = load_table(args.cousine_test)
 
-    # Alignment checks (row-wise feature stacking)
-    n_tr = len(df_tr_dl)
-    n_te = len(df_te_dl)
+    # Alignment checks
+    n_tr = len(df_tr_dj)
+    n_te = len(df_te_dj)
 
     if (
-        len(df_tr_dj) != n_tr
-        or len(df_tr_uf) != n_tr
+        len(df_tr_uf) != n_tr
         or len(df_tr_li) != n_tr
         or len(df_tr_ex) != n_tr
         or len(df_tr_do) != n_tr
@@ -386,13 +533,12 @@ def main() -> None:
     ):
         raise RuntimeError(
             "Train row-count mismatch: "
-            f"Downloads={n_tr} Deja={len(df_tr_dj)} Unifont={len(df_tr_uf)} Libre={len(df_tr_li)} "
-            f"Exo2={len(df_tr_ex)} Doulos={len(df_tr_do)} Cousine={len(df_tr_co)}"
+            f"Deja={n_tr} Unifont={len(df_tr_uf)} Libre={len(df_tr_li)} Exo2={len(df_tr_ex)} "
+            f"Doulos={len(df_tr_do)} Cousine={len(df_tr_co)}"
         )
 
     if (
-        len(df_te_dj) != n_te
-        or len(df_te_uf) != n_te
+        len(df_te_uf) != n_te
         or len(df_te_li) != n_te
         or len(df_te_ex) != n_te
         or len(df_te_do) != n_te
@@ -400,35 +546,23 @@ def main() -> None:
     ):
         raise RuntimeError(
             "Test row-count mismatch: "
-            f"Downloads={n_te} Deja={len(df_te_dj)} Unifont={len(df_te_uf)} Libre={len(df_te_li)} "
-            f"Exo2={len(df_te_ex)} Doulos={len(df_te_do)} Cousine={len(df_te_co)}"
+            f"Deja={n_te} Unifont={len(df_te_uf)} Libre={len(df_te_li)} Exo2={len(df_te_ex)} "
+            f"Doulos={len(df_te_do)} Cousine={len(df_te_co)}"
         )
 
-    for df in (
-        df_tr_dl,
-        df_te_dl,
-        df_tr_dj,
-        df_te_dj,
-        df_tr_uf,
-        df_te_uf,
-        df_tr_li,
-        df_te_li,
-        df_tr_ex,
-        df_te_ex,
-        df_tr_do,
-        df_te_do,
-        df_tr_co,
-        df_te_co,
-    ):
+    for df in (df_tr_dj, df_te_dj, df_tr_uf, df_te_uf, df_tr_li, df_te_li, df_tr_ex, df_te_ex, df_tr_do, df_te_do, df_tr_co, df_te_co):
         if args.label_col not in df.columns:
             raise RuntimeError(f"Missing label_col={args.label_col!r} in one of the tables.")
+        if args.fraud_col not in df.columns:
+            raise RuntimeError(f"Missing fraud_col={args.fraud_col!r} in one of the tables.")
+        if args.real_col not in df.columns:
+            raise RuntimeError(f"Missing real_col={args.real_col!r} in one of the tables.")
 
-    # Ensure labels match exactly across all tables (same row order)
-    y_tr = (df_tr_dl[args.label_col].to_numpy() == args.positive_label).astype(np.int32)
-    y_te = (df_te_dl[args.label_col].to_numpy() == args.positive_label).astype(np.int32)
+    # Ensure labels match exactly across all tables
+    y_tr = (df_tr_dj[args.label_col].to_numpy() == args.positive_label).astype(np.int32)
+    y_te = (df_te_dj[args.label_col].to_numpy() == args.positive_label).astype(np.int32)
 
     for name, df in [
-        ("Deja train", df_tr_dj),
         ("Unifont train", df_tr_uf),
         ("Libre train", df_tr_li),
         ("Exo2 train", df_tr_ex),
@@ -437,10 +571,9 @@ def main() -> None:
     ]:
         y = (df[args.label_col].to_numpy() == args.positive_label).astype(np.int32)
         if not np.array_equal(y_tr, y):
-            raise RuntimeError(f"Train labels mismatch: Downloads vs {name} (row order / dataset mismatch).")
+            raise RuntimeError(f"Train labels mismatch: Deja vs {name} (row order / dataset mismatch).")
 
     for name, df in [
-        ("Deja test", df_te_dj),
         ("Unifont test", df_te_uf),
         ("Libre test", df_te_li),
         ("Exo2 test", df_te_ex),
@@ -449,10 +582,9 @@ def main() -> None:
     ]:
         y = (df[args.label_col].to_numpy() == args.positive_label).astype(np.int32)
         if not np.array_equal(y_te, y):
-            raise RuntimeError(f"Test labels mismatch: Downloads vs {name} (row order / dataset mismatch).")
+            raise RuntimeError(f"Test labels mismatch: Deja vs {name} (row order / dataset mismatch).")
 
-    # Load projectors (no switching / no overlap)
-    proj_dl, in_dim_dl = load_golden_projector(args.downloads_pt, device=device)
+    # Load projectors
     proj_dj, in_dim_dj = load_golden_projector(args.deja_pt, device=device)
     proj_uf, in_dim_uf = load_golden_projector(args.unifont_pt, device=device)
     proj_li, in_dim_li = load_golden_projector(args.libre_pt, device=device)
@@ -460,30 +592,7 @@ def main() -> None:
     proj_do, in_dim_do = load_golden_projector(args.doulos_pt, device=device)
     proj_co, in_dim_co = load_golden_projector(args.cousine_pt, device=device)
 
-    # Compute features (one cosine per source)
-    cos_tr_dl, _ = cosine_feature_from_dataset(
-        df=df_tr_dl,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.downloads_fraud_prefix,
-        real_prefix=args.downloads_real_prefix,
-        projector=proj_dl,
-        projector_in_dim=in_dim_dl,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
-    cos_te_dl, _ = cosine_feature_from_dataset(
-        df=df_te_dl,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.downloads_fraud_prefix,
-        real_prefix=args.downloads_real_prefix,
-        projector=proj_dl,
-        projector_in_dim=in_dim_dl,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
-
+    # Compute features
     cos_tr_dj, _ = cosine_feature_from_dataset(
         df=df_tr_dj,
         label_col=args.label_col,
@@ -622,55 +731,14 @@ def main() -> None:
         batch_size=args.pt_batch_size,
     )
 
-    # Build feature matrices (7 cosine similarities: Downloads + 6 fonts)
-    X_tr = np.stack([cos_tr_dl, cos_tr_dj, cos_tr_uf, cos_tr_li, cos_tr_ex, cos_tr_do, cos_tr_co], axis=1).astype(
+    # Build feature matrices
+    X_tr = np.stack([cos_tr_dj, cos_tr_uf, cos_tr_li, cos_tr_ex, cos_tr_do, cos_tr_co], axis=1).astype(
         np.float32, copy=False
     )
-    X_te = np.stack([cos_te_dl, cos_te_dj, cos_te_uf, cos_te_li, cos_te_ex, cos_te_do, cos_te_co], axis=1).astype(
+    X_te = np.stack([cos_te_dj, cos_te_uf, cos_te_li, cos_te_ex, cos_te_do, cos_te_co], axis=1).astype(
         np.float32, copy=False
     )
-    feat_names = [
-        "cosine_downloads",
-        "cosine_deja",
-        "cosine_unifont",
-        "cosine_libre",
-        "cosine_exo2",
-        "cosine_doulos",
-        "cosine_cousine",
-    ]
 
-    """
-    # -----------------------------
-    # Single-feature (test-Youden, paper style)
-    # -----------------------------
-    rows: List[SingleFeatureRow] = []
-    for j, name in enumerate(feat_names):
-        s_te = X_te[:, j].astype(np.float64)
-        test_auroc = float(roc_auc_score(y_te, s_te))
-        thr_test = youden_threshold(y_te, s_te)  # Youden is on TEST (do not change)
-        acc, prec, rec = metrics_at_threshold(y_te, s_te, thr_test)
-
-        rows.append(
-            SingleFeatureRow(
-                feature=name,
-                test_auroc=test_auroc,
-                youden_thr_test=float(thr_test),
-                test_accuracy=acc,
-                test_precision=prec,
-                test_recall=rec,
-            )
-        )
-
-    single_df = pd.DataFrame([r.__dict__ for r in rows]).sort_values("test_auroc", ascending=False)
-    pd.set_option("display.width", 220)
-    pd.set_option("display.max_columns", 50)
-    print(single_df.to_string(index=False, float_format=lambda x: f"{x:.6f}"))
-    """
-
-    # -----------------------------
-    # Ensemble (7 cosine features)
-    # Threshold for accuracy is test-Youden (paper style)
-    # -----------------------------
     if args.model == "none":
         print("Model needed!")
         return
@@ -684,42 +752,68 @@ def main() -> None:
     s_te = model_scores(clf, X_te).astype(np.float64)
     test_auroc = float(roc_auc_score(y_te, s_te))
 
-    thr_test = youden_threshold(y_te, s_te)  # Youden is on TEST (do not change)
+    thr_test = youden_threshold(y_te, s_te)
     acc, prec, rec = metrics_at_threshold(y_te, s_te, thr_test)
 
-    print()
     print("Ensemble")
     print(
         f"model={args.model} test_auroc={test_auroc:.6f} youden_thr_test={thr_test:.6f} "
         f"test_accuracy={acc:.6f} test_precision={prec:.6f} test_recall={rec:.6f}"
     )
 
+    yhat_te = (s_te >= thr_test).astype(np.int32)
+
+    # Use Deja test table as the row-aligned base table for names/labels.
+    length_df = build_length_analysis_df(
+        df_test=df_te_dj,
+        y_true=y_te,
+        y_pred=yhat_te,
+        fraud_col=args.fraud_col,
+        real_col=args.real_col,
+    )
+    summary_df = summarize_length_accuracy(length_df, max_bins=args.max_length_bins)
+
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    sample_csv = os.path.join(args.output_dir, "image_ensemble_length_samples.csv")
+    summary_csv = os.path.join(args.output_dir, "image_ensemble_length_summary.csv")
+    curve_png = os.path.join(args.output_dir, "image_ensemble_length_accuracy_curve.png")
+    bar_png = os.path.join(args.output_dir, "image_ensemble_length_accuracy_bar.png")
+
+    length_df.to_csv(sample_csv, index=False)
+    summary_df.to_csv(summary_csv, index=False)
+    save_length_curve_plot(summary_df, curve_png)
+    save_length_bar_plot(summary_df, bar_png)
+
+    print()
+    print(f"[OK] wrote per-sample length csv: {sample_csv}")
+    print(f"[OK] wrote length summary csv: {summary_csv}")
+    print(f"[OK] wrote length curve plot: {curve_png}")
+    print(f"[OK] wrote length bar plot: {bar_png}")
+
 
 if __name__ == "__main__":
     main()
 
 """
-python3 for_paper/large_embs.py \
-  --downloads-train ../Downloads/text_train.parquet \
-  --downloads-test  ../Downloads/text_test.parquet \
-  --downloads-pt    ../Downloads/single_run_model.pt \
-  --deja-train      ../Deja/train_pairs_with_siglip_embeddings.parquet \
-  --deja-test       ../Deja/test_pairs_with_siglip_embeddings.parquet \
-  --deja-pt         ../Deja/single_run_model.pt \
-  --unifont-train   ../Unifont/train_pairs_with_siglip_embeddings.parquet \
-  --unifont-test    ../Unifont/test_pairs_with_siglip_embeddings.parquet \
-  --unifont-pt      ../Unifont/single_run_model.pt \
-  --libre-train     ../Libre/train_pairs_with_siglip_embeddings.parquet \
-  --libre-test      ../Libre/test_pairs_with_siglip_embeddings.parquet \
-  --libre-pt        ../Libre/single_run_model.pt \
-  --exo2-train      ../Exo2/train_pairs_with_siglip_embeddings.parquet \
-  --exo2-test       ../Exo2/test_pairs_with_siglip_embeddings.parquet \
-  --exo2-pt         ../Exo2/single_run_model.pt \
-  --doulos-train    ../Doulos/train_pairs_with_siglip_embeddings.parquet \
-  --doulos-test     ../Doulos/test_pairs_with_siglip_embeddings.parquet \
-  --doulos-pt       ../Doulos/single_run_model.pt \
-  --cousine-train   ../Cousine/train_pairs_with_siglip_embeddings.parquet \
-  --cousine-test    ../Cousine/test_pairs_with_siglip_embeddings.parquet \
-  --cousine-pt      ../Cousine/single_run_model.pt \
+python3 for_paper/image_ensemble_len.py \
+  --deja-train    ../Deja/train_pairs_with_siglip_embeddings.parquet \
+  --deja-test     ../Deja/test_pairs_with_siglip_embeddings.parquet \
+  --deja-pt       ../Deja/single_run_model.pt \
+  --unifont-train ../Unifont/train_pairs_with_siglip_embeddings.parquet \
+  --unifont-test  ../Unifont/test_pairs_with_siglip_embeddings.parquet \
+  --unifont-pt    ../Unifont/single_run_model.pt \
+  --libre-train   ../Libre/train_pairs_with_siglip_embeddings.parquet \
+  --libre-test    ../Libre/test_pairs_with_siglip_embeddings.parquet \
+  --libre-pt      ../Libre/single_run_model.pt \
+  --exo2-train    ../Exo2/train_pairs_with_siglip_embeddings.parquet \
+  --exo2-test     ../Exo2/test_pairs_with_siglip_embeddings.parquet \
+  --exo2-pt       ../Exo2/single_run_model.pt \
+  --doulos-train  ../Doulos/train_pairs_with_siglip_embeddings.parquet \
+  --doulos-test   ../Doulos/test_pairs_with_siglip_embeddings.parquet \
+  --doulos-pt     ../Doulos/single_run_model.pt \
+  --cousine-train ../Cousine/train_pairs_with_siglip_embeddings.parquet \
+  --cousine-test  ../Cousine/test_pairs_with_siglip_embeddings.parquet \
+  --cousine-pt    ../Cousine/single_run_model.pt \
   --model adaboost
 """
