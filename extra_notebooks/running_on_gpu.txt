@@ -70,7 +70,7 @@ cd Itau-group-2
 git branch --show-current
 git status
 git add -A
-git commit -m "error analysis"
+git commit -m "base_ensemble and deja_ensemble experiment"
 git push -u origin training
 
 git pull
