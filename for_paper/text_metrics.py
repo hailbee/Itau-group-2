@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -308,6 +309,24 @@ def main() -> None:
         f"test_accuracy={acc:.6f} test_precision={prec:.6f} test_recall={rec:.6f}"
     )
 
+    false_negative_mask = (y_te == 1) & (s_te < thr_test)
+    df_fn = df_te.loc[false_negative_mask].copy().reset_index(drop=True)
+    df_fn["score"] = s_te[false_negative_mask]
+    df_fn["pred_label"] = 0
+    df_fn["is_false_negative"] = 1
+
+    output_dir = "for_paper/error_outputs"
+    os.makedirs(output_dir, exist_ok=True)
+
+    fn_parquet = os.path.join(output_dir, "text_metrics_false_negatives.parquet")
+    fn_csv = os.path.join(output_dir, "text_metrics_false_negatives.csv")
+
+    df_fn.to_parquet(fn_parquet, index=False)
+    df_fn.to_csv(fn_csv, index=False)
+
+    print(f"[OK] wrote false-negative parquet: {fn_parquet}")
+    print(f"[OK] wrote false-negative csv: {fn_csv}")
+
 
 if __name__ == "__main__":
     main()
@@ -316,5 +335,12 @@ if __name__ == "__main__":
 python3 for_paper/text_metrics.py \
   --train ../Downloads/text_train.parquet \
   --test  ../Downloads/text_test.parquet \
+  --model adaboost
+"""
+
+"""
+python3 for_paper/text_metrics.py \
+  --train ../Downloads/text_train.parquet \
+  --test  ../Ref/typosquat_ref.parquet \
   --model adaboost
 """

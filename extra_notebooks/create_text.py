@@ -8,9 +8,17 @@ Write plain backbone text embeddings (SigLIP/CLIP/CoCa/FLAVA) into a parquet/CSV
 - Optional "text-only output" file (overwrites by default).
 
 Example:
-python3 create_siglip_text_only_embeddings.py \
+python3 create_text.py \
   --input ../Downloads/train_pairs_with_siglip_embeddings.parquet \
   --text-only-output ../Downloads/text_train.parquet \
+  --include-keys fraudulent_name real_name label \
+  --backbone siglip \
+  --batch-size 256 \
+  --overwrite-cols
+  
+python3 extra_notebooks/create_text.py \
+  --input ../Ref/typosquat_ref.parquet \
+  --text-only-output ../Downloads/typosquat_text_test.parquet \
   --include-keys fraudulent_name real_name label \
   --backbone siglip \
   --batch-size 256 \

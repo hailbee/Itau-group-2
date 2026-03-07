@@ -1,0 +1,9 @@
+fraudulent_name,real_name,label,score,pred_label,is_false_negative
+beautifulsoup-requests,beautifulsoup4,1,0.11920291930437088,0,1
+fairsequence,fairseq,1,0.11920291930437088,0,1
+nmap-python,python-nmap,1,0.11920291930437088,0,1
+requests-darwin-lite,requests,1,0.11920291930437088,0,1
+pillow-simd,pillow,1,0.11920291930437088,0,1
+torchtriton,triton,1,0.11920291930437088,0,1
+node-mongoose-orm,mongoose,1,0.11920291930437088,0,1
+import-mysql,mysql-import,1,0.11920291930437088,0,1

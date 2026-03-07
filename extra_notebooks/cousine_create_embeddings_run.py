@@ -15,6 +15,36 @@ Example:
     --input ../Ref/train_pairs_ref.parquet \
     --output ../Downloads/train_pairs_with_siglip_embeddings.parquet \
     --batch-size 128
+
+python extra_notebooks/cousine_create_embeddings_run.py \
+    --input ../Ref/typosquat_ref.parquet \
+    --output ../Cousine/typosquat_test_pairs_with_siglip_embeddings.parquet \
+    --batch-size 128
+    
+python extra_notebooks/deja_create_embeddings_run.py \
+    --input ../Ref/typosquat_ref.parquet \
+    --output ../Deja/typosquat_test_pairs_with_siglip_embeddings.parquet \
+    --batch-size 128
+    
+python extra_notebooks/doulos_create_embeddings_run.py \
+    --input ../Ref/typosquat_ref.parquet \
+    --output ../Doulos/typosquat_test_pairs_with_siglip_embeddings.parquet \
+    --batch-size 128
+    
+python extra_notebooks/libre_create_embeddings_run.py \
+    --input ../Ref/typosquat_ref.parquet \
+    --output ../Libre/typosquat_test_pairs_with_siglip_embeddings.parquet \
+    --batch-size 128
+    
+python extra_notebooks/exo2_create_embeddings_run.py \
+    --input ../Ref/typosquat_ref.parquet \
+    --output ../Exo2/typosquat_test_pairs_with_siglip_embeddings.parquet \
+    --batch-size 128
+
+python extra_notebooks/unifont_create_embeddings_run.py \
+    --input ../Ref/typosquat_ref.parquet \
+    --output ../Unifont/typosquat_test_pairs_with_siglip_embeddings.parquet \
+    --batch-size 128
 """
 
 from __future__ import annotations

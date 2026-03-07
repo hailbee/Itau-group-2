@@ -1,0 +1,22 @@
+total_positive_test_examples=134
+total_false_negative_test_examples=8
+
+mechanism | n_positive_with_type | n_false_negative_with_type | prevalence_among_positive_pct | false_negative_rate_within_type_pct
+insertion | 63 | 7 | 47.014925 | 11.111111
+affix | 27 | 4 | 20.149254 | 14.814815
+hyphen_change | 14 | 3 | 10.447761 | 21.428571
+substitution | 52 | 1 | 38.805970 | 1.923077
+deletion | 45 | 1 | 33.582090 | 2.222222
+digit_change | 13 | 1 | 9.701493 | 7.692308
+repeat_char | 10 | 0 | 7.462687 | 0.000000
+transposition | 10 | 0 | 7.462687 | 0.000000
+digit_substitution | 7 | 0 | 5.223881 | 0.000000
+separator_change | 6 | 0 | 4.477612 | 0.000000
+leet_pair | 3 | 0 | 2.238806 | 0.000000
+numeric_affix | 2 | 0 | 1.492537 | 0.000000
+mixed_script | 0 | 0 | 0.000000 | 0.000000
+multichar_confusable | 0 | 0 | 0.000000 | 0.000000
+non_ascii | 0 | 0 | 0.000000 | 0.000000
+punycode | 0 | 0 | 0.000000 | 0.000000
+unicode_homoglyph | 0 | 0 | 0.000000 | 0.000000
+visual_confusable | 0 | 0 | 0.000000 | 0.000000

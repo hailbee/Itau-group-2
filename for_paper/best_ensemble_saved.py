@@ -1159,7 +1159,7 @@ def main() -> None:
         projector=proj_ex,
         projector_in_dim=in_dim_ex,
         device=device,
-        batch_size=args.pt_batch_size,
+        batch_size=args.pt-batch_size if False else args.pt_batch_size,
     )
     cos_te_ex, y_te_ex = build_single_font_cosine(
         df=df_te_ex,
@@ -1277,13 +1277,13 @@ def main() -> None:
     if not _has_both_classes(y_tr) or not _has_both_classes(y_te):
         raise RuntimeError("Need both classes (0 and 1) in both train and test splits.")
 
-    clf = make_model(args.model, args.seed)
-    clf.fit(X_tr, y_tr)
+    bundle = joblib.load(os.path.join("saved_models", "best_ensemble_model.joblib"))
+    clf = bundle["model"]
+    thr_test = float(bundle["threshold"])
 
     s_te = model_scores(clf, X_te).astype(np.float64)
     test_auroc = float(roc_auc_score(y_te, s_te))
 
-    thr_test = youden_threshold(y_te, s_te)
     acc, prec, rec = metrics_at_threshold(y_te, s_te, thr_test)
 
     print("Ensemble")
@@ -1292,14 +1292,6 @@ def main() -> None:
         f"test_accuracy={acc:.6f} test_precision={prec:.6f} test_recall={rec:.6f}"
     )
 
-    os.makedirs("saved_models", exist_ok=True)
-    joblib.dump(
-        {"model": clf, "threshold": thr_test},
-        os.path.join("saved_models", "best_ensemble_model.joblib"),
-    )
-    print("[OK] saved ensemble model → saved_models/best_ensemble_model.joblib")
-
-"""
     # Error analysis
     yhat_te = (s_te >= thr_test).astype(np.int32)
 
@@ -1343,13 +1335,13 @@ def main() -> None:
     print(f"[OK] wrote mechanism summary txt: {summary_txt}")
     print(f"[OK] wrote scatter plot: {scatter_png}")
     print(f"[OK] wrote bar chart: {bar_png}")
-"""
+
 
 if __name__ == "__main__":
     main()
 
 """
-python3 for_paper/best_ensemble.py \
+python3 for_paper/best_ensemble_saved.py \
   --downloads-train ../Downloads/text_train.parquet \
   --downloads-test  ../Downloads/text_test.parquet \
   --downloads-pt    ../Downloads/single_run_model.pt \
@@ -1375,7 +1367,7 @@ python3 for_paper/best_ensemble.py \
 """
 
 """
-python3 for_paper/best_ensemble.py \
+python3 for_paper/best_ensemble_saved.py \
   --downloads-train ../Downloads/text_train.parquet \
   --downloads-test  ../Downloads/typosquat_text_test.parquet \
   --downloads-pt    ../Downloads/single_run_model.pt \
