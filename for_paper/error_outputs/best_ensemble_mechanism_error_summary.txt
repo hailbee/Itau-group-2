@@ -1,22 +1,22 @@
-total_positive_test_examples=134
-total_false_negative_test_examples=4
+total_positive_test_examples=165141
+total_false_negative_test_examples=4844
 
 mechanism | n_positive_with_type | n_false_negative_with_type | prevalence_among_positive_pct | false_negative_rate_within_type_pct
-insertion | 63 | 4 | 47.014925 | 6.349206
-affix | 27 | 3 | 20.149254 | 11.111111
-hyphen_change | 14 | 2 | 10.447761 | 14.285714
-substitution | 52 | 0 | 38.805970 | 0.000000
-deletion | 45 | 0 | 33.582090 | 0.000000
-digit_change | 13 | 0 | 9.701493 | 0.000000
-repeat_char | 10 | 0 | 7.462687 | 0.000000
-transposition | 10 | 0 | 7.462687 | 0.000000
-digit_substitution | 7 | 0 | 5.223881 | 0.000000
-separator_change | 6 | 0 | 4.477612 | 0.000000
-leet_pair | 3 | 0 | 2.238806 | 0.000000
-numeric_affix | 2 | 0 | 1.492537 | 0.000000
-mixed_script | 0 | 0 | 0.000000 | 0.000000
-multichar_confusable | 0 | 0 | 0.000000 | 0.000000
-non_ascii | 0 | 0 | 0.000000 | 0.000000
-punycode | 0 | 0 | 0.000000 | 0.000000
-unicode_homoglyph | 0 | 0 | 0.000000 | 0.000000
-visual_confusable | 0 | 0 | 0.000000 | 0.000000
+substitution | 135858 | 3747 | 82.267880 | 2.758027
+insertion | 65520 | 2472 | 39.675187 | 3.772894
+deletion | 19425 | 1417 | 11.762676 | 7.294723
+non_ascii | 105807 | 504 | 64.070703 | 0.476339
+digit_change | 9958 | 458 | 6.029999 | 4.599317
+affix | 9261 | 390 | 5.607935 | 4.211208
+hyphen_change | 10454 | 266 | 6.330348 | 2.544481
+digit_substitution | 2066 | 111 | 1.251052 | 5.372701
+repeat_char | 1610 | 16 | 0.974924 | 0.993789
+transposition | 1202 | 14 | 0.727863 | 1.164725
+numeric_affix | 70 | 14 | 0.042388 | 20.000000
+mixed_script | 941 | 9 | 0.569816 | 0.956429
+separator_change | 3891 | 1 | 2.356168 | 0.025700
+visual_confusable | 843 | 1 | 0.510473 | 0.118624
+leet_pair | 493 | 1 | 0.298533 | 0.202840
+multichar_confusable | 113 | 1 | 0.068426 | 0.884956
+unicode_homoglyph | 30014 | 0 | 18.174772 | 0.000000
+punycode | 135 | 0 | 0.081748 | 0.000000
