@@ -9,21 +9,27 @@ import unicodedata
 from typing import Any, Dict, List, Sequence, Tuple
 
 import joblib
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from sklearn.ensemble import AdaBoostClassifier, GradientBoostingClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, roc_auc_score, roc_curve
-from sklearn.tree import DecisionTreeClassifier
+
+# =========================
+# Small output settings
+# =========================
+REPRESENTATIVE_MIN_NAME_LEN = 5
+AVG_STRING_LENGTH_BUCKET_WIDTH = 2.0
+ABS_LENGTH_DIFFERENCE_BUCKET_WIDTH = 2
 
 
 # =========================
 # Optional string libs
 # =========================
+HAVE_RAPIDFUZZ = False
+HAVE_FUZZYWUZZY = False
+HAVE_PY_LEV = False
 
 try:
     from rapidfuzz import fuzz as rf_fuzz
@@ -32,6 +38,22 @@ try:
     HAVE_RAPIDFUZZ = True
 except Exception:
     HAVE_RAPIDFUZZ = False
+
+if not HAVE_RAPIDFUZZ:
+    try:
+        from fuzzywuzzy import fuzz as fw_fuzz
+
+        HAVE_FUZZYWUZZY = True
+    except Exception:
+        HAVE_FUZZYWUZZY = False
+
+try:
+    import Levenshtein as py_lev
+
+    HAVE_PY_LEV = True
+except Exception:
+    HAVE_PY_LEV = False
+
 
 # =========================
 # IO
@@ -47,6 +69,10 @@ def load_table(path: str) -> pd.DataFrame:
 
 def safe_str_list(s: pd.Series) -> List[str]:
     return s.fillna("").astype(str).tolist()
+
+
+def clean_text_cell(x: Any) -> str:
+    return str(x).replace("\n", " ").replace("\r", " ").replace("|", "/").strip()
 
 
 # =========================
@@ -120,19 +146,11 @@ def partial_ratio(a: str, b: str) -> float:
 
 
 # =========================
-# Thresholding / metrics
+# Basic checks
 # =========================
 def _has_both_classes(y: np.ndarray) -> bool:
     u = np.unique(y)
     return (len(u) >= 2) and (0 in u) and (1 in u)
-
-
-def metrics_at_threshold(y_true: np.ndarray, scores: np.ndarray, thr: float) -> Tuple[float, float, float]:
-    yhat = (scores >= thr).astype(np.int32)
-    acc = float(accuracy_score(y_true, yhat))
-    prec = float(precision_score(y_true, yhat, zero_division=0))
-    rec = float(recall_score(y_true, yhat, zero_division=0))
-    return acc, prec, rec
 
 
 # =========================
@@ -255,14 +273,7 @@ def projected_cosine(
 
 # =========================
 # Multi-hot mechanism flags
-# EXACT criteria copied from mechanism_multihot_audit.py
 # =========================
-COMMON_SUFFIXES: set[str] = {
-    "com", "net", "org", "io", "co", "gov", "edu", "us", "uk", "de", "fr", "jp", "br", "ru", "cn", "in",
-    "info", "biz", "app", "dev", "ai", "me", "tv",
-    "exe", "dll", "sys", "scr", "bat", "cmd", "ps1", "vbs", "js", "jar", "msi",
-}
-
 SEPARATORS: set[str] = set(" \t\r\n-_./\\:·•—–‐-‒―")
 
 INVISIBLE_CODEPOINTS: set[str] = {
@@ -353,15 +364,6 @@ def _has_non_ascii(s: str) -> bool:
     return any(ord(ch) >= 128 for ch in s)
 
 
-def _contains_invisible_or_format(s: str) -> bool:
-    for ch in s:
-        if ch in INVISIBLE_CODEPOINTS:
-            return True
-        if unicodedata.category(ch) == "Cf":
-            return True
-    return False
-
-
 def _script_of_char(ch: str) -> str:
     if not ch.isalpha():
         return "NA"
@@ -445,8 +447,8 @@ def _affix_extra(a: str, b: str) -> Tuple[bool, str]:
     if len(a) < len(b):
         a, b = b, a
 
-    MAX_EXTRA = 10
-    if len(a) - len(b) > MAX_EXTRA:
+    max_extra = 10
+    if len(a) - len(b) > max_extra:
         return False, ""
 
     if a.startswith(b):
@@ -570,20 +572,6 @@ def mechanism_flags_df(fraud_series: Sequence[str], real_series: Sequence[str]) 
     return pd.DataFrame(rows, columns=FLAG_KEYS).fillna(0).astype(int)
 
 
-def combo_id(flags_row: Dict[str, int] | pd.Series) -> int:
-    total = 0
-    for i, k in enumerate(FLAG_KEYS):
-        v = int(flags_row[k]) if k in flags_row else 0
-        if v:
-            total |= (1 << i)
-    return total
-
-
-def combo_label(flags_row: Dict[str, int] | pd.Series) -> str:
-    keys = [k for k in FLAG_KEYS if int(flags_row[k]) == 1]
-    return "+".join(keys) if keys else "NONE"
-
-
 # =========================
 # Feature builders
 # =========================
@@ -610,7 +598,7 @@ def build_text_features(
     y_raw = df[label_col].to_numpy()
     y = (y_raw == positive_label).astype(np.int32)
     if not _has_both_classes(y):
-        raise RuntimeError("Need both classes (0 and 1) in this split to compute AUROC.")
+        raise RuntimeError("Need both classes (0 and 1) in this split.")
 
     fraud_mat = mat_from_prefix(df, fraud_prefix)
     real_mat = mat_from_prefix(df, real_prefix)
@@ -659,7 +647,7 @@ def build_single_font_cosine(
     y_raw = df[label_col].to_numpy()
     y = (y_raw == positive_label).astype(np.int32)
     if not _has_both_classes(y):
-        raise RuntimeError("Need both classes (0 and 1) in this split to compute AUROC.")
+        raise RuntimeError("Need both classes (0 and 1) in this split.")
 
     fraud_mat = mat_from_prefix(df, fraud_prefix)
     real_mat = mat_from_prefix(df, real_prefix)
@@ -678,7 +666,30 @@ def build_single_font_cosine(
 
 
 # =========================
-# Error analysis outputs
+# Saved model loading
+# =========================
+def load_saved_model_bundle(path: str) -> Tuple[Any, List[str] | None]:
+    obj = joblib.load(path)
+
+    if isinstance(obj, dict) and "model" in obj:
+        model = obj["model"]
+        feature_names = obj.get("feature_names", None)
+    else:
+        model = obj
+        feature_names = None
+
+    if not hasattr(model, "predict"):
+        raise RuntimeError(f"Loaded object from {path!r} does not have a predict() method.")
+
+    if feature_names is not None:
+        if not isinstance(feature_names, list) or not all(isinstance(x, str) for x in feature_names):
+            raise RuntimeError("Saved model bundle has invalid feature_names.")
+
+    return model, feature_names
+
+
+# =========================
+# Error analysis helpers
 # =========================
 def build_positive_mechanism_tables(
     df_test: pd.DataFrame,
@@ -686,8 +697,6 @@ def build_positive_mechanism_tables(
     y_pred: np.ndarray,
     fraud_col: str,
     real_col: str,
-    positive_label: int,
-    label_col: str,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     pos_mask = y_true == 1
     df_pos = df_test.loc[pos_mask].copy().reset_index(drop=True)
@@ -698,13 +707,10 @@ def build_positive_mechanism_tables(
     ).reset_index(drop=True)
 
     df_pos = pd.concat([df_pos.reset_index(drop=True), flags], axis=1)
-    df_pos["mech_combo_id"] = [combo_id(r) for _, r in flags.iterrows()]
-    df_pos["mech_combo"] = [combo_label(r) for _, r in flags.iterrows()]
-    df_pos["mech_all_zero"] = (flags.sum(axis=1) == 0).astype(int)
 
     y_pred_pos = y_pred[pos_mask]
     df_pos["pred_label"] = y_pred_pos.astype(np.int32)
-    df_pos["is_false_negative"] = ((df_pos["pred_label"] == 0) & (df_pos[label_col] == positive_label)).astype(int)
+    df_pos["is_false_negative"] = ((y_pred_pos == 0) & (y_true[pos_mask] == 1)).astype(int)
 
     df_fn = df_pos.loc[df_pos["is_false_negative"] == 1].copy().reset_index(drop=True)
     return df_pos, df_fn
@@ -712,126 +718,191 @@ def build_positive_mechanism_tables(
 
 def build_mechanism_error_summary(df_pos: pd.DataFrame, df_fn: pd.DataFrame) -> pd.DataFrame:
     total_positive = int(len(df_pos))
-    rows: List[Dict[str, float | int | str]] = []
+    rows: List[Dict[str, float | str]] = []
 
     for k in FLAG_KEYS:
         n_pos_with_type = int(df_pos[k].sum())
         n_fn_with_type = int(df_fn[k].sum())
 
-        prevalence_among_positive = (n_pos_with_type / total_positive) if total_positive > 0 else 0.0
-        error_rate_within_type = (n_fn_with_type / n_pos_with_type) if n_pos_with_type > 0 else 0.0
+        frequency_pct = (100.0 * n_pos_with_type / total_positive) if total_positive > 0 else 0.0
+        model_missed_pct = (100.0 * n_fn_with_type / n_pos_with_type) if n_pos_with_type > 0 else 0.0
 
         rows.append(
             {
-                "mechanism": k,
-                "n_positive_with_type": n_pos_with_type,
-                "n_false_negative_with_type": n_fn_with_type,
-                "prevalence_among_positive": prevalence_among_positive,
-                "prevalence_among_positive_pct": 100.0 * prevalence_among_positive,
-                "false_negative_rate_within_type": error_rate_within_type,
-                "false_negative_rate_within_type_pct": 100.0 * error_rate_within_type,
+                "classification_type": k,
+                "frequency_pct": frequency_pct,
+                "model_missed_pct": model_missed_pct,
+                "raw_errors": n_fn_with_type,
             }
         )
 
-    summary = pd.DataFrame(rows).sort_values(
-        ["n_false_negative_with_type", "n_positive_with_type", "mechanism"],
-        ascending=[False, False, True],
-    )
-    return summary
+    return pd.DataFrame(rows)
 
 
-def save_mechanism_summary_txt(
-    summary_df: pd.DataFrame,
-    total_positive: int,
-    total_false_negative: int,
-    out_txt: str,
-) -> None:
+def save_mechanism_summary_txt(summary_df: pd.DataFrame, out_txt: str) -> None:
     lines: List[str] = []
-    lines.append(f"total_positive_test_examples={total_positive}")
-    lines.append(f"total_false_negative_test_examples={total_false_negative}")
-    lines.append("")
-    lines.append(
-        "mechanism | n_positive_with_type | n_false_negative_with_type | "
-        "prevalence_among_positive_pct | false_negative_rate_within_type_pct"
-    )
+    lines.append("classification_type | frequency_pct | model_missed_pct | raw_errors")
 
     for _, row in summary_df.iterrows():
         lines.append(
-            f"{row['mechanism']} | "
-            f"{int(row['n_positive_with_type'])} | "
-            f"{int(row['n_false_negative_with_type'])} | "
-            f"{float(row['prevalence_among_positive_pct']):.6f} | "
-            f"{float(row['false_negative_rate_within_type_pct']):.6f}"
+            f"{clean_text_cell(row['classification_type'])} | "
+            f"{float(row['frequency_pct']):.6f} | "
+            f"{float(row['model_missed_pct']):.6f} | "
+            f"{int(row['raw_errors'])}"
         )
 
     with open(out_txt, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
 
-def save_scatter_plot(summary_df: pd.DataFrame, out_png: str) -> None:
-    x = summary_df["prevalence_among_positive_pct"].to_numpy(dtype=float)
-    y = summary_df["false_negative_rate_within_type_pct"].to_numpy(dtype=float)
-    labels = summary_df["mechanism"].astype(str).tolist()
+def save_representative_errors_txt(
+    df_fn: pd.DataFrame,
+    fraud_col: str,
+    real_col: str,
+    label_col: str,
+    out_txt: str,
+) -> None:
+    lines: List[str] = []
 
-    plt.figure(figsize=(12, 8))
-    plt.scatter(x, y)
+    for k in FLAG_KEYS:
+        lines.append(f"classification_type={k}")
+        lines.append(f"{real_col} | {fraud_col} | {label_col} | classification_type")
 
-    for xi, yi, lab in zip(x, y, labels):
-        plt.annotate(lab, (xi, yi), xytext=(5, 5), textcoords="offset points", fontsize=9)
+        subset = df_fn.loc[df_fn[k] == 1, [real_col, fraud_col, label_col]].copy()
 
-    plt.xlabel("Proportion of label-1 examples with mechanism (%)")
-    plt.ylabel("Misclassification rate within mechanism (%)")
-    plt.title("Best ensemble false-negative rate by spoof classification")
-    plt.tight_layout()
-    plt.savefig(out_png, dpi=200, bbox_inches="tight")
-    plt.close()
+        real_len = subset[real_col].fillna("").astype(str).str.len()
+        fraud_len = subset[fraud_col].fillna("").astype(str).str.len()
+        subset = subset.loc[(real_len >= REPRESENTATIVE_MIN_NAME_LEN) & (fraud_len >= REPRESENTATIVE_MIN_NAME_LEN)]
 
+        subset = subset.drop_duplicates().head(3).reset_index(drop=True)
 
-def save_grouped_bar_chart(summary_df: pd.DataFrame, out_png: str) -> None:
-    labels = summary_df["mechanism"].astype(str).tolist()
-    prevalence = summary_df["prevalence_among_positive_pct"].to_numpy(dtype=float)
-    error_rate = summary_df["false_negative_rate_within_type_pct"].to_numpy(dtype=float)
+        if subset.empty:
+            lines.append(f"NO_EXAMPLES | NO_EXAMPLES | NO_EXAMPLES | {k}")
+        else:
+            for _, row in subset.iterrows():
+                lines.append(
+                    f"{clean_text_cell(row[real_col])} | "
+                    f"{clean_text_cell(row[fraud_col])} | "
+                    f"{clean_text_cell(row[label_col])} | "
+                    f"{k}"
+                )
 
-    x = np.arange(len(labels))
-    width = 0.38
+        lines.append("")
 
-    plt.figure(figsize=(16, 8))
-    plt.bar(x - width / 2, prevalence, width=width, label="Prevalence among label-1 (%)")
-    plt.bar(x + width / 2, error_rate, width=width, label="False-negative rate within type (%)")
-
-    plt.xticks(x, labels, rotation=45, ha="right")
-    plt.ylabel("Percent")
-    plt.title("Best ensemble spoof classification prevalence vs false-negative rate")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(out_png, dpi=200, bbox_inches="tight")
-    plt.close()
+    with open(out_txt, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines).rstrip() + "\n")
 
 
-# =========================
-# Ensemble model
-# =========================
-def make_model(kind: str, seed: int) -> object:
-    kind = kind.lower().strip()
-    if kind == "adaboost":
-        base = DecisionTreeClassifier(max_depth=2, random_state=seed)
-        try:
-            return AdaBoostClassifier(estimator=base, n_estimators=300, learning_rate=0.05, random_state=seed)
-        except TypeError:
-            return AdaBoostClassifier(base_estimator=base, n_estimators=300, learning_rate=0.05, random_state=seed)
-    if kind == "gboost":
-        return GradientBoostingClassifier(random_state=seed)
-    raise ValueError("Unknown model. Use 'adaboost', 'gboost', or 'none'.")
+def build_bucketed_accuracy_summary(
+    values: np.ndarray,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    bucket_width: float | None,
+    bucket_col: str,
+    use_quantiles: bool = False,
+) -> pd.DataFrame:
+    values = values.astype(np.float64, copy=False)
+    correct = (y_true == y_pred).astype(np.int32)
+
+    df = pd.DataFrame(
+        {
+            "values": values,
+            "correct": correct,
+        }
+    )
+
+    if use_quantiles:
+        bucket_codes, bins = pd.qcut(
+            df["values"],
+            q=5,
+            labels=False,
+            retbins=True,
+            duplicates="drop",
+        )
+        df["bucket"] = bucket_codes
+
+        df["bucket_start"] = df["bucket"].map(lambda i: bins[int(i)])
+        df["bucket_end"] = df["bucket"].map(lambda i: bins[int(i) + 1])
+
+    else:
+        if bucket_width is None or bucket_width <= 0:
+            raise ValueError("bucket_width must be > 0 when not using quantiles")
+
+        bucket_start = np.floor(values / bucket_width) * bucket_width
+        bucket_end = bucket_start + bucket_width
+
+        df["bucket_start"] = bucket_start
+        df["bucket_end"] = bucket_end
+
+    grouped = (
+        df.groupby(["bucket_start", "bucket_end"], as_index=False)
+        .agg(
+            count=("correct", "size"),
+            accuracy=("correct", "mean"),
+            bucket_mean=("values", "mean"),
+        )
+        .sort_values(["bucket_start", "bucket_end"])
+        .reset_index(drop=True)
+    )
+
+    total_n = int(len(df))
+    grouped["accuracy_pct"] = 100.0 * grouped["accuracy"]
+    grouped["frequency_pct"] = 100.0 * grouped["count"] / total_n
+
+    grouped = grouped.rename(
+        columns={
+            "bucket_start": f"{bucket_col}_start",
+            "bucket_end": f"{bucket_col}_end",
+            "bucket_mean": f"{bucket_col}_mean",
+        }
+    )
+
+    return grouped[
+        [
+            f"{bucket_col}_start",
+            f"{bucket_col}_end",
+            f"{bucket_col}_mean",
+            "accuracy_pct",
+            "frequency_pct",
+        ]
+    ]
 
 
-def model_scores(model: object, X: np.ndarray) -> np.ndarray:
-    if hasattr(model, "predict_proba"):
-        return model.predict_proba(X)[:, 1].astype(np.float32)
-    if hasattr(model, "decision_function"):
-        s = model.decision_function(X)
-        s = 1.0 / (1.0 + np.exp(-s))
-        return s.astype(np.float32)
-    raise RuntimeError("Model does not support predict_proba or decision_function.")
+def save_bucketed_accuracy_txt(
+    summary_df: pd.DataFrame,
+    bucket_col: str,
+    out_txt: str,
+    float_format: str,
+) -> None:
+    start_col = f"{bucket_col}_start"
+    end_col = f"{bucket_col}_end"
+    mean_col = f"{bucket_col}_mean"
+
+    lines: List[str] = []
+    lines.append(f"{start_col} | {end_col} | {mean_col} | accuracy_pct | frequency_pct")
+
+    for _, row in summary_df.iterrows():
+        start_val = float(row[start_col])
+        end_val = float(row[end_col])
+        mean_val = float(row[mean_col])
+
+        if float_format == "int":
+            start_str = f"{int(round(start_val))}"
+            end_str = f"{int(round(end_val))}"
+        else:
+            start_str = f"{start_val:.1f}"
+            end_str = f"{end_val:.1f}"
+
+        mean_str = f"{mean_val:.6f}"
+
+        lines.append(
+            f"{start_str} | {end_str} | {mean_str} | "
+            f"{float(row['accuracy_pct']):.6f} | "
+            f"{float(row['frequency_pct']):.6f}"
+        )
+
+    with open(out_txt, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
 
 
 # =========================
@@ -840,41 +911,44 @@ def model_scores(model: object, X: np.ndarray) -> np.ndarray:
 def main() -> None:
     ap = argparse.ArgumentParser()
 
-    # Downloads text data / text embeddings
-    ap.add_argument("--downloads-train", required=True)
+    # Kept accepted for compatibility with old command, but not used anymore.
+    ap.add_argument("--downloads-train", default=None)
+    ap.add_argument("--deja-train", default=None)
+    ap.add_argument("--unifont-train", default=None)
+    ap.add_argument("--libre-train", default=None)
+    ap.add_argument("--exo2-train", default=None)
+    ap.add_argument("--doulos-train", default=None)
+    ap.add_argument("--cousine-train", default=None)
+    ap.add_argument("--model", default="adaboost")
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--model-output-path", default=None)
+
     ap.add_argument("--downloads-test", required=True)
     ap.add_argument("--downloads-pt", required=True)
 
-    # Exact image fonts you specified
-    ap.add_argument("--deja-train", required=True)
     ap.add_argument("--deja-test", required=True)
     ap.add_argument("--deja-pt", required=True)
 
-    ap.add_argument("--unifont-train", required=True)
     ap.add_argument("--unifont-test", required=True)
     ap.add_argument("--unifont-pt", required=True)
 
-    ap.add_argument("--libre-train", required=True)
     ap.add_argument("--libre-test", required=True)
     ap.add_argument("--libre-pt", required=True)
 
-    ap.add_argument("--exo2-train", required=True)
     ap.add_argument("--exo2-test", required=True)
     ap.add_argument("--exo2-pt", required=True)
 
-    ap.add_argument("--doulos-train", required=True)
     ap.add_argument("--doulos-test", required=True)
     ap.add_argument("--doulos-pt", required=True)
 
-    ap.add_argument("--cousine-train", required=True)
     ap.add_argument("--cousine-test", required=True)
     ap.add_argument("--cousine-pt", required=True)
 
+    ap.add_argument("--saved-model-path", default="saved_models/total_5f_model.joblib")
+    ap.add_argument("--error-output-dir", default="for_paper/error_outputs")
+
     ap.add_argument("--device", default=None, help="cuda | mps | cpu (default: auto)")
     ap.add_argument("--pt-batch-size", type=int, default=8192)
-
-    ap.add_argument("--model", default="adaboost", choices=["adaboost", "gboost", "none"])
-    ap.add_argument("--seed", type=int, default=0)
 
     ap.add_argument("--fraud-col", default="fraudulent_name")
     ap.add_argument("--real-col", default="real_name")
@@ -897,9 +971,6 @@ def main() -> None:
     ap.add_argument("--cousine-fraud-prefix", default="fraud_emb_")
     ap.add_argument("--cousine-real-prefix", default="real_emb_")
 
-    ap.add_argument("--error-output-dir", default="for_paper/error_outputs")
-    ap.add_argument("--model-output-path", default="saved_models/best_ensemble_model.joblib")
-
     args = ap.parse_args()
 
     if not (HAVE_RAPIDFUZZ or HAVE_FUZZYWUZZY):
@@ -916,38 +987,16 @@ def main() -> None:
     else:
         device = torch.device(args.device)
 
-    # Load Downloads text data
-    df_tr_txt = load_table(args.downloads_train)
+    # Load test data only
     df_te_txt = load_table(args.downloads_test)
-
-    # Load exact font datasets
-    df_tr_dj = load_table(args.deja_train)
     df_te_dj = load_table(args.deja_test)
-
-    df_tr_uf = load_table(args.unifont_train)
     df_te_uf = load_table(args.unifont_test)
-
-    df_tr_li = load_table(args.libre_train)
     df_te_li = load_table(args.libre_test)
-
-    df_tr_ex = load_table(args.exo2_train)
     df_te_ex = load_table(args.exo2_test)
-
-    df_tr_do = load_table(args.doulos_train)
     df_te_do = load_table(args.doulos_test)
-
-    df_tr_co = load_table(args.cousine_train)
     df_te_co = load_table(args.cousine_test)
 
-    for df in (
-        df_tr_txt, df_te_txt,
-        df_tr_dj, df_te_dj,
-        df_tr_uf, df_te_uf,
-        df_tr_li, df_te_li,
-        df_tr_ex, df_te_ex,
-        df_tr_do, df_te_do,
-        df_tr_co, df_te_co,
-    ):
+    for df in (df_te_txt, df_te_dj, df_te_uf, df_te_li, df_te_ex, df_te_do, df_te_co):
         if args.label_col not in df.columns:
             raise RuntimeError(f"Missing label_col={args.label_col!r} in one of the tables.")
         if args.fraud_col not in df.columns:
@@ -955,24 +1004,7 @@ def main() -> None:
         if args.real_col not in df.columns:
             raise RuntimeError(f"Missing real_col={args.real_col!r} in one of the tables.")
 
-    # Row-count checks
-    n_tr = len(df_tr_txt)
     n_te = len(df_te_txt)
-
-    if (
-        len(df_tr_dj) != n_tr
-        or len(df_tr_uf) != n_tr
-        or len(df_tr_li) != n_tr
-        or len(df_tr_ex) != n_tr
-        or len(df_tr_do) != n_tr
-        or len(df_tr_co) != n_tr
-    ):
-        raise RuntimeError(
-            "Train row-count mismatch: "
-            f"Downloads={n_tr} Deja={len(df_tr_dj)} Unifont={len(df_tr_uf)} "
-            f"Libre={len(df_tr_li)} Exo2={len(df_tr_ex)} Doulos={len(df_tr_do)} Cousine={len(df_tr_co)}"
-        )
-
     if (
         len(df_te_dj) != n_te
         or len(df_te_uf) != n_te
@@ -987,21 +1019,7 @@ def main() -> None:
             f"Libre={len(df_te_li)} Exo2={len(df_te_ex)} Doulos={len(df_te_do)} Cousine={len(df_te_co)}"
         )
 
-    # Label checks
-    y_tr = (df_tr_txt[args.label_col].to_numpy() == args.positive_label).astype(np.int32)
     y_te = (df_te_txt[args.label_col].to_numpy() == args.positive_label).astype(np.int32)
-
-    for name, df in [
-        ("Deja train", df_tr_dj),
-        ("Unifont train", df_tr_uf),
-        ("Libre train", df_tr_li),
-        ("Exo2 train", df_tr_ex),
-        ("Doulos train", df_tr_do),
-        ("Cousine train", df_tr_co),
-    ]:
-        y = (df[args.label_col].to_numpy() == args.positive_label).astype(np.int32)
-        if not np.array_equal(y_tr, y):
-            raise RuntimeError(f"Train labels mismatch: Downloads vs {name}")
 
     for name, df in [
         ("Deja test", df_te_dj),
@@ -1015,7 +1033,11 @@ def main() -> None:
         if not np.array_equal(y_te, y):
             raise RuntimeError(f"Test labels mismatch: Downloads vs {name}")
 
-    # Load projectors
+    if not _has_both_classes(y_te):
+        raise RuntimeError("Need both classes (0 and 1) in test split.")
+
+    clf, saved_feature_names = load_saved_model_bundle(args.saved_model_path)
+
     proj_txt, in_dim_txt = load_golden_projector(args.downloads_pt, device=device)
     proj_dj, in_dim_dj = load_golden_projector(args.deja_pt, device=device)
     proj_uf, in_dim_uf = load_golden_projector(args.unifont_pt, device=device)
@@ -1024,20 +1046,6 @@ def main() -> None:
     proj_do, in_dim_do = load_golden_projector(args.doulos_pt, device=device)
     proj_co, in_dim_co = load_golden_projector(args.cousine_pt, device=device)
 
-    # Build text-side features: [text cosine, token_set_ratio, levenshtein_distance_score, partial_ratio]
-    X_tr_txt, y_tr_txt = build_text_features(
-        df=df_tr_txt,
-        fraud_col=args.fraud_col,
-        real_col=args.real_col,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.downloads_fraud_prefix,
-        real_prefix=args.downloads_real_prefix,
-        projector=proj_txt,
-        projector_in_dim=in_dim_txt,
-        device=device,
-        pt_batch_size=args.pt_batch_size,
-    )
     X_te_txt, y_te_txt = build_text_features(
         df=df_te_txt,
         fraud_col=args.fraud_col,
@@ -1052,18 +1060,6 @@ def main() -> None:
         pt_batch_size=args.pt_batch_size,
     )
 
-    # Build image-side features: 6 cosine features using the exact image-ensemble fonts
-    cos_tr_dj, y_tr_dj = build_single_font_cosine(
-        df=df_tr_dj,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.deja_fraud_prefix,
-        real_prefix=args.deja_real_prefix,
-        projector=proj_dj,
-        projector_in_dim=in_dim_dj,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
     cos_te_dj, y_te_dj = build_single_font_cosine(
         df=df_te_dj,
         label_col=args.label_col,
@@ -1072,18 +1068,6 @@ def main() -> None:
         real_prefix=args.deja_real_prefix,
         projector=proj_dj,
         projector_in_dim=in_dim_dj,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
-
-    cos_tr_uf, y_tr_uf = build_single_font_cosine(
-        df=df_tr_uf,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.unifont_fraud_prefix,
-        real_prefix=args.unifont_real_prefix,
-        projector=proj_uf,
-        projector_in_dim=in_dim_uf,
         device=device,
         batch_size=args.pt_batch_size,
     )
@@ -1098,18 +1082,6 @@ def main() -> None:
         device=device,
         batch_size=args.pt_batch_size,
     )
-
-    cos_tr_li, y_tr_li = build_single_font_cosine(
-        df=df_tr_li,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.libre_fraud_prefix,
-        real_prefix=args.libre_real_prefix,
-        projector=proj_li,
-        projector_in_dim=in_dim_li,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
     cos_te_li, y_te_li = build_single_font_cosine(
         df=df_te_li,
         label_col=args.label_col,
@@ -1118,18 +1090,6 @@ def main() -> None:
         real_prefix=args.libre_real_prefix,
         projector=proj_li,
         projector_in_dim=in_dim_li,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
-
-    cos_tr_ex, y_tr_ex = build_single_font_cosine(
-        df=df_tr_ex,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.exo2_fraud_prefix,
-        real_prefix=args.exo2_real_prefix,
-        projector=proj_ex,
-        projector_in_dim=in_dim_ex,
         device=device,
         batch_size=args.pt_batch_size,
     )
@@ -1144,18 +1104,6 @@ def main() -> None:
         device=device,
         batch_size=args.pt_batch_size,
     )
-
-    cos_tr_do, y_tr_do = build_single_font_cosine(
-        df=df_tr_do,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.doulos_fraud_prefix,
-        real_prefix=args.doulos_real_prefix,
-        projector=proj_do,
-        projector_in_dim=in_dim_do,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
     cos_te_do, y_te_do = build_single_font_cosine(
         df=df_te_do,
         label_col=args.label_col,
@@ -1164,18 +1112,6 @@ def main() -> None:
         real_prefix=args.doulos_real_prefix,
         projector=proj_do,
         projector_in_dim=in_dim_do,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
-
-    cos_tr_co, y_tr_co = build_single_font_cosine(
-        df=df_tr_co,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.cousine_fraud_prefix,
-        real_prefix=args.cousine_real_prefix,
-        projector=proj_co,
-        projector_in_dim=in_dim_co,
         device=device,
         batch_size=args.pt_batch_size,
     )
@@ -1191,19 +1127,6 @@ def main() -> None:
         batch_size=args.pt_batch_size,
     )
 
-    # Sanity label checks after feature extraction
-    for name, y_other in [
-        ("text train", y_tr_txt),
-        ("deja train", y_tr_dj),
-        ("unifont train", y_tr_uf),
-        ("libre train", y_tr_li),
-        ("exo2 train", y_tr_ex),
-        ("doulos train", y_tr_do),
-        ("cousine train", y_tr_co),
-    ]:
-        if not np.array_equal(y_tr, y_other):
-            raise RuntimeError(f"Train labels mismatch after feature extraction: {name}")
-
     for name, y_other in [
         ("text test", y_te_txt),
         ("deja test", y_te_dj),
@@ -1216,47 +1139,20 @@ def main() -> None:
         if not np.array_equal(y_te, y_other):
             raise RuntimeError(f"Test labels mismatch after feature extraction: {name}")
 
-    # Final ensemble feature matrix:
-    # 4 text-side features + 6 image-side cosine features
-    X_tr = np.column_stack(
-        [
-            X_tr_txt,
-            cos_tr_dj,
-            cos_tr_uf,
-            cos_tr_li,
-            cos_tr_ex,
-            cos_tr_do,
-            cos_tr_co,
-        ]
-    ).astype(np.float32, copy=False)
+    available_features: Dict[str, np.ndarray] = {
+        "text_cosine": X_te_txt[:, 0],
+        "token_set_ratio": X_te_txt[:, 1],
+        "levenshtein_distance_score": X_te_txt[:, 2],
+        "partial_ratio": X_te_txt[:, 3],
+        "cosine_deja": cos_te_dj,
+        "cosine_unifont": cos_te_uf,
+        "cosine_libre": cos_te_li,
+        "cosine_exo2": cos_te_ex,
+        "cosine_doulos": cos_te_do,
+        "cosine_cousine": cos_te_co,
+    }
 
-    X_te = np.column_stack(
-        [
-            X_te_txt,
-            cos_te_dj,
-            cos_te_uf,
-            cos_te_li,
-            cos_te_ex,
-            cos_te_do,
-            cos_te_co,
-        ]
-    ).astype(np.float32, copy=False)
-
-    if args.model == "none":
-        print("Model needed!")
-        return
-
-    if not _has_both_classes(y_tr) or not _has_both_classes(y_te):
-        raise RuntimeError("Need both classes (0 and 1) in both train and test splits.")
-
-    clf = make_model(args.model, args.seed)
-    clf.fit(X_tr, y_tr)
-
-    model_output_dir = os.path.dirname(args.model_output_path)
-    if model_output_dir:
-        os.makedirs(model_output_dir, exist_ok=True)
-
-    feature_names = [
+    default_feature_names = [
         "text_cosine",
         "token_set_ratio",
         "levenshtein_distance_score",
@@ -1269,36 +1165,28 @@ def main() -> None:
         "cosine_cousine",
     ]
 
-    joblib.dump(
-        {
-            "model": clf,
-            "model_type": args.model,
-            "seed": args.seed,
-            "feature_names": feature_names,
-            "positive_label": args.positive_label,
-            "fraud_col": args.fraud_col,
-            "real_col": args.real_col,
-            "label_col": args.label_col,
-        },
-        args.model_output_path,
-    )
+    if saved_feature_names is None:
+        if hasattr(clf, "n_features_in_"):
+            expected = int(clf.n_features_in_)
+            if expected != len(default_feature_names):
+                raise RuntimeError(
+                    "Saved model does not include feature_names, and its expected feature count "
+                    f"({expected}) does not match the default feature count ({len(default_feature_names)})."
+                )
+        feature_names = default_feature_names
+    else:
+        feature_names = list(saved_feature_names)
+        if hasattr(clf, "n_features_in_") and int(clf.n_features_in_) != len(feature_names):
+            raise RuntimeError(
+                f"Saved model expects {int(clf.n_features_in_)} features but bundle feature_names has {len(feature_names)}."
+            )
 
-    print(f"[OK] wrote saved model: {args.model_output_path}")
+    missing = [f for f in feature_names if f not in available_features]
+    if missing:
+        raise RuntimeError(f"Saved model requires unknown features: {missing}")
 
-    s_te = model_scores(clf, X_te).astype(np.float64)
-    test_auroc = float(roc_auc_score(y_te, s_te))
-
-    yhat_te = clf.predict(X_te)
-
-    acc = float(accuracy_score(y_te, yhat_te))
-    prec = float(precision_score(y_te, yhat_te, zero_division=0))
-    rec = float(recall_score(y_te, yhat_te, zero_division=0))
-
-    print("Ensemble")
-    print(
-        f"model={args.model} test_auroc={test_auroc:.6f} "
-        f"test_accuracy={acc:.6f} test_precision={prec:.6f} test_recall={rec:.6f}"
-    )
+    X_te = np.column_stack([available_features[f] for f in feature_names]).astype(np.float32, copy=False)
+    yhat_te = clf.predict(X_te).astype(np.int32)
 
     os.makedirs(args.error_output_dir, exist_ok=True)
 
@@ -1308,66 +1196,88 @@ def main() -> None:
         y_pred=yhat_te,
         fraud_col=args.fraud_col,
         real_col=args.real_col,
-        positive_label=args.positive_label,
+    )
+
+    mechanism_summary = build_mechanism_error_summary(df_pos=df_pos, df_fn=df_fn)
+
+    fraud_names = df_te_txt[args.fraud_col].fillna("").astype(str)
+    real_names = df_te_txt[args.real_col].fillna("").astype(str)
+
+    fraud_len = fraud_names.str.len().to_numpy(dtype=np.int32)
+    real_len = real_names.str.len().to_numpy(dtype=np.int32)
+
+    avg_string_length = (fraud_len + real_len) / 2.0
+    abs_length_difference = np.abs(fraud_len - real_len)
+
+    accuracy_by_avg_len = build_bucketed_accuracy_summary(
+        values=avg_string_length,
+        y_true=y_te,
+        y_pred=yhat_te,
+        bucket_width=None,
+        bucket_col="avg_string_length_bucket",
+        use_quantiles=True,
+    )
+
+    pos_mask = y_te == 1
+
+    accuracy_by_abs_diff = build_bucketed_accuracy_summary(
+        values=abs_length_difference[pos_mask].astype(np.float64),
+        y_true=y_te[pos_mask],
+        y_pred=yhat_te[pos_mask],
+        bucket_width=float(ABS_LENGTH_DIFFERENCE_BUCKET_WIDTH),
+        bucket_col="abs_length_difference_bucket",
+    )
+
+    summary_txt = os.path.join(args.error_output_dir, "total_5f_error_type_summary.txt")
+    examples_txt = os.path.join(args.error_output_dir, "total_5f_representative_example_errors.txt")
+    avg_len_txt = os.path.join(args.error_output_dir, "total_5f_accuracy_by_avg_string_length.txt")
+    abs_diff_txt = os.path.join(args.error_output_dir, "total_5f_accuracy_by_abs_length_difference.txt")
+
+    save_mechanism_summary_txt(mechanism_summary, summary_txt)
+    save_representative_errors_txt(
+        df_fn=df_fn,
+        fraud_col=args.fraud_col,
+        real_col=args.real_col,
         label_col=args.label_col,
+        out_txt=examples_txt,
+    )
+    save_bucketed_accuracy_txt(
+        summary_df=accuracy_by_avg_len,
+        bucket_col="avg_string_length_bucket",
+        out_txt=avg_len_txt,
+        float_format="float",
+    )
+    save_bucketed_accuracy_txt(
+        summary_df=accuracy_by_abs_diff,
+        bucket_col="abs_length_difference_bucket",
+        out_txt=abs_diff_txt,
+        float_format="int",
     )
 
-    summary_df = build_mechanism_error_summary(df_pos=df_pos, df_fn=df_fn)
-
-    positives_parquet = os.path.join(args.error_output_dir, "best_ensemble_test_positives_multihot.parquet")
-    fn_parquet = os.path.join(args.error_output_dir, "best_ensemble_false_negatives_multihot.parquet")
-    summary_csv = os.path.join(args.error_output_dir, "best_ensemble_mechanism_error_summary.csv")
-    summary_txt = os.path.join(args.error_output_dir, "best_ensemble_mechanism_error_summary.txt")
-    scatter_png = os.path.join(args.error_output_dir, "best_ensemble_mechanism_error_scatter.png")
-    bar_png = os.path.join(args.error_output_dir, "best_ensemble_mechanism_error_bar.png")
-
-    df_pos.to_parquet(positives_parquet, index=False)
-    df_fn.to_parquet(fn_parquet, index=False)
-    summary_df.to_csv(summary_csv, index=False)
-    save_mechanism_summary_txt(
-        summary_df=summary_df,
-        total_positive=int(len(df_pos)),
-        total_false_negative=int(len(df_fn)),
-        out_txt=summary_txt,
-    )
-    save_scatter_plot(summary_df=summary_df, out_png=scatter_png)
-    save_grouped_bar_chart(summary_df=summary_df, out_png=bar_png)
-
-    print()
-    print(f"[OK] wrote positives multihot parquet: {positives_parquet}")
-    print(f"[OK] wrote false-negative multihot parquet: {fn_parquet}")
-    print(f"[OK] wrote mechanism summary csv: {summary_csv}")
-    print(f"[OK] wrote mechanism summary txt: {summary_txt}")
-    print(f"[OK] wrote scatter plot: {scatter_png}")
-    print(f"[OK] wrote bar chart: {bar_png}")
+    print(f"[OK] wrote {summary_txt}")
+    print(f"[OK] wrote {examples_txt}")
+    print(f"[OK] wrote {avg_len_txt}")
+    print(f"[OK] wrote {abs_diff_txt}")
 
 
 if __name__ == "__main__":
     main()
 
 """
-python3 for_paper/total_5f.py \
-  --downloads-train ../Downloads/text_train.parquet \
+python3 for_paper/error_from_saved.py \
   --downloads-test  ../Downloads/text_test.parquet \
   --downloads-pt    ../Downloads/single_run_model.pt \
-  --deja-train      ../Deja/train_pairs_with_siglip_embeddings.parquet \
   --deja-test       ../Deja/test_pairs_with_siglip_embeddings.parquet \
   --deja-pt         ../Deja/single_run_model.pt \
-  --unifont-train   ../Unifont/train_pairs_with_siglip_embeddings.parquet \
   --unifont-test    ../Unifont/test_pairs_with_siglip_embeddings.parquet \
   --unifont-pt      ../Unifont/single_run_model.pt \
-  --libre-train     ../Libre/train_pairs_with_siglip_embeddings.parquet \
   --libre-test      ../Libre/test_pairs_with_siglip_embeddings.parquet \
   --libre-pt        ../Libre/single_run_model.pt \
-  --exo2-train      ../Exo2/train_pairs_with_siglip_embeddings.parquet \
   --exo2-test       ../Exo2/test_pairs_with_siglip_embeddings.parquet \
   --exo2-pt         ../Exo2/single_run_model.pt \
-  --doulos-train    ../Doulos/train_pairs_with_siglip_embeddings.parquet \
   --doulos-test     ../Doulos/test_pairs_with_siglip_embeddings.parquet \
   --doulos-pt       ../Doulos/single_run_model.pt \
-  --cousine-train   ../Cousine/train_pairs_with_siglip_embeddings.parquet \
   --cousine-test    ../Cousine/test_pairs_with_siglip_embeddings.parquet \
   --cousine-pt      ../Cousine/single_run_model.pt \
-  --model adaboost \
-  --model-output-path saved_models/best_ensemble_model.joblib
+  --saved-model-path saved_models/total_5f_model.joblib
 """

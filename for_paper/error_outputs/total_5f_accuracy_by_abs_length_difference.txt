@@ -1,0 +1,4 @@
+abs_length_difference_bucket_start | abs_length_difference_bucket_end | abs_length_difference_bucket_mean | accuracy_pct | frequency_pct
+0 | 2 | 0.374614 | 96.945436 | 90.457851
+2 | 4 | 2.117027 | 93.133211 | 9.541543
+4 | 6 | 5.000000 | 100.000000 | 0.000606

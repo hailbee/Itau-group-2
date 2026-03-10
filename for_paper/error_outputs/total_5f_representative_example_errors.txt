@@ -1,0 +1,91 @@
+classification_type=punycode
+real_name | fraudulent_name | label | classification_type
+NO_EXAMPLES | NO_EXAMPLES | NO_EXAMPLES | punycode
+
+classification_type=non_ascii
+real_name | fraudulent_name | label | classification_type
+tanea | taeāi | 1.0 | non_ascii
+euromonitor | euroïonitoz | 1.0 | non_ascii
+focus | ƒokus | 1.0 | non_ascii
+
+classification_type=unicode_homoglyph
+real_name | fraudulent_name | label | classification_type
+NO_EXAMPLES | NO_EXAMPLES | NO_EXAMPLES | unicode_homoglyph
+
+classification_type=hyphen_change
+real_name | fraudulent_name | label | classification_type
+xvide0s | y-vide0s_ | 1.0 | hyphen_change
+irorio | i-roriosw | 1.0 | hyphen_change
+meteofrance | metmo-frane | 1.0 | hyphen_change
+
+classification_type=digit_change
+real_name | fraudulent_name | label | classification_type
+mypaga | eyp4ga | 1.0 | digit_change
+adoption | idop4iŏn | 1.0 | digit_change
+vcars | 6chrs | 1.0 | digit_change
+
+classification_type=transposition
+real_name | fraudulent_name | label | classification_type
+family | afmily | 1.0 | transposition
+nokia | onkia | 1.0 | transposition
+research | ersearch | 1.0 | transposition
+
+classification_type=insertion
+real_name | fraudulent_name | label | classification_type
+xvide0s | yvidee0s | 1.0 | insertion
+xvide0s | y-vide0s_ | 1.0 | insertion
+mer30 | 44mp30 | 1.0 | insertion
+
+classification_type=deletion
+real_name | fraudulent_name | label | classification_type
+pinsalo | pnsanno | 1.0 | deletion
+hdfree | edree | 1.0 | deletion
+tanea | taean | 1.0 | deletion
+
+classification_type=substitution
+real_name | fraudulent_name | label | classification_type
+pinsalo | pnsanno | 1.0 | substitution
+xvide0s | yvidee0s | 1.0 | substitution
+xvide0s | y-vide0s_ | 1.0 | substitution
+
+classification_type=digit_substitution
+real_name | fraudulent_name | label | classification_type
+521000 | 251060 | 1.0 | digit_substitution
+51talk | 50talk | 1.0 | digit_substitution
+24sata | 3asat4 | 1.0 | digit_substitution
+
+classification_type=mixed_script
+real_name | fraudulent_name | label | classification_type
+product | prodµctpr | 1.0 | mixed_script
+textures | tmxtԛres | 1.0 | mixed_script
+restaurant | rmst-aµrant | 1.0 | mixed_script
+
+classification_type=separator_change
+real_name | fraudulent_name | label | classification_type
+NO_EXAMPLES | NO_EXAMPLES | NO_EXAMPLES | separator_change
+
+classification_type=repeat_char
+real_name | fraudulent_name | label | classification_type
+coral | cooral | 1.0 | repeat_char
+
+classification_type=affix
+real_name | fraudulent_name | label | classification_type
+matras | matraswu | 1.0 | affix
+kirotv | irotv | 1.0 | affix
+radio | radiooc_ | 1.0 | affix
+
+classification_type=numeric_affix
+real_name | fraudulent_name | label | classification_type
+net10 | net102 | 1.0 | numeric_affix
+
+classification_type=visual_confusable
+real_name | fraudulent_name | label | classification_type
+daoki | claoki | 1.0 | visual_confusable
+
+classification_type=multichar_confusable
+real_name | fraudulent_name | label | classification_type
+daoki | claoki | 1.0 | multichar_confusable
+
+classification_type=leet_pair
+real_name | fraudulent_name | label | classification_type
+NO_EXAMPLES | NO_EXAMPLES | NO_EXAMPLES | leet_pair
