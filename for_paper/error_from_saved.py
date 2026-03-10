@@ -819,20 +819,53 @@ def build_bucketed_accuracy_summary(
             retbins=True,
             duplicates="drop",
         )
-        df["bucket"] = bucket_codes
+        df["bucket"] = bucket_codes.astype("Int64")
+        df = df.loc[df["bucket"].notna()].copy()
 
-        df["bucket_start"] = df["bucket"].map(lambda i: bins[int(i)])
-        df["bucket_end"] = df["bucket"].map(lambda i: bins[int(i) + 1])
+        df["bucket_start"] = df["bucket"].map(lambda i: float(bins[int(i)]))
+        df["bucket_end"] = df["bucket"].map(lambda i: float(bins[int(i) + 1]))
 
-    else:
-        if bucket_width is None or bucket_width <= 0:
-            raise ValueError("bucket_width must be > 0 when not using quantiles")
+        grouped = (
+            df.groupby(["bucket_start", "bucket_end"], as_index=False)
+            .agg(
+                count=("correct", "size"),
+                accuracy=("correct", "mean"),
+                bucket_mean=("values", "mean"),
+            )
+            .sort_values(["bucket_start", "bucket_end"])
+            .reset_index(drop=True)
+        )
 
-        bucket_start = np.floor(values / bucket_width) * bucket_width
-        bucket_end = bucket_start + bucket_width
+        total_n = int(len(df))
+        grouped["accuracy_pct"] = 100.0 * grouped["accuracy"]
+        grouped["frequency_pct"] = 100.0 * grouped["count"] / total_n
 
-        df["bucket_start"] = bucket_start
-        df["bucket_end"] = bucket_end
+        grouped = grouped.rename(
+            columns={
+                "bucket_start": f"{bucket_col}_start",
+                "bucket_end": f"{bucket_col}_end",
+                "bucket_mean": f"{bucket_col}_mean",
+            }
+        )
+
+        return grouped[
+            [
+                f"{bucket_col}_start",
+                f"{bucket_col}_end",
+                f"{bucket_col}_mean",
+                "accuracy_pct",
+                "frequency_pct",
+            ]
+        ]
+
+    if bucket_width is None or bucket_width <= 0:
+        raise ValueError("bucket_width must be > 0 when not using quantiles")
+
+    bucket_start = np.floor(values / bucket_width) * bucket_width
+    bucket_end = bucket_start + bucket_width
+
+    df["bucket_start"] = bucket_start
+    df["bucket_end"] = bucket_end
 
     grouped = (
         df.groupby(["bucket_start", "bucket_end"], as_index=False)
@@ -868,6 +901,41 @@ def build_bucketed_accuracy_summary(
     ]
 
 
+def build_raw_value_accuracy_summary(
+    values: np.ndarray,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    value_col: str,
+) -> pd.DataFrame:
+    values = values.astype(np.float64, copy=False)
+    correct = (y_true == y_pred).astype(np.int32)
+
+    df = pd.DataFrame(
+        {
+            "values": values,
+            "correct": correct,
+        }
+    )
+
+    grouped = (
+        df.groupby("values", as_index=False)
+        .agg(
+            count=("correct", "size"),
+            accuracy=("correct", "mean"),
+        )
+        .sort_values("values")
+        .reset_index(drop=True)
+    )
+
+    total_n = int(len(df))
+    grouped["accuracy_pct"] = 100.0 * grouped["accuracy"]
+    grouped["frequency_pct"] = 100.0 * grouped["count"] / total_n
+
+    grouped = grouped.rename(columns={"values": value_col})
+
+    return grouped[[value_col, "accuracy_pct", "frequency_pct"]]
+
+
 def save_bucketed_accuracy_txt(
     summary_df: pd.DataFrame,
     bucket_col: str,
@@ -889,14 +957,41 @@ def save_bucketed_accuracy_txt(
         if float_format == "int":
             start_str = f"{int(round(start_val))}"
             end_str = f"{int(round(end_val))}"
+            mean_str = f"{int(round(mean_val))}"
         else:
             start_str = f"{start_val:.1f}"
             end_str = f"{end_val:.1f}"
-
-        mean_str = f"{mean_val:.6f}"
+            mean_str = f"{mean_val:.6f}"
 
         lines.append(
             f"{start_str} | {end_str} | {mean_str} | "
+            f"{float(row['accuracy_pct']):.6f} | "
+            f"{float(row['frequency_pct']):.6f}"
+        )
+
+    with open(out_txt, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def save_raw_value_accuracy_txt(
+    summary_df: pd.DataFrame,
+    value_col: str,
+    out_txt: str,
+    float_format: str,
+) -> None:
+    lines: List[str] = []
+    lines.append(f"{value_col} | accuracy_pct | frequency_pct")
+
+    for _, row in summary_df.iterrows():
+        value = float(row[value_col])
+
+        if float_format == "int":
+            value_str = f"{int(round(value))}"
+        else:
+            value_str = f"{value:.6f}"
+
+        lines.append(
+            f"{value_str} | "
             f"{float(row['accuracy_pct']):.6f} | "
             f"{float(row['frequency_pct']):.6f}"
         )
@@ -1220,12 +1315,11 @@ def main() -> None:
 
     pos_mask = y_te == 1
 
-    accuracy_by_abs_diff = build_bucketed_accuracy_summary(
+    accuracy_by_abs_diff = build_raw_value_accuracy_summary(
         values=abs_length_difference[pos_mask].astype(np.float64),
         y_true=y_te[pos_mask],
         y_pred=yhat_te[pos_mask],
-        bucket_width=float(ABS_LENGTH_DIFFERENCE_BUCKET_WIDTH),
-        bucket_col="abs_length_difference_bucket",
+        value_col="abs_length_difference",
     )
 
     summary_txt = os.path.join(args.error_output_dir, "total_5f_error_type_summary.txt")
@@ -1247,9 +1341,9 @@ def main() -> None:
         out_txt=avg_len_txt,
         float_format="float",
     )
-    save_bucketed_accuracy_txt(
+    save_raw_value_accuracy_txt(
         summary_df=accuracy_by_abs_diff,
-        bucket_col="abs_length_difference_bucket",
+        value_col="abs_length_difference",
         out_txt=abs_diff_txt,
         float_format="int",
     )
