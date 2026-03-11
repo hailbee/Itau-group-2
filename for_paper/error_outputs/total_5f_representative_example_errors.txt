@@ -2,11 +2,11 @@ classification_type=punycode
 real_name | fraudulent_name | label | classification_type
 NO_EXAMPLES | NO_EXAMPLES | NO_EXAMPLES | punycode
 
-classification_type=non_ascii
+classification_type=Non-ASCII
 real_name | fraudulent_name | label | classification_type
-tanea | taeāi | 1.0 | non_ascii
-euromonitor | euroïonitoz | 1.0 | non_ascii
-focus | ƒokus | 1.0 | non_ascii
+tanea | taeāi | 1.0 | Non-ASCII
+euromonitor | euroïonitoz | 1.0 | Non-ASCII
+focus | ƒokus | 1.0 | Non-ASCII
 
 classification_type=unicode_homoglyph
 real_name | fraudulent_name | label | classification_type
@@ -74,9 +74,9 @@ matras | matraswu | 1.0 | affix
 kirotv | irotv | 1.0 | affix
 radio | radiooc_ | 1.0 | affix
 
-classification_type=numeric_affix
+classification_type=digit_affix
 real_name | fraudulent_name | label | classification_type
-net10 | net102 | 1.0 | numeric_affix
+net10 | net102 | 1.0 | digit_affix
 
 classification_type=visual_confusable
 real_name | fraudulent_name | label | classification_type

@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import argparse
-import difflib
 import os
 import re
-import unicodedata
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Tuple
 
 import joblib
 import numpy as np
@@ -14,15 +12,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-
-# =========================
-# Small output settings
-# =========================
-REPRESENTATIVE_MIN_NAME_LEN = 5
-AVG_STRING_LENGTH_BUCKET_WIDTH = 2.0
-ABS_LENGTH_DIFFERENCE_BUCKET_WIDTH = 2
-
+import matplotlib.pyplot as plt
 
 # =========================
 # Optional string libs
@@ -69,10 +59,6 @@ def load_table(path: str) -> pd.DataFrame:
 
 def safe_str_list(s: pd.Series) -> List[str]:
     return s.fillna("").astype(str).tolist()
-
-
-def clean_text_cell(x: Any) -> str:
-    return str(x).replace("\n", " ").replace("\r", " ").replace("|", "/").strip()
 
 
 # =========================
@@ -272,307 +258,6 @@ def projected_cosine(
 
 
 # =========================
-# Multi-hot mechanism flags
-# =========================
-SEPARATORS: set[str] = set(" \t\r\n-_./\\:·•—–‐-‒―")
-
-INVISIBLE_CODEPOINTS: set[str] = {
-    "\u200b",
-    "\u200c",
-    "\u200d",
-    "\ufeff",
-    "\u00ad",
-    "\u2060",
-    "\u180e",
-}
-
-CONFUSABLE_CHAR_MAP: Dict[str, str] = {
-    "ł": "l", "Ł": "l",
-    "ø": "o", "Ø": "o",
-    "đ": "d", "Đ": "d",
-    "ı": "i",
-    "а": "a", "А": "a",
-    "е": "e", "Е": "e",
-    "о": "o", "О": "o",
-    "р": "p", "Р": "p",
-    "с": "c", "С": "c",
-    "х": "x", "Х": "x",
-    "у": "y", "У": "y",
-    "к": "k", "К": "k",
-    "м": "m", "М": "m",
-    "т": "t", "Т": "t",
-    "н": "h", "Н": "h",
-    "і": "i", "І": "i",
-    "α": "a", "Α": "a",
-    "ο": "o", "Ο": "o",
-    "ρ": "p", "Ρ": "p",
-    "χ": "x", "Χ": "x",
-    "ν": "v", "Ν": "v",
-}
-
-MULTICHAR_CONFUSABLES: List[Tuple[str, str]] = [
-    ("rn", "m"),
-    ("cl", "d"),
-    ("vv", "w"),
-    ("l1", "h"),
-    ("1l", "h"),
-]
-
-LEET_MAP: Dict[str, str] = {
-    "0": "o",
-    "3": "e",
-    "4": "a",
-    "5": "s",
-    "7": "t",
-    "@": "a",
-    "1": "l",
-}
-LEET_CHARS: set[str] = set(LEET_MAP.keys())
-
-FLAG_KEYS: List[str] = [
-    "punycode",
-    "Non-ASCII",
-    "unicode_homoglyph",
-    "hyphen_change",
-    "digit_change",
-    "transposition",
-    "insertion",
-    "deletion",
-    "substitution",
-    "digit_substitution",
-    "mixed_script",
-    "separator_change",
-    "repeat_char",
-    "affix",
-    "digit_affix",
-    "visual_confusable",
-    "multichar_confusable",
-    "leet_pair",
-]
-
-
-def _nfkc(s: str) -> str:
-    return unicodedata.normalize("NFKC", str(s or "")).strip()
-
-
-def _strip_marks(s: str) -> str:
-    s = unicodedata.normalize("NFKD", s)
-    return "".join(ch for ch in s if not unicodedata.combining(ch))
-
-
-def _has_non_ascii(s: str) -> bool:
-    return any(ord(ch) >= 128 for ch in s)
-
-
-def _script_of_char(ch: str) -> str:
-    if not ch.isalpha():
-        return "NA"
-    name = unicodedata.name(ch, "")
-    if "CYRILLIC" in name:
-        return "CYRILLIC"
-    if "GREEK" in name:
-        return "GREEK"
-    if "LATIN" in name:
-        return "LATIN"
-    if "ARABIC" in name:
-        return "ARABIC"
-    if "HEBREW" in name:
-        return "HEBREW"
-    if "DEVANAGARI" in name:
-        return "DEVANAGARI"
-    if "HANGUL" in name:
-        return "HANGUL"
-    if "HIRAGANA" in name or "KATAKANA" in name or "CJK UNIFIED IDEOGRAPH" in name:
-        return "CJK"
-    return "OTHER"
-
-
-def _has_mixed_script(s: str) -> bool:
-    scripts = set()
-    for ch in s:
-        sc = _script_of_char(ch)
-        if sc not in ("NA", "OTHER"):
-            scripts.add(sc)
-        if len(scripts) >= 2:
-            return True
-    return False
-
-
-def _is_single_adjacent_swap(a: str, b: str) -> bool:
-    if len(a) != len(b) or a == b:
-        return False
-    diffs = [i for i, (x, y) in enumerate(zip(a, b)) if x != y]
-    if len(diffs) != 2:
-        return False
-    i, j = diffs
-    if j != i + 1:
-        return False
-    aa = list(a)
-    aa[i], aa[j] = aa[j], aa[i]
-    return "".join(aa) == b
-
-
-def _diff_ops(real_s: str, fraud_s: str) -> Tuple[int, int, int]:
-    sm = difflib.SequenceMatcher(a=real_s, b=fraud_s)
-    n_ins = 0
-    n_del = 0
-    n_rep = 0
-    for tag, i1, i2, j1, j2 in sm.get_opcodes():
-        if tag == "insert":
-            n_ins += (j2 - j1)
-        elif tag == "delete":
-            n_del += (i2 - i1)
-        elif tag == "replace":
-            n_rep += max(i2 - i1, j2 - j1)
-    return n_ins, n_del, n_rep
-
-
-def _remove_separators(s: str) -> str:
-    return "".join(ch for ch in s if (ch not in SEPARATORS and not ch.isspace()))
-
-
-def _collapse_runs(s: str) -> str:
-    if not s:
-        return s
-    out = [s[0]]
-    for ch in s[1:]:
-        if ch != out[-1]:
-            out.append(ch)
-    return "".join(out)
-
-
-def _affix_extra(a: str, b: str) -> Tuple[bool, str]:
-    if not a or not b or a == b:
-        return False, ""
-    if len(a) < len(b):
-        a, b = b, a
-
-    max_extra = 10
-    if len(a) - len(b) > max_extra:
-        return False, ""
-
-    if a.startswith(b):
-        return True, a[len(b):]
-    if a.endswith(b):
-        return True, a[: len(a) - len(b)]
-    return False, ""
-
-
-def _multichar_skeleton(s: str) -> str:
-    t = s.casefold()
-    for pat, rep in MULTICHAR_CONFUSABLES:
-        t = t.replace(pat, rep)
-    return t
-
-
-def _confusable_skeleton(s: str) -> str:
-    t = _multichar_skeleton(s)
-    out_chars: List[str] = []
-    for ch in t:
-        out_chars.append(CONFUSABLE_CHAR_MAP.get(ch, ch))
-    return "".join(out_chars)
-
-
-def _is_strict_leet_pair(f: str, r: str) -> bool:
-    f_cf = f.casefold()
-    r_cf = r.casefold()
-    if not f_cf or not r_cf or len(f_cf) != len(r_cf):
-        return False
-
-    used = False
-    for fc, rc in zip(f_cf, r_cf):
-        if fc == rc:
-            continue
-        if fc in LEET_MAP and LEET_MAP[fc] == rc:
-            used = True
-            continue
-        return False
-    return used
-
-
-def mechanism_flags(fraudulent: str, real: str) -> Dict[str, int]:
-    out: Dict[str, int] = {k: 0 for k in FLAG_KEYS}
-
-    f_raw = str(fraudulent or "")
-    r_raw = str(real or "")
-
-    f = _nfkc(f_raw)
-    r = _nfkc(r_raw)
-
-    if not f and not r:
-        return out
-
-    out["punycode"] = int(("xn--" in f) or ("xn--" in r))
-    out["Non-ASCII"] = int(_has_non_ascii(f) or _has_non_ascii(r))
-    out["hyphen_change"] = int(("-" in f) ^ ("-" in r))
-    out["digit_change"] = int((any(ch.isdigit() for ch in f)) ^ (any(ch.isdigit() for ch in r)))
-
-    f_stripped = _strip_marks(f)
-    r_stripped = _strip_marks(r)
-    if (f_stripped.casefold() == r_stripped.casefold()) and (f.casefold() != r.casefold()):
-        if out["Non-ASCII"]:
-            out["unicode_homoglyph"] = 1
-
-    out["transposition"] = int(_is_single_adjacent_swap(r, f) or _is_single_adjacent_swap(f, r))
-
-    n_ins, n_del, n_rep = _diff_ops(r.casefold(), f.casefold())
-    out["insertion"] = int(n_ins > 0)
-    out["deletion"] = int(n_del > 0)
-    out["substitution"] = int(n_rep > 0)
-
-    if len(f) == len(r) and f != r:
-        diffs = [(a, b) for a, b in zip(f, r) if a != b]
-        if diffs:
-            digitish = 0
-            for a, b in diffs:
-                if (a.isdigit() and b.isdigit()) or (a.isdigit() and not b.isdigit()) or (b.isdigit() and not a.isdigit()):
-                    digitish += 1
-            if digitish >= 1 and digitish == len(diffs) and len(diffs) <= 8:
-                out["digit_substitution"] = 1
-
-    out["mixed_script"] = int(_has_mixed_script(f) or _has_mixed_script(r))
-
-    f_nosep = _remove_separators(f).casefold()
-    r_nosep = _remove_separators(r).casefold()
-    if f != r and f_nosep and (f_nosep == r_nosep) and (
-        any(ch in SEPARATORS or ch.isspace() for ch in f) or any(ch in SEPARATORS or ch.isspace() for ch in r)
-    ):
-        out["separator_change"] = 1
-
-    f_coll = _collapse_runs(f).casefold()
-    r_coll = _collapse_runs(r).casefold()
-    if f != r and f_coll and (f_coll == r_coll) and (len(f) != len(r)):
-        out["repeat_char"] = 1
-
-    is_aff, extra = _affix_extra(f.casefold(), r.casefold())
-    out["affix"] = int(is_aff)
-    if is_aff:
-        extra_compact = _remove_separators(extra)
-        out["digit_affix"] = int(extra_compact.isdigit() and len(extra_compact) > 0)
-
-    if f != r and (f.casefold() != r.casefold()):
-        sk_f = _confusable_skeleton(f)
-        sk_r = _confusable_skeleton(r)
-        if sk_f == sk_r and sk_f != "":
-            out["visual_confusable"] = 1
-        if _multichar_skeleton(f) == _multichar_skeleton(r) and _multichar_skeleton(f) != "":
-            out["multichar_confusable"] = 1
-
-    if f != r and (f.casefold() != r.casefold()):
-        f_has_leet = any(ch in LEET_CHARS for ch in f.casefold())
-        r_has_leet = any(ch in LEET_CHARS for ch in r.casefold())
-        if f_has_leet and (not r_has_leet) and _is_strict_leet_pair(f, r):
-            out["leet_pair"] = 1
-
-    return out
-
-
-def mechanism_flags_df(fraud_series: Sequence[str], real_series: Sequence[str]) -> pd.DataFrame:
-    rows = [mechanism_flags(f, r) for f, r in zip(fraud_series, real_series)]
-    return pd.DataFrame(rows, columns=FLAG_KEYS).fillna(0).astype(int)
-
-
-# =========================
 # Feature builders
 # =========================
 def build_text_features(
@@ -689,344 +374,49 @@ def load_saved_model_bundle(path: str) -> Tuple[Any, List[str] | None]:
 
 
 # =========================
-# Error analysis helpers
+# Confusion matrix output
 # =========================
-def build_positive_mechanism_tables(
-    df_test: pd.DataFrame,
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    fraud_col: str,
-    real_col: str,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    pos_mask = y_true == 1
-    df_pos = df_test.loc[pos_mask].copy().reset_index(drop=True)
+def save_confusion_matrix_png(y_true: np.ndarray, y_pred: np.ndarray, out_path: str) -> None:
+    y_true = y_true.astype(np.int32, copy=False)
+    y_pred = y_pred.astype(np.int32, copy=False)
 
-    flags = mechanism_flags_df(
-        df_pos[fraud_col].astype(str).tolist(),
-        df_pos[real_col].astype(str).tolist(),
-    ).reset_index(drop=True)
+    tn = int(np.sum((y_true == 0) & (y_pred == 0)))
+    fp = int(np.sum((y_true == 0) & (y_pred == 1)))
+    fn = int(np.sum((y_true == 1) & (y_pred == 0)))
+    tp = int(np.sum((y_true == 1) & (y_pred == 1)))
 
-    df_pos = pd.concat([df_pos.reset_index(drop=True), flags], axis=1)
+    cm = np.array([[tn, fp], [fn, tp]])
 
-    y_pred_pos = y_pred[pos_mask]
-    df_pos["pred_label"] = y_pred_pos.astype(np.int32)
-    df_pos["is_false_negative"] = ((y_pred_pos == 0) & (y_true[pos_mask] == 1)).astype(int)
+    fig, ax = plt.subplots(figsize=(4, 4))
+    im = ax.imshow(cm, cmap="Blues")
 
-    df_fn = df_pos.loc[df_pos["is_false_negative"] == 1].copy().reset_index(drop=True)
-    return df_pos, df_fn
+    ax.set_xticks([0, 1])
+    ax.set_yticks([0, 1])
+    ax.set_xticklabels(["Legit", "Spoof"])
+    ax.set_yticklabels(["Legit", "Spoof"])
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("Actual")
 
 
-def build_mechanism_error_summary(
-    df_pos: pd.DataFrame,
-    df_fn: pd.DataFrame,
-    fraud_col: str,
-    real_col: str,
-) -> pd.DataFrame:
-    total_positive = int(len(df_pos))
-    rows: List[Dict[str, float | str]] = []
+    threshold = cm.max() / 2.0
 
-    for k in FLAG_KEYS:
-        pos_subset = df_pos.loc[df_pos[k] == 1]
-        fn_subset = df_fn.loc[df_fn[k] == 1]
-
-        n_pos_with_type = int(len(pos_subset))
-        n_fn_with_type = int(len(fn_subset))
-
-        frequency_pct = (100.0 * n_pos_with_type / total_positive) if total_positive > 0 else 0.0
-        model_missed_pct = (100.0 * n_fn_with_type / n_pos_with_type) if n_pos_with_type > 0 else 0.0
-
-        if n_pos_with_type > 0:
-            fraud_len = pos_subset[fraud_col].fillna("").astype(str).str.len()
-            real_len = pos_subset[real_col].fillna("").astype(str).str.len()
-            avg_fraudulent_name_length = float(fraud_len.mean())
-            avg_real_name_length = float(real_len.mean())
-            avg_length_distance = float((fraud_len - real_len).abs().mean())
-        else:
-            avg_fraudulent_name_length = 0.0
-            avg_real_name_length = 0.0
-            avg_length_distance = 0.0
-
-        rows.append(
-            {
-                "classification_type": k,
-                "frequency_pct": frequency_pct,
-                "model_missed_pct": model_missed_pct,
-                "raw_errors": n_fn_with_type,
-                "avg_fraudulent_name_length": avg_fraudulent_name_length,
-                "avg_real_name_length": avg_real_name_length,
-                "avg_length_distance": avg_length_distance,
-            }
-        )
-
-    return pd.DataFrame(rows)
-
-
-def save_mechanism_summary_txt(summary_df: pd.DataFrame, out_txt: str) -> None:
-    lines: List[str] = []
-    lines.append(
-        "classification_type | frequency_pct | model_missed_pct | raw_errors | "
-        "avg_fraudulent_name_length | avg_real_name_length | avg_length_distance"
-    )
-
-    for _, row in summary_df.iterrows():
-        lines.append(
-            f"{clean_text_cell(row['classification_type'])} | "
-            f"{float(row['frequency_pct']):.6f} | "
-            f"{float(row['model_missed_pct']):.6f} | "
-            f"{int(row['raw_errors'])} | "
-            f"{float(row['avg_fraudulent_name_length']):.6f} | "
-            f"{float(row['avg_real_name_length']):.6f} | "
-            f"{float(row['avg_length_distance']):.6f}"
-        )
-
-    with open(out_txt, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
-
-
-def save_representative_errors_txt(
-    df_fn: pd.DataFrame,
-    fraud_col: str,
-    real_col: str,
-    label_col: str,
-    out_txt: str,
-) -> None:
-    lines: List[str] = []
-
-    for k in FLAG_KEYS:
-        lines.append(f"classification_type={k}")
-        lines.append(f"{real_col} | {fraud_col} | {label_col} | classification_type")
-
-        subset = df_fn.loc[df_fn[k] == 1, [real_col, fraud_col, label_col]].copy()
-
-        real_len = subset[real_col].fillna("").astype(str).str.len()
-        fraud_len = subset[fraud_col].fillna("").astype(str).str.len()
-        subset = subset.loc[(real_len >= REPRESENTATIVE_MIN_NAME_LEN) & (fraud_len >= REPRESENTATIVE_MIN_NAME_LEN)]
-
-        subset = subset.drop_duplicates().head(3).reset_index(drop=True)
-
-        if subset.empty:
-            lines.append(f"NO_EXAMPLES | NO_EXAMPLES | NO_EXAMPLES | {k}")
-        else:
-            for _, row in subset.iterrows():
-                lines.append(
-                    f"{clean_text_cell(row[real_col])} | "
-                    f"{clean_text_cell(row[fraud_col])} | "
-                    f"{clean_text_cell(row[label_col])} | "
-                    f"{k}"
-                )
-
-        lines.append("")
-
-    with open(out_txt, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines).rstrip() + "\n")
-
-
-def build_bucketed_accuracy_summary(
-    values: np.ndarray,
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    bucket_width: float | None,
-    bucket_col: str,
-    use_quantiles: bool = False,
-) -> pd.DataFrame:
-    values = values.astype(np.float64, copy=False)
-    correct = (y_true == y_pred).astype(np.int32)
-
-    df = pd.DataFrame(
-        {
-            "values": values,
-            "correct": correct,
-        }
-    )
-
-    if use_quantiles:
-        bucket_codes, bins = pd.qcut(
-            df["values"],
-            q=5,
-            labels=False,
-            retbins=True,
-            duplicates="drop",
-        )
-        df["bucket"] = bucket_codes.astype("Int64")
-        df = df.loc[df["bucket"].notna()].copy()
-
-        df["bucket_start"] = df["bucket"].map(lambda i: float(bins[int(i)]))
-        df["bucket_end"] = df["bucket"].map(lambda i: float(bins[int(i) + 1]))
-
-        grouped = (
-            df.groupby(["bucket_start", "bucket_end"], as_index=False)
-            .agg(
-                count=("correct", "size"),
-                accuracy=("correct", "mean"),
-                bucket_mean=("values", "mean"),
+    for i in range(2):
+        for j in range(2):
+            text_color = "white" if cm[i, j] > threshold else "black"
+            ax.text(
+                j,
+                i,
+                f"{cm[i, j]:,}",
+                ha="center",
+                va="center",
+                fontsize=12,
+                color=text_color,
+                fontweight="bold",
             )
-            .sort_values(["bucket_start", "bucket_end"])
-            .reset_index(drop=True)
-        )
 
-        total_n = int(len(df))
-        grouped["accuracy_pct"] = 100.0 * grouped["accuracy"]
-        grouped["frequency_pct"] = 100.0 * grouped["count"] / total_n
-
-        grouped = grouped.rename(
-            columns={
-                "bucket_start": f"{bucket_col}_start",
-                "bucket_end": f"{bucket_col}_end",
-                "bucket_mean": f"{bucket_col}_mean",
-            }
-        )
-
-        return grouped[
-            [
-                f"{bucket_col}_start",
-                f"{bucket_col}_end",
-                f"{bucket_col}_mean",
-                "accuracy_pct",
-                "frequency_pct",
-            ]
-        ]
-
-    if bucket_width is None or bucket_width <= 0:
-        raise ValueError("bucket_width must be > 0 when not using quantiles")
-
-    bucket_start = np.floor(values / bucket_width) * bucket_width
-    bucket_end = bucket_start + bucket_width
-
-    df["bucket_start"] = bucket_start
-    df["bucket_end"] = bucket_end
-
-    grouped = (
-        df.groupby(["bucket_start", "bucket_end"], as_index=False)
-        .agg(
-            count=("correct", "size"),
-            accuracy=("correct", "mean"),
-            bucket_mean=("values", "mean"),
-        )
-        .sort_values(["bucket_start", "bucket_end"])
-        .reset_index(drop=True)
-    )
-
-    total_n = int(len(df))
-    grouped["accuracy_pct"] = 100.0 * grouped["accuracy"]
-    grouped["frequency_pct"] = 100.0 * grouped["count"] / total_n
-
-    grouped = grouped.rename(
-        columns={
-            "bucket_start": f"{bucket_col}_start",
-            "bucket_end": f"{bucket_col}_end",
-            "bucket_mean": f"{bucket_col}_mean",
-        }
-    )
-
-    return grouped[
-        [
-            f"{bucket_col}_start",
-            f"{bucket_col}_end",
-            f"{bucket_col}_mean",
-            "accuracy_pct",
-            "frequency_pct",
-        ]
-    ]
-
-
-def build_raw_value_accuracy_summary(
-    values: np.ndarray,
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    value_col: str,
-) -> pd.DataFrame:
-    values = values.astype(np.float64, copy=False)
-    correct = (y_true == y_pred).astype(np.int32)
-
-    df = pd.DataFrame(
-        {
-            "values": values,
-            "correct": correct,
-        }
-    )
-
-    grouped = (
-        df.groupby("values", as_index=False)
-        .agg(
-            count=("correct", "size"),
-            accuracy=("correct", "mean"),
-        )
-        .sort_values("values")
-        .reset_index(drop=True)
-    )
-
-    total_n = int(len(df))
-    grouped["accuracy_pct"] = 100.0 * grouped["accuracy"]
-    grouped["frequency_pct"] = 100.0 * grouped["count"] / total_n
-
-    grouped = grouped.rename(columns={"values": value_col})
-
-    return grouped[[value_col, "accuracy_pct", "frequency_pct"]]
-
-
-def save_bucketed_accuracy_txt(
-    summary_df: pd.DataFrame,
-    bucket_col: str,
-    out_txt: str,
-    float_format: str,
-) -> None:
-    start_col = f"{bucket_col}_start"
-    end_col = f"{bucket_col}_end"
-    mean_col = f"{bucket_col}_mean"
-
-    lines: List[str] = []
-    lines.append(f"{start_col} | {end_col} | {mean_col} | accuracy_pct | frequency_pct")
-
-    for _, row in summary_df.iterrows():
-        start_val = float(row[start_col])
-        end_val = float(row[end_col])
-        mean_val = float(row[mean_col])
-
-        if float_format == "int":
-            start_str = f"{int(round(start_val))}"
-            end_str = f"{int(round(end_val))}"
-            mean_str = f"{int(round(mean_val))}"
-        else:
-            start_str = f"{start_val:.1f}"
-            end_str = f"{end_val:.1f}"
-            mean_str = f"{mean_val:.6f}"
-
-        lines.append(
-            f"{start_str} | {end_str} | {mean_str} | "
-            f"{float(row['accuracy_pct']):.6f} | "
-            f"{float(row['frequency_pct']):.6f}"
-        )
-
-    with open(out_txt, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
-
-
-def save_raw_value_accuracy_txt(
-    summary_df: pd.DataFrame,
-    value_col: str,
-    out_txt: str,
-    float_format: str,
-) -> None:
-    lines: List[str] = []
-    lines.append(f"{value_col} | accuracy_pct | frequency_pct")
-
-    for _, row in summary_df.iterrows():
-        value = float(row[value_col])
-
-        if float_format == "int":
-            value_str = f"{int(round(value))}"
-        else:
-            value_str = f"{value:.6f}"
-
-        lines.append(
-            f"{value_str} | "
-            f"{float(row['accuracy_pct']):.6f} | "
-            f"{float(row['frequency_pct']):.6f}"
-        )
-
-    with open(out_txt, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
-
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
 
 # =========================
 # Main
@@ -1110,7 +500,6 @@ def main() -> None:
     else:
         device = torch.device(args.device)
 
-    # Load test data only
     df_te_txt = load_table(args.downloads_test)
     df_te_dj = load_table(args.deja_test)
     df_te_uf = load_table(args.unifont_test)
@@ -1312,86 +701,16 @@ def main() -> None:
     yhat_te = clf.predict(X_te).astype(np.int32)
 
     os.makedirs(args.error_output_dir, exist_ok=True)
-
-    df_pos, df_fn = build_positive_mechanism_tables(
-        df_test=df_te_txt,
-        y_true=y_te,
-        y_pred=yhat_te,
-        fraud_col=args.fraud_col,
-        real_col=args.real_col,
-    )
-
-    mechanism_summary = build_mechanism_error_summary(
-        df_pos=df_pos,
-        df_fn=df_fn,
-        fraud_col=args.fraud_col,
-        real_col=args.real_col,
-    )
-
-    fraud_names = df_te_txt[args.fraud_col].fillna("").astype(str)
-    real_names = df_te_txt[args.real_col].fillna("").astype(str)
-
-    fraud_len = fraud_names.str.len().to_numpy(dtype=np.int32)
-    real_len = real_names.str.len().to_numpy(dtype=np.int32)
-
-    avg_string_length = (fraud_len + real_len) / 2.0
-    abs_length_difference = np.abs(fraud_len - real_len)
-
-    accuracy_by_avg_len = build_bucketed_accuracy_summary(
-        values=avg_string_length,
-        y_true=y_te,
-        y_pred=yhat_te,
-        bucket_width=None,
-        bucket_col="avg_string_length_bucket",
-        use_quantiles=True,
-    )
-
-    pos_mask = y_te == 1
-
-    accuracy_by_abs_diff = build_raw_value_accuracy_summary(
-        values=abs_length_difference[pos_mask].astype(np.float64),
-        y_true=y_te[pos_mask],
-        y_pred=yhat_te[pos_mask],
-        value_col="abs_length_difference",
-    )
-
-    summary_txt = os.path.join(args.error_output_dir, "total_5f_error_type_summary.txt")
-    examples_txt = os.path.join(args.error_output_dir, "total_5f_representative_example_errors.txt")
-    avg_len_txt = os.path.join(args.error_output_dir, "total_5f_accuracy_by_avg_string_length.txt")
-    abs_diff_txt = os.path.join(args.error_output_dir, "total_5f_accuracy_by_abs_length_difference.txt")
-
-    save_mechanism_summary_txt(mechanism_summary, summary_txt)
-    save_representative_errors_txt(
-        df_fn=df_fn,
-        fraud_col=args.fraud_col,
-        real_col=args.real_col,
-        label_col=args.label_col,
-        out_txt=examples_txt,
-    )
-    save_bucketed_accuracy_txt(
-        summary_df=accuracy_by_avg_len,
-        bucket_col="avg_string_length_bucket",
-        out_txt=avg_len_txt,
-        float_format="float",
-    )
-    save_raw_value_accuracy_txt(
-        summary_df=accuracy_by_abs_diff,
-        value_col="abs_length_difference",
-        out_txt=abs_diff_txt,
-        float_format="int",
-    )
-
-    print(f"[OK] wrote {summary_txt}")
-    print(f"[OK] wrote {examples_txt}")
-    print(f"[OK] wrote {avg_len_txt}")
-    print(f"[OK] wrote {abs_diff_txt}")
-
+    confusion_png = os.path.join(args.error_output_dir, "total_5f_confusion_matrix.png")
+    save_confusion_matrix_png(y_te, yhat_te, confusion_png)
+    
+    print(f"[OK] wrote {confusion_png}")
 
 if __name__ == "__main__":
     main()
 
 """
-python3 for_paper/error_from_saved.py \
+python3 for_paper/cm_from_saved.py \
   --downloads-test  ../Downloads/text_test.parquet \
   --downloads-pt    ../Downloads/single_run_model.pt \
   --deja-test       ../Deja/test_pairs_with_siglip_embeddings.parquet \
