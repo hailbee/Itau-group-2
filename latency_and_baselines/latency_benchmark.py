@@ -158,6 +158,16 @@ ENSEMBLE_FEATURE_CONFIGS = {
         "features": ["token_set_ratio", "levenshtein_distance_score", "partial_ratio"],
         "model_file": "metrics_model.joblib"
     },
+    "text": {
+        "description": "Text encoder + metrics (4 features)",
+        "features": ["text_cosine", "token_set_ratio", "levenshtein_distance_score", "partial_ratio"],
+        "model_file": "text_model.joblib"
+    },
+    "image": {
+        "description": "Image encoder + metrics (4 features)",
+        "features": ["cosine_deja", "token_set_ratio", "levenshtein_distance_score", "partial_ratio"],
+        "model_file": "image_model.joblib"
+    },
     "small": {
         "description": "Downloads + Deja cosines (2 features)",
         "features": ["cosine_downloads", "cosine_deja"],
@@ -201,6 +211,7 @@ ENSEMBLE_FEATURE_CONFIGS = {
     },
 }
 
+# missing total 5f mod., text and image. It's ok to not have have 5f mod but the others should be there. 
 
 # ============================================================================
 # Ensemble Feature Computer
@@ -881,6 +892,7 @@ def main():
     ]
     
     all_ensemble_models = [
+        "text", "image",
         "small", "medium", "large",
         "total_1f", "total_3f", "total_5f", "total_5f_img",
     ]
