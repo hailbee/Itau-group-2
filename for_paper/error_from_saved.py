@@ -1039,7 +1039,6 @@ def main() -> None:
     ap.add_argument("--deja-train", default=None)
     ap.add_argument("--unifont-train", default=None)
     ap.add_argument("--libre-train", default=None)
-    ap.add_argument("--exo2-train", default=None)
     ap.add_argument("--doulos-train", default=None)
     ap.add_argument("--cousine-train", default=None)
     ap.add_argument("--model", default="adaboost")
@@ -1057,9 +1056,6 @@ def main() -> None:
 
     ap.add_argument("--libre-test", required=True)
     ap.add_argument("--libre-pt", required=True)
-
-    ap.add_argument("--exo2-test", required=True)
-    ap.add_argument("--exo2-pt", required=True)
 
     ap.add_argument("--doulos-test", required=True)
     ap.add_argument("--doulos-pt", required=True)
@@ -1087,8 +1083,6 @@ def main() -> None:
     ap.add_argument("--unifont-real-prefix", default="real_emb_")
     ap.add_argument("--libre-fraud-prefix", default="fraud_emb_")
     ap.add_argument("--libre-real-prefix", default="real_emb_")
-    ap.add_argument("--exo2-fraud-prefix", default="fraud_emb_")
-    ap.add_argument("--exo2-real-prefix", default="real_emb_")
     ap.add_argument("--doulos-fraud-prefix", default="fraud_emb_")
     ap.add_argument("--doulos-real-prefix", default="real_emb_")
     ap.add_argument("--cousine-fraud-prefix", default="fraud_emb_")
@@ -1115,11 +1109,10 @@ def main() -> None:
     df_te_dj = load_table(args.deja_test)
     df_te_uf = load_table(args.unifont_test)
     df_te_li = load_table(args.libre_test)
-    df_te_ex = load_table(args.exo2_test)
     df_te_do = load_table(args.doulos_test)
     df_te_co = load_table(args.cousine_test)
 
-    for df in (df_te_txt, df_te_dj, df_te_uf, df_te_li, df_te_ex, df_te_do, df_te_co):
+    for df in (df_te_txt, df_te_dj, df_te_uf, df_te_li, df_te_do, df_te_co):
         if args.label_col not in df.columns:
             raise RuntimeError(f"Missing label_col={args.label_col!r} in one of the tables.")
         if args.fraud_col not in df.columns:
@@ -1132,14 +1125,13 @@ def main() -> None:
         len(df_te_dj) != n_te
         or len(df_te_uf) != n_te
         or len(df_te_li) != n_te
-        or len(df_te_ex) != n_te
         or len(df_te_do) != n_te
         or len(df_te_co) != n_te
     ):
         raise RuntimeError(
             "Test row-count mismatch: "
             f"Downloads={n_te} Deja={len(df_te_dj)} Unifont={len(df_te_uf)} "
-            f"Libre={len(df_te_li)} Exo2={len(df_te_ex)} Doulos={len(df_te_do)} Cousine={len(df_te_co)}"
+            f"Libre={len(df_te_li)} Doulos={len(df_te_do)} Cousine={len(df_te_co)}"
         )
 
     y_te = (df_te_txt[args.label_col].to_numpy() == args.positive_label).astype(np.int32)
@@ -1148,7 +1140,6 @@ def main() -> None:
         ("Deja test", df_te_dj),
         ("Unifont test", df_te_uf),
         ("Libre test", df_te_li),
-        ("Exo2 test", df_te_ex),
         ("Doulos test", df_te_do),
         ("Cousine test", df_te_co),
     ]:
@@ -1165,7 +1156,6 @@ def main() -> None:
     proj_dj, in_dim_dj = load_golden_projector(args.deja_pt, device=device)
     proj_uf, in_dim_uf = load_golden_projector(args.unifont_pt, device=device)
     proj_li, in_dim_li = load_golden_projector(args.libre_pt, device=device)
-    proj_ex, in_dim_ex = load_golden_projector(args.exo2_pt, device=device)
     proj_do, in_dim_do = load_golden_projector(args.doulos_pt, device=device)
     proj_co, in_dim_co = load_golden_projector(args.cousine_pt, device=device)
 
@@ -1216,17 +1206,6 @@ def main() -> None:
         device=device,
         batch_size=args.pt_batch_size,
     )
-    cos_te_ex, y_te_ex = build_single_font_cosine(
-        df=df_te_ex,
-        label_col=args.label_col,
-        positive_label=args.positive_label,
-        fraud_prefix=args.exo2_fraud_prefix,
-        real_prefix=args.exo2_real_prefix,
-        projector=proj_ex,
-        projector_in_dim=in_dim_ex,
-        device=device,
-        batch_size=args.pt_batch_size,
-    )
     cos_te_do, y_te_do = build_single_font_cosine(
         df=df_te_do,
         label_col=args.label_col,
@@ -1255,7 +1234,6 @@ def main() -> None:
         ("deja test", y_te_dj),
         ("unifont test", y_te_uf),
         ("libre test", y_te_li),
-        ("exo2 test", y_te_ex),
         ("doulos test", y_te_do),
         ("cousine test", y_te_co),
     ]:
@@ -1270,7 +1248,6 @@ def main() -> None:
         "cosine_deja": cos_te_dj,
         "cosine_unifont": cos_te_uf,
         "cosine_libre": cos_te_li,
-        "cosine_exo2": cos_te_ex,
         "cosine_doulos": cos_te_do,
         "cosine_cousine": cos_te_co,
     }
@@ -1283,7 +1260,6 @@ def main() -> None:
         "cosine_deja",
         "cosine_unifont",
         "cosine_libre",
-        "cosine_exo2",
         "cosine_doulos",
         "cosine_cousine",
     ]
@@ -1400,8 +1376,6 @@ python3 for_paper/error_from_saved.py \
   --unifont-pt      ../Unifont/single_run_model.pt \
   --libre-test      ../Libre/test_pairs_with_siglip_embeddings.parquet \
   --libre-pt        ../Libre/single_run_model.pt \
-  --exo2-test       ../Exo2/test_pairs_with_siglip_embeddings.parquet \
-  --exo2-pt         ../Exo2/single_run_model.pt \
   --doulos-test     ../Doulos/test_pairs_with_siglip_embeddings.parquet \
   --doulos-pt       ../Doulos/single_run_model.pt \
   --cousine-test    ../Cousine/test_pairs_with_siglip_embeddings.parquet \

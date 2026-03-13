@@ -30,6 +30,7 @@ try:
 except Exception:
     HAVE_RAPIDFUZZ = False
 
+
 # =========================
 # IO
 # =========================
@@ -516,6 +517,7 @@ def main() -> None:
     proj_uf, in_dim_uf = load_golden_projector(args.unifont_pt, device=device)
     proj_li, in_dim_li = load_golden_projector(args.libre_pt, device=device)
     proj_do, in_dim_do = load_golden_projector(args.doulos_pt, device=device)
+    proj_co, in_dim_co = load_golden_projector(args.cousine_pt, device=device)
 
     # Build text-side features: [token_set_ratio, levenshtein_distance_score, partial_ratio]
     X_tr_txt, y_tr_txt = build_text_features(
@@ -533,7 +535,7 @@ def main() -> None:
         positive_label=args.positive_label,
     )
 
-    # Build image-side features: 4 cosine features using the exact image-ensemble fonts
+    # Build image-side features: 5 cosine features using the exact image-ensemble fonts
     cos_tr_dj, y_tr_dj = build_single_font_cosine(
         df=df_tr_dj,
         label_col=args.label_col,
@@ -626,6 +628,29 @@ def main() -> None:
         batch_size=args.pt_batch_size,
     )
 
+    cos_tr_co, y_tr_co = build_single_font_cosine(
+        df=df_tr_co,
+        label_col=args.label_col,
+        positive_label=args.positive_label,
+        fraud_prefix=args.cousine_fraud_prefix,
+        real_prefix=args.cousine_real_prefix,
+        projector=proj_co,
+        projector_in_dim=in_dim_co,
+        device=device,
+        batch_size=args.pt_batch_size,
+    )
+    cos_te_co, y_te_co = build_single_font_cosine(
+        df=df_te_co,
+        label_col=args.label_col,
+        positive_label=args.positive_label,
+        fraud_prefix=args.cousine_fraud_prefix,
+        real_prefix=args.cousine_real_prefix,
+        projector=proj_co,
+        projector_in_dim=in_dim_co,
+        device=device,
+        batch_size=args.pt_batch_size,
+    )
+
     # Sanity label checks after feature extraction
     for name, y_other in [
         ("text train", y_tr_txt),
@@ -633,6 +658,7 @@ def main() -> None:
         ("unifont train", y_tr_uf),
         ("libre train", y_tr_li),
         ("doulos train", y_tr_do),
+        ("cousine train", y_tr_co),
     ]:
         if not np.array_equal(y_tr, y_other):
             raise RuntimeError(f"Train labels mismatch after feature extraction: {name}")
@@ -643,12 +669,13 @@ def main() -> None:
         ("unifont test", y_te_uf),
         ("libre test", y_te_li),
         ("doulos test", y_te_do),
+        ("cousine test", y_te_co),
     ]:
         if not np.array_equal(y_te, y_other):
             raise RuntimeError(f"Test labels mismatch after feature extraction: {name}")
 
     # Final ensemble feature matrix:
-    # 3 text-side features + 4 image-side cosine features
+    # 3 text-side features + 5 image-side cosine features
     X_tr = np.column_stack(
         [
             X_tr_txt,
@@ -656,6 +683,7 @@ def main() -> None:
             cos_tr_uf,
             cos_tr_li,
             cos_tr_do,
+            cos_tr_co,
         ]
     ).astype(np.float32, copy=False)
 
@@ -666,6 +694,7 @@ def main() -> None:
             cos_te_uf,
             cos_te_li,
             cos_te_do,
+            cos_te_co,
         ]
     ).astype(np.float32, copy=False)
 
@@ -691,6 +720,7 @@ def main() -> None:
         "cosine_unifont",
         "cosine_libre",
         "cosine_doulos",
+        "cosine_cousine",
     ]
 
     joblib.dump(

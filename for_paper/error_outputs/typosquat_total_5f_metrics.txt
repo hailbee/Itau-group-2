@@ -1,0 +1,17 @@
+ensemble_best:
+
+recall ≥ 0.975, maximize precision:
+test_auroc=0.976631 threshold=0.231725 accuracy=0.944651 precision=0.530364 recall=0.977612 (FPR = 0.057540)
+
+saved false negatives: for_paper/error_outputs/ensemble_best_false_negatives_recall_ge_0.975.txt
+saved false positives: for_paper/error_outputs/ensemble_best_false_positives_recall_ge_0.975.txt
+
+recall ≥ 0.950, maximize precision:
+test_auroc=0.976631 threshold=0.339331 accuracy=0.991628 precision=0.914286 recall=0.955224 (FPR = 0.005952)
+
+recall ≥ 0.925, maximize precision:
+test_auroc=0.976631 threshold=0.441782 accuracy=0.993953 precision=0.961832 recall=0.940299 (FPR = 0.002480)
+
+recall ≥ 0.900, maximize precision:
+test_auroc=0.976631 threshold=0.514121 accuracy=0.992558 precision=0.975806 recall=0.902985 (FPR = 0.001488)
+
