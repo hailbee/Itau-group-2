@@ -1,4 +1,7 @@
 __pycache__/
+.cache/
+precomputed/*
+!precomputed/README.md
 *.pyc
 *.pyo
 *.egg-info/

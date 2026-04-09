@@ -1,6 +1,6 @@
 # Itau Group 2 Models
 
-This repository contains saved classifiers for business-name matching and a command-line script for applying them to new data.
+This repository contains saved classifiers for business-name matching, a command-line script for applying them to new data, and a Flask web app for scanning a benign-domain dataset with the `total_5f_model.joblib` pipeline.
 
 ## Files
 
@@ -10,6 +10,21 @@ Lists the available models, explains the inputs for each one, and runs predictio
 `saved_models/*.joblib`
 Pretrained classifiers.
 
+`data/benign_domains.csv`
+Bundled one-column domain dataset, currently sourced from the Alexa top 1M list.
+
+`assets/fonts/*.ttf`
+Local font files used to render glyph images for the font-based similarity features.
+
+`web_app.py`
+Flask entrypoint for the interactive matcher UI.
+
+`domain_matcher.py`
+Shared runtime for text metrics, rendered-font embeddings, and chunked dataset search.
+
+`scripts/precompute_model_inputs.py`
+Offline builder for precomputing candidate-side projected embeddings so the web app only needs to compare a query against cached model inputs.
+
 ## Install
 
 ```bash
@@ -17,6 +32,88 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+## Web App
+
+Shortest path if `data/benign_domains.csv` already exists:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python3 scripts/run_web_app.py
+```
+
+Then open [http://127.0.0.1:5000](http://127.0.0.1:5000).
+
+Fast local test from scratch:
+
+1. Install dependencies:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+2. Build the one-column domain dataset if you do not already have `data/benign_domains.csv`:
+
+```bash
+python3 scripts/prepare_benign_domains.py \
+  --input /path/to/archive.zip \
+  --output data/benign_domains.csv
+```
+
+3. Precompute the projected candidate-side inputs:
+
+```bash
+python3 scripts/precompute_model_inputs.py \
+  --dataset data/benign_domains.csv \
+  --model-path saved_models/total_5f_model.joblib \
+  --output-dir precomputed/benign_total5f
+```
+
+4. Start the web app:
+
+```bash
+python3 scripts/run_web_app.py
+```
+
+Then open [http://127.0.0.1:5000](http://127.0.0.1:5000).
+
+Full exact flow for the best runtime during searches:
+
+```bash
+python3 scripts/precompute_model_inputs.py \
+  --dataset data/benign_domains.csv \
+  --model-path saved_models/total_5f_model.joblib \
+  --output-dir precomputed/benign_total5f
+```
+
+Run the Flask app:
+
+```bash
+python3 scripts/run_web_app.py
+```
+
+Then open [http://127.0.0.1:5000](http://127.0.0.1:5000).
+
+The app:
+
+1. Loads the precomputed projected candidate-side inputs from `precomputed/benign_total5f`
+2. Normalizes the user input
+3. Computes the query-side embeddings and text metrics
+4. Compares the query against the cached candidate vectors
+5. Builds the `total_5f_model.joblib` feature vector and ranks the best matches
+
+Important:
+
+- The exact projected-cosine path requires projector checkpoints in `projectors/README.md`.
+- With the bundled 1M-row dataset, the precompute store is about `6.68 GiB` with `float16` output and about `13.35 GiB` with `float32`. Larger datasets scale roughly linearly.
+- If the precomputed store is missing, the matcher falls back to runtime candidate embedding generation, which is much slower.
+- The UI still exposes `chunk_size` and `max_rows` so you can preview on a smaller slice before scanning all `1,000,000` bundled domains.
+- The web UI shows live scan progress while a search is running, including rows scanned, percent complete, predicted positives so far, and elapsed time.
+- For a quick sanity check, start with a small `max_rows` such as `50000` or `100000`, then remove the cap once everything looks right.
 
 ## Quick Start
 
@@ -109,6 +206,31 @@ Apply a model that needs a separate Deja cosine source:
 python3 main.py --model-path image_model.joblib \
   --data your_pairs.csv \
   --deja-data your_deja_features.parquet
+```
+
+Create the bundled one-column domain CSV from the Alexa archive:
+
+```bash
+python3 scripts/prepare_benign_domains.py \
+  --input archive.zip \
+  --output data/benign_domains.csv
+```
+
+The same script also supports the Kaggle benign/DGA source:
+
+```bash
+python3 scripts/prepare_benign_domains.py \
+  --input dga-or-benign-domain-names.zip \
+  --output data/benign_domains.csv
+```
+
+Precompute candidate-side model inputs for faster web searches:
+
+```bash
+python3 scripts/precompute_model_inputs.py \
+  --dataset data/benign_domains.csv \
+  --model-path saved_models/total_5f_model.joblib \
+  --output-dir precomputed/benign_total5f
 ```
 
 Apply a model with a merged feature table:
