@@ -2,10 +2,12 @@ joblib==1.5.1
 numpy==1.26.4
 pandas==2.3.0
 pyarrow==23.0.0
-scikit-learn==1.7.0
+scikit-learn==1.8.0
 torch==2.2.2
 fuzzywuzzy==0.18.0
 python-Levenshtein==0.23.0
 Flask==3.0.3
 Pillow==10.4.0
 transformers==4.44.2
+sentencepiece==0.2.1
+protobuf==7.34.1

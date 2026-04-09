@@ -274,18 +274,48 @@ class SiglipBackbone:
             self.processor = AutoProcessor.from_pretrained(model_name, use_fast=True, cache_dir=str(cache_dir))
         except TypeError:
             self.processor = AutoProcessor.from_pretrained(model_name, cache_dir=str(cache_dir))
-        self.vision_model = SiglipVisionModel.from_pretrained(
-            model_name,
+        self.vision_model = self._load_component(
+            SiglipVisionModel,
+            model_name=model_name,
+            device=device,
             dtype=dtype,
-            cache_dir=str(cache_dir),
-        ).to(device)
-        self.text_model = SiglipTextModel.from_pretrained(
-            model_name,
+            cache_dir=cache_dir,
+        )
+        self.text_model = self._load_component(
+            SiglipTextModel,
+            model_name=model_name,
+            device=device,
             dtype=dtype,
-            cache_dir=str(cache_dir),
-        ).to(device)
+            cache_dir=cache_dir,
+        )
         self.vision_model.eval()
         self.text_model.eval()
+
+    @staticmethod
+    def _load_component(
+        model_cls: type,
+        *,
+        model_name: str,
+        device: torch.device,
+        dtype: torch.dtype,
+        cache_dir: Path,
+    ):
+        load_kwargs = {"cache_dir": str(cache_dir)}
+        if device.type == "cuda":
+            try:
+                return model_cls.from_pretrained(
+                    model_name,
+                    torch_dtype=dtype,
+                    **load_kwargs,
+                ).to(device)
+            except TypeError as exc:
+                if "torch_dtype" not in str(exc):
+                    raise
+
+        return model_cls.from_pretrained(
+            model_name,
+            **load_kwargs,
+        ).to(device=device, dtype=dtype)
 
     @torch.inference_mode()
     def encode_texts(self, texts: Sequence[str], batch_size: int) -> np.ndarray:
