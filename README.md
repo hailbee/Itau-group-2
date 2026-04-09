@@ -1,161 +1,132 @@
-# Itau Group 2 – Text Similarity Evaluation
+# Itau Group 2 Models
 
-This repository contains code for evaluating text similarity models for matching
-fraudulent (spoofed) names against real names using Siamese-style embedding models
-and baseline vision-language models (VLMs).
+This repository contains saved classifiers for business-name matching and a command-line script for applying them to new data.
 
-The project supports:
+## Files
 
-* Baseline model evaluation (CLIP, CoCa, FLAVA, SigLIP)
-* Evaluation of trained Siamese models using embedding similarity
-* ROC/AUC, accuracy, precision, recall metrics
-* Optional plots (ROC, confusion matrix)
-* Exporting misclassified samples for error analysis
+`main.py`
+Lists the available models, explains the inputs for each one, and runs predictions.
 
----
+`saved_models/*.joblib`
+Pretrained classifiers.
 
-## Install Dependencies
+## Install
 
 ```bash
-git clone https://github.com/hailbee/Itau-group-2.git
-cd Itau-group-2
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
----
+## Quick Start
 
-## Usage
-
-All evaluations are run through `main.py`.
-
-### Supported Modes
-
-`main.py` supports two execution modes:
-
-* **`baseline`**
-  Evaluates pretrained vision-language models by computing similarity between name pairs.
-
-* **`evaluate_saved`**
-  Loads a trained Siamese model checkpoint and evaluates it on a labeled test dataset.
-
----
-
-## CLI Parameters (`main.py`)
-
-Below are the arguments supported by `main.py` and how they are used:
-
-* **`--mode`** (required)
-  Choices: `baseline`, `evaluate_saved`
-
-  * `baseline`: evaluate baseline VLM models
-  * `evaluate_saved`: evaluate a trained Siamese model
-
-* **`--test_filepath`** (required)
-  Path to test data (**CSV or Parquet**) containing the columns:
-
-  * `fraudulent_name`
-  * `real_name`
-  * `label`
-
-* **`--baseline_model`** (baseline mode only)
-  Choices: `clip`, `coca`, `flava`, `siglip`, `all`
-  Default: `clip`
-  Selects which baseline model(s) to evaluate.
-
-* **`--backbone`** (evaluate_saved mode)
-  Choices: `clip`, `coca`, `flava`, `siglip`
-  Default: `clip`
-  Backbone used when instantiating the Siamese model for evaluation.
-
-* **`--model_weights`** (evaluate_saved mode, required)
-  Path to the trained Siamese model checkpoint (`.pt`).
-
-* **`--batch_size`**
-  Default: `32`
-  Batch size used during embedding generation and evaluation.
-
-* **`--device`**
-  Default: automatically set to `cuda` if available, otherwise `cpu`.
-
-* **`--plot_roc`**
-  Default: `False`
-  If `True`, plots the ROC curve (baseline mode).
-
-* **`--plot`**
-  Default: `False`
-  If `True`, plots ROC curve and confusion matrix (Siamese evaluation).
-
-* **`--save_misclassified`**
-  Default: `False`
-  If enabled, extracts misclassified samples after evaluation and saves them to
-  `misclassified_samples.csv`.
-
----
-
-## Example Commands
-
-### 1) Baseline evaluation (single model)
+List the available models:
 
 ```bash
-python main.py \
-  --mode baseline \
-  --test_filepath data/processed/validate_pairs_ref_10k.parquet \
-  --baseline_model clip \
-  --batch_size 32 \
-  --plot_roc True
+python3 main.py --list-models
 ```
 
----
-
-### 2) Baseline evaluation (all models)
+See what a model expects:
 
 ```bash
-python main.py \
-  --mode baseline \
-  --test_filepath data/processed/validate_pairs_ref_10k.parquet \
-  --baseline_model all \
-  --batch_size 32
+python3 main.py --describe-model total_5f_model.joblib
 ```
 
----
-
-### 3) Evaluate a trained Siamese model
+Run a model:
 
 ```bash
-python main.py \
-  --mode evaluate_saved \
-  --test_filepath data/processed/validate_pairs_ref_10k.parquet \
-  --backbone siglip \
-  --model_weights weights/best_model_siglip_pair.pt \
-  --plot False \
-  --save_misclassified True
+python3 main.py --model-path metrics_model.joblib \
+  --data your_pairs.csv
 ```
 
----
+Predictions are written to `outputs/<model>_predictions.csv` unless you set `--output`. If your input includes a label column, the script also prints evaluation metrics.
 
-## Evaluation Outputs
+## Input Format
 
-* Metrics printed to stdout:
+At minimum, text-based features use these columns:
 
-  * accuracy
-  * precision
-  * recall
-  * ROC AUC
-  * optimal threshold
-* Optional plots:
+```text
+fraudulent_name
+real_name
+```
 
-  * ROC curve
-  * confusion matrix
-* Error analysis:
+If your label column is present, the default name is:
 
-  * `misclassified_samples.csv` containing incorrectly predicted pairs
+```text
+label
+```
 
----
+You can override the column names with:
 
-## Requirements
+```bash
+--fraud-col
+--real-col
+--label-col
+--positive-label
+```
 
-* Python 3.12.5
+For cosine-based features, there are two ways to supply inputs:
 
-See `requirements.txt` for the full list.
+1. Put the required feature columns directly in `--data`.
+2. Pass source tables such as `--deja-data`, `--text-data`, or `--unifont-data`, and add the matching `--*-projector` file if the cosine feature needs to be built from embeddings.
+
+## Model Guide
+
+| Model | Required inputs |
+| --- | --- |
+| `metrics_model.joblib` | raw text columns only |
+| `deja_model.joblib` | Deja cosine input |
+| `sigliptext_model.joblib` | text cosine input |
+| `image_model.joblib` | raw text columns and Deja cosine input |
+| `text_model.joblib` | raw text columns and text cosine input |
+| `small_model.joblib` | text cosine and Deja cosine |
+| `medium_model.joblib` | text cosine, Deja cosine, Unifont cosine, Gentium cosine |
+| `large_model.joblib` | text cosine, Deja cosine, Unifont cosine, Libre cosine, Exo2 cosine, Doulos cosine, Cousine cosine |
+| `total_1f_model.joblib` | raw text columns, text cosine, Deja cosine |
+| `total_3f_model.joblib` | raw text columns, text cosine, Deja cosine, Unifont cosine, Gentium cosine |
+| `total_5f_model.joblib` | raw text columns, text cosine, Deja cosine, Unifont cosine, Libre cosine, Doulos cosine, Cousine cosine |
+| `total_5f_mod_model.joblib` | same inputs as `total_5f_model.joblib` |
+| `total_5f_img_model.joblib` | raw text columns, Deja cosine, Unifont cosine, Libre cosine, Doulos cosine, Cousine cosine |
+
+For the exact flags for a given model, run:
+
+```bash
+python3 main.py --describe-model <model_name>
+```
+
+## Examples
+
+Apply the text-metrics model:
+
+```bash
+python3 main.py --model-path metrics_model.joblib \
+  --data your_pairs.csv
+```
+
+Apply a model that needs a separate Deja cosine source:
+
+```bash
+python3 main.py --model-path image_model.joblib \
+  --data your_pairs.csv \
+  --deja-data your_deja_features.parquet
+```
+
+Apply a model with a merged feature table:
+
+```bash
+python3 main.py --model-path total_5f_model.joblib \
+  --data your_feature_table.parquet
+```
+
+Apply a model when you have embeddings and projector checkpoints:
+
+```bash
+python3 main.py --model-path total_5f_model.joblib \
+  --data your_pairs.csv \
+  --text-data your_text_embeddings.parquet \
+  --text-projector your_text_projector.pt \
+  --deja-data your_deja_embeddings.parquet \
+  --deja-projector your_deja_projector.pt
+```
+
+Add the other sources the same way for `unifont`, `gentium`, `libre`, `exo2`, `doulos`, and `cousine` when the selected model requires them.
