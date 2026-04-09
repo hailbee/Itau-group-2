@@ -83,23 +83,6 @@ python3 scripts/run_web_app.py
 
 Then open [http://127.0.0.1:5000](http://127.0.0.1:5000).
 
-Full exact flow for the best runtime during searches:
-
-```bash
-python3 scripts/precompute_model_inputs.py \
-  --dataset data/benign_domains.csv \
-  --model-path saved_models/total_5f_model.joblib \
-  --output-dir precomputed/benign_total5f
-```
-
-Run the Flask app:
-
-```bash
-python3 scripts/run_web_app.py
-```
-
-Then open [http://127.0.0.1:5000](http://127.0.0.1:5000).
-
 The app:
 
 1. Loads the precomputed projected candidate-side inputs from `precomputed/benign_total5f`
