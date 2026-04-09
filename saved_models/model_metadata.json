@@ -1,0 +1,375 @@
+{
+  "deja_model.joblib": {
+    "feature_names": [
+      "deja_cosine_sim"
+    ],
+    "metadata": {
+      "feature_names": [
+        "deja_cosine_sim"
+      ],
+      "fraud_prefix": "fraud_emb_",
+      "label_col": "label",
+      "model_type": "adaboost",
+      "positive_label": 1,
+      "real_prefix": "real_emb_",
+      "seed": 0
+    },
+    "required_packages": {
+      "scikit-learn": "1.8.0"
+    }
+  },
+  "image_model.joblib": {
+    "feature_names": [
+      "cosine_sim",
+      "token_set_ratio",
+      "levenshtein_distance_score",
+      "partial_ratio"
+    ],
+    "metadata": {
+      "feature_names": [
+        "cosine_sim",
+        "token_set_ratio",
+        "levenshtein_distance_score",
+        "partial_ratio"
+      ],
+      "fraud_col": "fraudulent_name",
+      "fraud_prefix": "fraud_emb_",
+      "label_col": "label",
+      "model_type": "adaboost",
+      "positive_label": 1,
+      "real_col": "real_name",
+      "real_prefix": "real_emb_",
+      "seed": 0
+    },
+    "required_packages": {
+      "scikit-learn": "1.8.0"
+    }
+  },
+  "large_model.joblib": {
+    "feature_names": [
+      "cosine_downloads",
+      "cosine_deja",
+      "cosine_unifont",
+      "cosine_libre",
+      "cosine_exo2",
+      "cosine_doulos",
+      "cosine_cousine"
+    ],
+    "metadata": {
+      "cousine_fraud_prefix": "fraud_emb_",
+      "cousine_real_prefix": "real_emb_",
+      "deja_fraud_prefix": "fraud_emb_",
+      "deja_real_prefix": "real_emb_",
+      "doulos_fraud_prefix": "fraud_emb_",
+      "doulos_real_prefix": "real_emb_",
+      "downloads_fraud_prefix": "fraud_txt_emb_",
+      "downloads_real_prefix": "real_txt_emb_",
+      "exo2_fraud_prefix": "fraud_emb_",
+      "exo2_real_prefix": "real_emb_",
+      "feature_names": [
+        "cosine_downloads",
+        "cosine_deja",
+        "cosine_unifont",
+        "cosine_libre",
+        "cosine_exo2",
+        "cosine_doulos",
+        "cosine_cousine"
+      ],
+      "label_col": "label",
+      "libre_fraud_prefix": "fraud_emb_",
+      "libre_real_prefix": "real_emb_",
+      "model_type": "adaboost",
+      "positive_label": 1,
+      "seed": 0,
+      "unifont_fraud_prefix": "fraud_emb_",
+      "unifont_real_prefix": "real_emb_"
+    },
+    "required_packages": {
+      "scikit-learn": "1.8.0"
+    }
+  },
+  "medium_model.joblib": {
+    "feature_names": [
+      "cosine_downloads",
+      "cosine_deja",
+      "cosine_unifont",
+      "cosine_gentium"
+    ],
+    "metadata": {
+      "deja_fraud_prefix": "fraud_emb_",
+      "deja_real_prefix": "real_emb_",
+      "downloads_fraud_prefix": "fraud_txt_emb_",
+      "downloads_real_prefix": "real_txt_emb_",
+      "feature_names": [
+        "cosine_downloads",
+        "cosine_deja",
+        "cosine_unifont",
+        "cosine_gentium"
+      ],
+      "gentium_fraud_prefix": "fraud_emb_",
+      "gentium_real_prefix": "real_emb_",
+      "label_col": "label",
+      "model_type": "adaboost",
+      "positive_label": 1,
+      "seed": 0,
+      "unifont_fraud_prefix": "fraud_emb_",
+      "unifont_real_prefix": "real_emb_"
+    },
+    "required_packages": {
+      "scikit-learn": "1.8.0"
+    }
+  },
+  "metrics_model.joblib": {
+    "feature_names": [
+      "token_set_ratio",
+      "levenshtein_distance_score",
+      "partial_ratio"
+    ],
+    "metadata": {
+      "feature_names": [
+        "token_set_ratio",
+        "levenshtein_distance_score",
+        "partial_ratio"
+      ],
+      "fraud_col": "fraudulent_name",
+      "label_col": "label",
+      "model_type": "adaboost",
+      "positive_label": 1,
+      "real_col": "real_name",
+      "seed": 0
+    },
+    "required_packages": {
+      "scikit-learn": "1.8.0"
+    }
+  },
+  "sigliptext_model.joblib": {
+    "feature_names": [
+      "sigliptext_cosine_sim"
+    ],
+    "metadata": {
+      "feature_names": [
+        "sigliptext_cosine_sim"
+      ],
+      "fraud_prefix": "fraud_txt_emb_",
+      "label_col": "label",
+      "model_type": "adaboost",
+      "positive_label": 1,
+      "real_prefix": "real_txt_emb_",
+      "seed": 0
+    },
+    "required_packages": {
+      "scikit-learn": "1.8.0"
+    }
+  },
+  "small_model.joblib": {
+    "feature_names": [
+      "cosine_downloads",
+      "cosine_deja"
+    ],
+    "metadata": {
+      "deja_fraud_prefix": "fraud_emb_",
+      "deja_real_prefix": "real_emb_",
+      "downloads_fraud_prefix": "fraud_txt_emb_",
+      "downloads_real_prefix": "real_txt_emb_",
+      "feature_names": [
+        "cosine_downloads",
+        "cosine_deja"
+      ],
+      "label_col": "label",
+      "model_type": "adaboost",
+      "positive_label": 1,
+      "seed": 0
+    },
+    "required_packages": {
+      "scikit-learn": "1.8.0"
+    }
+  },
+  "text_model.joblib": {
+    "feature_names": [
+      "cosine_sim",
+      "token_set_ratio",
+      "levenshtein_distance_score",
+      "partial_ratio"
+    ],
+    "metadata": {
+      "feature_names": [
+        "cosine_sim",
+        "token_set_ratio",
+        "levenshtein_distance_score",
+        "partial_ratio"
+      ],
+      "fraud_col": "fraudulent_name",
+      "fraud_prefix": "fraud_txt_emb_",
+      "label_col": "label",
+      "model_type": "adaboost",
+      "positive_label": 1,
+      "real_col": "real_name",
+      "real_prefix": "real_txt_emb_",
+      "seed": 0
+    },
+    "required_packages": {
+      "scikit-learn": "1.8.0"
+    }
+  },
+  "total_1f_model.joblib": {
+    "feature_names": [
+      "text_cosine",
+      "token_set_ratio",
+      "levenshtein_distance_score",
+      "partial_ratio",
+      "cosine_deja"
+    ],
+    "metadata": {
+      "feature_names": [
+        "text_cosine",
+        "token_set_ratio",
+        "levenshtein_distance_score",
+        "partial_ratio",
+        "cosine_deja"
+      ],
+      "fraud_col": "fraudulent_name",
+      "label_col": "label",
+      "model_type": "adaboost",
+      "positive_label": 1,
+      "real_col": "real_name",
+      "seed": 0
+    },
+    "required_packages": {
+      "scikit-learn": "1.8.0"
+    }
+  },
+  "total_3f_model.joblib": {
+    "feature_names": [
+      "text_cosine",
+      "token_set_ratio",
+      "levenshtein_distance_score",
+      "partial_ratio",
+      "cosine_deja",
+      "cosine_unifont",
+      "cosine_gentium"
+    ],
+    "metadata": {
+      "feature_names": [
+        "text_cosine",
+        "token_set_ratio",
+        "levenshtein_distance_score",
+        "partial_ratio",
+        "cosine_deja",
+        "cosine_unifont",
+        "cosine_gentium"
+      ],
+      "fraud_col": "fraudulent_name",
+      "label_col": "label",
+      "model_type": "adaboost",
+      "positive_label": 1,
+      "real_col": "real_name",
+      "seed": 0
+    },
+    "required_packages": {
+      "scikit-learn": "1.8.0"
+    }
+  },
+  "total_5f_img_model.joblib": {
+    "feature_names": [
+      "token_set_ratio",
+      "levenshtein_distance_score",
+      "partial_ratio",
+      "cosine_deja",
+      "cosine_unifont",
+      "cosine_libre",
+      "cosine_doulos",
+      "cosine_cousine"
+    ],
+    "metadata": {
+      "feature_names": [
+        "token_set_ratio",
+        "levenshtein_distance_score",
+        "partial_ratio",
+        "cosine_deja",
+        "cosine_unifont",
+        "cosine_libre",
+        "cosine_doulos",
+        "cosine_cousine"
+      ],
+      "fraud_col": "fraudulent_name",
+      "label_col": "label",
+      "model_type": "adaboost",
+      "positive_label": 1,
+      "real_col": "real_name",
+      "seed": 0
+    },
+    "required_packages": {
+      "scikit-learn": "1.8.0"
+    }
+  },
+  "total_5f_mod_model.joblib": {
+    "feature_names": [
+      "text_cosine",
+      "token_set_ratio",
+      "levenshtein_distance_score",
+      "partial_ratio",
+      "cosine_deja",
+      "cosine_unifont",
+      "cosine_libre",
+      "cosine_doulos",
+      "cosine_cousine"
+    ],
+    "metadata": {
+      "feature_names": [
+        "text_cosine",
+        "token_set_ratio",
+        "levenshtein_distance_score",
+        "partial_ratio",
+        "cosine_deja",
+        "cosine_unifont",
+        "cosine_libre",
+        "cosine_doulos",
+        "cosine_cousine"
+      ],
+      "fraud_col": "fraudulent_name",
+      "label_col": "label",
+      "model_type": "adaboost",
+      "positive_label": 1,
+      "real_col": "real_name",
+      "seed": 0
+    },
+    "required_packages": {
+      "scikit-learn": "1.8.0"
+    }
+  },
+  "total_5f_model.joblib": {
+    "feature_names": [
+      "text_cosine",
+      "token_set_ratio",
+      "levenshtein_distance_score",
+      "partial_ratio",
+      "cosine_deja",
+      "cosine_unifont",
+      "cosine_libre",
+      "cosine_doulos",
+      "cosine_cousine"
+    ],
+    "metadata": {
+      "feature_names": [
+        "text_cosine",
+        "token_set_ratio",
+        "levenshtein_distance_score",
+        "partial_ratio",
+        "cosine_deja",
+        "cosine_unifont",
+        "cosine_libre",
+        "cosine_doulos",
+        "cosine_cousine"
+      ],
+      "fraud_col": "fraudulent_name",
+      "label_col": "label",
+      "model_type": "adaboost",
+      "positive_label": 1,
+      "real_col": "real_name",
+      "seed": 0
+    },
+    "required_packages": {
+      "scikit-learn": "1.8.0"
+    }
+  }
+}

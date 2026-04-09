@@ -28,7 +28,7 @@ from main import (
     STRING_FEATURES,
     choose_device,
     feature_source_for,
-    load_model_bundle,
+    load_model_spec,
     load_projector,
     resolve_model_path,
 )
@@ -122,8 +122,8 @@ def main() -> None:
     dataset_path = Path(args.dataset).resolve()
     output_dir = Path(args.output_dir).resolve()
     model_path = resolve_model_path(args.model_path, REPO_ROOT / "saved_models")
-    bundle = load_model_bundle(model_path)
-    needed_sources = required_sources(bundle)
+    model_spec = load_model_spec(model_path)
+    needed_sources = required_sources(model_spec)
     device = choose_device(None)
     store_dtype = np.float16 if args.dtype == "float16" else np.float32
     batch_size = max(1, int(args.batch_size))
@@ -230,7 +230,7 @@ def main() -> None:
     metadata = {
         "store_type": "projected_candidate_inputs_v1",
         "model_name": model_path.name,
-        "feature_names": bundle.feature_names,
+        "feature_names": model_spec.feature_names,
         "rows": write_start,
         "domains_file": domains_output_path.name,
         "sources": {

@@ -5,6 +5,7 @@ import argparse
 import json
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
@@ -19,6 +20,7 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 
 REPO_ROOT = Path(__file__).resolve().parent
 DEFAULT_MODELS_DIR = REPO_ROOT / "saved_models"
+DEFAULT_MODEL_METADATA_PATH = DEFAULT_MODELS_DIR / "model_metadata.json"
 STRING_FEATURES = {"token_set_ratio", "levenshtein_distance_score", "partial_ratio"}
 
 
@@ -129,6 +131,14 @@ class ModelBundle:
 
 
 @dataclass
+class ModelSpec:
+    path: Path
+    feature_names: list[str]
+    metadata: dict[str, Any]
+    required_packages: dict[str, str]
+
+
+@dataclass
 class RunConfig:
     fraud_col: str
     real_col: str
@@ -176,8 +186,15 @@ def resolve_model_path(model_arg: str, models_dir: Path) -> Path:
     return candidates[0]
 
 
-def load_model_bundle(model_path: Path) -> ModelBundle:
-    obj = joblib.load(model_path)
+def _validate_feature_names(feature_names: Any, model_path: Path) -> list[str]:
+    if feature_names is None:
+        raise RuntimeError(f"{model_path} is missing feature_names, so main.py cannot determine which inputs it needs.")
+    if not isinstance(feature_names, list) or not all(isinstance(name, str) for name in feature_names):
+        raise RuntimeError(f"{model_path} has invalid feature_names metadata.")
+    return feature_names
+
+
+def _extract_model_parts(obj: Any, model_path: Path) -> tuple[Any, dict[str, Any], list[str]]:
     if isinstance(obj, dict) and "model" in obj:
         estimator = obj["model"]
         metadata = {k: v for k, v in obj.items() if k != "model"}
@@ -187,14 +204,85 @@ def load_model_bundle(model_path: Path) -> ModelBundle:
         metadata = {}
         feature_names = None
 
+    feature_names = _validate_feature_names(feature_names, model_path)
+    return estimator, metadata, feature_names
+
+
+@lru_cache(maxsize=1)
+def _load_model_metadata_manifest() -> dict[str, Any]:
+    if not DEFAULT_MODEL_METADATA_PATH.exists():
+        return {}
+    return json.loads(DEFAULT_MODEL_METADATA_PATH.read_text(encoding="utf-8"))
+
+
+def load_model_spec(model_path: Path) -> ModelSpec:
+    manifest = _load_model_metadata_manifest()
+    entry = manifest.get(model_path.name)
+    if entry is not None:
+        metadata = dict(entry.get("metadata", {}))
+        feature_names = _validate_feature_names(entry.get("feature_names") or metadata.get("feature_names"), model_path)
+        required_packages = {
+            str(key): str(value)
+            for key, value in dict(entry.get("required_packages", {})).items()
+        }
+        return ModelSpec(
+            path=model_path,
+            feature_names=feature_names,
+            metadata=metadata,
+            required_packages=required_packages,
+        )
+
+    obj = joblib.load(model_path)
+    _estimator, metadata, feature_names = _extract_model_parts(obj, model_path)
+    return ModelSpec(
+        path=model_path,
+        feature_names=feature_names,
+        metadata=metadata,
+        required_packages={},
+    )
+
+
+def _model_load_runtime_error(model_path: Path, exc: Exception, spec: ModelSpec | None) -> RuntimeError:
+    lines = [f"Could not load model bundle from {model_path}: {exc}"]
+    required_sklearn = None if spec is None else spec.required_packages.get("scikit-learn")
+    if required_sklearn is not None:
+        try:
+            import sklearn
+
+            current_sklearn = sklearn.__version__
+        except Exception:
+            current_sklearn = "unknown"
+        lines.append(
+            f"This model expects scikit-learn {required_sklearn}, but the current environment has {current_sklearn}."
+        )
+    lines.append("Activate the project virtual environment and reinstall the pinned dependencies before scoring models.")
+    lines.append("Example:")
+    lines.append("python3 -m venv .venv")
+    lines.append("source .venv/bin/activate")
+    lines.append("pip install -r requirements.txt")
+    return RuntimeError("\n".join(lines))
+
+
+def load_model_bundle(model_path: Path) -> ModelBundle:
+    spec: ModelSpec | None = None
+    try:
+        spec = load_model_spec(model_path)
+    except Exception:
+        spec = None
+
+    try:
+        obj = joblib.load(model_path)
+    except Exception as exc:
+        raise _model_load_runtime_error(model_path, exc, spec) from exc
+
+    estimator, metadata, feature_names = _extract_model_parts(obj, model_path)
+
     if not hasattr(estimator, "predict"):
         raise RuntimeError(f"{model_path} does not contain an estimator with predict().")
 
-    if feature_names is None:
-        raise RuntimeError(f"{model_path} is missing feature_names, so main.py cannot determine which inputs it needs.")
-
-    if not isinstance(feature_names, list) or not all(isinstance(name, str) for name in feature_names):
-        raise RuntimeError(f"{model_path} has invalid feature_names metadata.")
+    if spec is not None:
+        metadata = dict(spec.metadata)
+        feature_names = list(spec.feature_names)
 
     return ModelBundle(
         path=model_path,
@@ -825,7 +913,7 @@ def build_run_config(args: argparse.Namespace, bundle: ModelBundle) -> RunConfig
     )
 
 
-def required_sources(bundle: ModelBundle) -> dict[str, list[str]]:
+def required_sources(bundle: ModelBundle | ModelSpec) -> dict[str, list[str]]:
     needs: dict[str, list[str]] = {}
     for feature_name in bundle.feature_names:
         if feature_name in STRING_FEATURES:
@@ -836,14 +924,15 @@ def required_sources(bundle: ModelBundle) -> dict[str, list[str]]:
     return needs
 
 
-def describe_model(bundle: ModelBundle) -> str:
+def describe_model(bundle: ModelBundle | ModelSpec) -> str:
     needs = required_sources(bundle)
     fraud_col = bundle.metadata.get("fraud_col", "fraudulent_name")
     real_col = bundle.metadata.get("real_col", "real_name")
     label_col = bundle.metadata.get("label_col", "label")
+    estimator_name = type(bundle.estimator).__name__ if isinstance(bundle, ModelBundle) else "metadata-only"
     lines = [
         f"Model: {bundle.path}",
-        f"Estimator: {type(bundle.estimator).__name__}",
+        f"Estimator: {estimator_name}",
         f"Features: {', '.join(bundle.feature_names)}",
         f"Default columns: fraud_col={fraud_col!r}, real_col={real_col!r}, label_col={label_col!r}",
     ]
@@ -873,8 +962,8 @@ def print_model_listing(models_dir: Path) -> None:
         raise RuntimeError(f"No .joblib files found in {models_dir}.")
 
     for model_path in model_paths:
-        bundle = load_model_bundle(model_path)
-        features = ", ".join(bundle.feature_names)
+        spec = load_model_spec(model_path)
+        features = ", ".join(spec.feature_names)
         print(f"{model_path.name}: {features}")
 
 
@@ -918,12 +1007,12 @@ def main() -> None:
     model_arg = args.describe_model or args.model_path
     assert model_arg is not None
     model_path = resolve_model_path(model_arg, models_dir)
-    bundle = load_model_bundle(model_path)
 
     if args.describe_model:
-        print(describe_model(bundle))
+        print(describe_model(load_model_spec(model_path)))
         return
 
+    bundle = load_model_bundle(model_path)
     config = build_run_config(args, bundle)
     run_model(bundle, config)
 

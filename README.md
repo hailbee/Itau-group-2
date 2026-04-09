@@ -33,6 +33,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Use the project virtual environment for any command that actually scores a saved `.joblib` model. The bundled model files were saved with the pinned `scikit-learn` version from `requirements.txt`, so running them from a system Python with a different sklearn version can fail during unpickling. Metadata-only commands such as `python3 main.py --list-models`, `python3 main.py --describe-model ...`, and `scripts/precompute_model_inputs.py` no longer need to unpickle the estimator itself.
+
 ## Web App
 
 Shortest path if `data/benign_domains.csv` already exists:
