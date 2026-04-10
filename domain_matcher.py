@@ -39,6 +39,7 @@ DEFAULT_CHUNK_SIZE = int(os.getenv("MATCHER_CHUNK_SIZE", "256"))
 DEFAULT_PROJECTOR_DIR = REPO_ROOT / "projectors"
 DEFAULT_HF_CACHE_DIR = REPO_ROOT / ".cache" / "huggingface"
 DEFAULT_PRECOMPUTED_STORE_DIR = REPO_ROOT / "precomputed" / "benign_total5f"
+LEGACY_PRECOMPUTED_STORE_DIR = REPO_ROOT / "precomputed"
 
 os.environ.setdefault("HF_HOME", str(DEFAULT_HF_CACHE_DIR))
 os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(DEFAULT_HF_CACHE_DIR / "hub"))
@@ -67,6 +68,22 @@ PROJECTOR_PATHS: dict[str, Path] = {
 }
 
 
+def resolve_precomputed_store_dir() -> Path:
+    override = os.getenv("PRECOMPUTED_STORE_DIR")
+    if override:
+        return Path(override).resolve()
+
+    default_dir = DEFAULT_PRECOMPUTED_STORE_DIR.resolve()
+    if (default_dir / "metadata.json").exists():
+        return default_dir
+
+    legacy_dir = LEGACY_PRECOMPUTED_STORE_DIR.resolve()
+    if (legacy_dir / "metadata.json").exists():
+        return legacy_dir
+
+    return default_dir
+
+
 @dataclass
 class SearchHit:
     domain: str
@@ -91,6 +108,12 @@ class SearchReport:
     warnings: list[str]
     matches: list[SearchHit]
     top_candidates: list[SearchHit]
+
+
+class SearchCancelled(RuntimeError):
+    def __init__(self, progress: dict[str, Any] | None = None):
+        super().__init__("Search cancelled by user.")
+        self.progress = progress or {}
 
 
 @lru_cache(maxsize=4096)
@@ -459,7 +482,7 @@ class DomainMatcher:
         return loaded
 
     def _load_precomputed_store(self) -> PrecomputedFeatureStore | None:
-        store_dir = Path(os.getenv("PRECOMPUTED_STORE_DIR", str(DEFAULT_PRECOMPUTED_STORE_DIR))).resolve()
+        store_dir = resolve_precomputed_store_dir()
         metadata_path = store_dir / "metadata.json"
         if not metadata_path.exists():
             return None
@@ -629,6 +652,7 @@ class DomainMatcher:
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         max_rows: int | None = None,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        cancel_callback: Callable[[], bool] | None = None,
     ) -> SearchReport:
         started_at = time.time()
         normalized_query = normalize_domain_string(query)
@@ -637,6 +661,83 @@ class DomainMatcher:
 
         batch_size = max(1, int(chunk_size))
         total_rows_target = self._target_row_count(max_rows)
+        feature_mode = self._feature_mode()
+
+        def build_progress(
+            *,
+            status: str,
+            stage: str,
+            stage_detail: str,
+            scanned_rows: int,
+            total_predicted_positive: int,
+        ) -> dict[str, Any]:
+            return {
+                "status": status,
+                "stage": stage,
+                "stage_detail": stage_detail,
+                "query": query,
+                "normalized_query": normalized_query,
+                "scanned_rows": scanned_rows,
+                "total_rows_target": total_rows_target,
+                "total_predicted_positive": total_predicted_positive,
+                "duration_seconds": time.time() - started_at,
+                "feature_mode": feature_mode,
+            }
+
+        def emit_progress(
+            *,
+            status: str,
+            stage: str,
+            stage_detail: str,
+            scanned_rows: int,
+            total_predicted_positive: int,
+        ) -> None:
+            if progress_callback is not None:
+                progress_callback(
+                    build_progress(
+                        status=status,
+                        stage=stage,
+                        stage_detail=stage_detail,
+                        scanned_rows=scanned_rows,
+                        total_predicted_positive=total_predicted_positive,
+                    )
+                )
+
+        def raise_if_cancelled(
+            *,
+            stage: str,
+            stage_detail: str,
+            scanned_rows: int,
+            total_predicted_positive: int,
+        ) -> None:
+            if cancel_callback is not None and cancel_callback():
+                raise SearchCancelled(
+                    build_progress(
+                        status="cancelled",
+                        stage=stage,
+                        stage_detail=stage_detail,
+                        scanned_rows=scanned_rows,
+                        total_predicted_positive=total_predicted_positive,
+                    )
+                )
+
+        emit_progress(
+            status="running",
+            stage="prepare_query",
+            stage_detail=(
+                "Candidate source ready. Preparing query features from the current input."
+                if self.precomputed_store is not None
+                else "Preparing query features. Candidate features will be generated during the scan."
+            ),
+            scanned_rows=0,
+            total_predicted_positive=0,
+        )
+        raise_if_cancelled(
+            stage="prepare_query",
+            stage_detail="Search stopped before query preparation began.",
+            scanned_rows=0,
+            total_predicted_positive=0,
+        )
         query_text_embedding, query_font_embeddings = self._prepare_query_embeddings(normalized_query, batch_size=batch_size)
 
         matches_heap: list[tuple[float, int, SearchHit]] = []
@@ -645,19 +746,19 @@ class DomainMatcher:
         total_predicted_positive = 0
         counter = 0
 
-        if progress_callback is not None:
-            progress_callback(
-                {
-                    "status": "running",
-                    "query": query,
-                    "normalized_query": normalized_query,
-                    "scanned_rows": 0,
-                    "total_rows_target": total_rows_target,
-                    "total_predicted_positive": 0,
-                    "duration_seconds": 0.0,
-                    "feature_mode": self._feature_mode(),
-                }
-            )
+        emit_progress(
+            status="running",
+            stage="scan_candidates",
+            stage_detail="Query features ready. Scanning candidate domains.",
+            scanned_rows=0,
+            total_predicted_positive=0,
+        )
+        raise_if_cancelled(
+            stage="scan_candidates",
+            stage_detail="Search stopped before candidate scanning began.",
+            scanned_rows=0,
+            total_predicted_positive=0,
+        )
 
         if self.precomputed_store is not None:
             chunk_iter: Iterable[tuple[pd.DataFrame, dict[str, np.ndarray]]] = self.precomputed_store.iter_chunks(
@@ -671,9 +772,15 @@ class DomainMatcher:
                     {},
                 )
                 for chunk in pd.read_csv(self.dataset_path, usecols=["domain"], chunksize=batch_size)
-            )
+                )
 
         for chunk, source_slices in chunk_iter:
+            raise_if_cancelled(
+                stage="scan_candidates",
+                stage_detail="Search stopped during candidate scanning.",
+                scanned_rows=scanned_rows,
+                total_predicted_positive=total_predicted_positive,
+            )
             if self.precomputed_store is None:
                 if max_rows is not None and scanned_rows >= max_rows:
                     break
@@ -735,19 +842,27 @@ class DomainMatcher:
                 counter += 1
 
             scanned_rows += len(raw_domains)
-            if progress_callback is not None:
-                progress_callback(
-                    {
-                        "status": "running",
-                        "query": query,
-                        "normalized_query": normalized_query,
-                        "scanned_rows": scanned_rows,
-                        "total_rows_target": total_rows_target,
-                        "total_predicted_positive": total_predicted_positive,
-                        "duration_seconds": time.time() - started_at,
-                        "feature_mode": self._feature_mode(),
-                    }
-                )
+            emit_progress(
+                status="running",
+                stage="scan_candidates",
+                stage_detail="Scanning candidate domains.",
+                scanned_rows=scanned_rows,
+                total_predicted_positive=total_predicted_positive,
+            )
+
+        emit_progress(
+            status="running",
+            stage="rank_results",
+            stage_detail="Candidate scan finished. Ranking the strongest matches.",
+            scanned_rows=scanned_rows,
+            total_predicted_positive=total_predicted_positive,
+        )
+        raise_if_cancelled(
+            stage="rank_results",
+            stage_detail="Search stopped before result ranking finished.",
+            scanned_rows=scanned_rows,
+            total_predicted_positive=total_predicted_positive,
+        )
 
         matches = [item[2] for item in sorted(matches_heap, key=lambda item: (item[0], -item[1]), reverse=True)]
         top_candidates = [item[2] for item in sorted(overall_heap, key=lambda item: (item[0], -item[1]), reverse=True)]
