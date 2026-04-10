@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from main import (
     REPO_ROOT,
+    SOURCE_ALIAS_COLUMNS,
     STRING_FEATURES,
     choose_device,
     feature_source_for,
@@ -395,9 +396,7 @@ class PrecomputedFeatureStore:
             for source_key, source_info in self.sources.items()
         }
 
-    def supports(self, feature_names: Sequence[str], required_sources: Sequence[str]) -> bool:
-        if self.feature_names and list(feature_names) != self.feature_names:
-            return False
+    def supports(self, required_sources: Sequence[str]) -> bool:
         return all(source_key in self.embeddings for source_key in required_sources)
 
     def iter_chunks(
@@ -442,7 +441,7 @@ class DomainMatcher:
         self.dataset_path = (dataset_path or DEFAULT_DOMAIN_DATASET).resolve()
         self.device = choose_device(os.getenv("MATCHER_DEVICE"))
         self.siglip_model_name = siglip_model_name
-        self.backbone = SiglipBackbone(siglip_model_name, self.device)
+        self.backbone: SiglipBackbone | None = None
         self.projectors = self._load_projectors(projector_paths or PROJECTOR_PATHS)
         self.required_sources = [
             feature_source_for(self.bundle, name)
@@ -472,6 +471,11 @@ class DomainMatcher:
         if not self.dataset_path.exists():
             raise FileNotFoundError(f"Missing benign-domain dataset at {self.dataset_path}")
 
+    def _backbone(self) -> SiglipBackbone:
+        if self.backbone is None:
+            self.backbone = SiglipBackbone(self.siglip_model_name, self.device)
+        return self.backbone
+
     def _load_projectors(self, projector_paths: dict[str, Path]) -> dict[str, tuple[Any, int] | None]:
         loaded: dict[str, tuple[Any, int] | None] = {}
         for source_key, path in projector_paths.items():
@@ -488,11 +492,13 @@ class DomainMatcher:
             return None
 
         store = PrecomputedFeatureStore(store_dir)
-        if not store.supports(self.bundle.feature_names, self.required_sources):
+        if not store.supports(self.required_sources):
             return None
         return store
 
     def _feature_mode(self) -> str:
+        if not self.required_sources:
+            return "string_metrics_only"
         if self.precomputed_store is not None:
             return "precomputed_projected"
         missing = [source for source in self.required_sources if self.projectors.get(source) is None]
@@ -502,9 +508,13 @@ class DomainMatcher:
 
     def _warnings(self, max_rows: int | None) -> list[str]:
         warnings: list[str] = []
-        if self.precomputed_store is not None:
+        if self.precomputed_store is not None and self.required_sources:
             warnings.append(
                 f"Using precomputed projected embeddings from {self.precomputed_store.store_dir}."
+            )
+        elif self.precomputed_store is not None:
+            warnings.append(
+                f"Using cached candidate domains from {self.precomputed_store.store_dir}."
             )
         missing = [source for source in self.required_sources if self.projectors.get(source) is None]
         if missing and self.precomputed_store is None:
@@ -569,6 +579,15 @@ class DomainMatcher:
         candidates = candidate_embeddings.astype(np.float32, copy=False)
         return candidates @ query
 
+    def _assign_source_feature_values(
+        self,
+        feature_map: dict[str, np.ndarray],
+        source_key: str,
+        values: np.ndarray,
+    ) -> None:
+        for feature_name in SOURCE_ALIAS_COLUMNS.get(source_key, ()):
+            feature_map[feature_name] = values
+
     def _build_feature_matrix(
         self,
         query: str,
@@ -580,19 +599,30 @@ class DomainMatcher:
         feature_map = self._pairwise_text_metrics(query, candidates)
 
         if "text" in self.required_sources:
-            candidate_text = self.backbone.encode_texts(candidates, batch_size=batch_size)
+            candidate_text = self._backbone().encode_texts(candidates, batch_size=batch_size)
             candidate_text = self._project_if_available("text", candidate_text)
             assert query_text_embedding is not None
-            feature_map["text_cosine"] = self._cosine_scores(query_text_embedding, candidate_text)
+            self._assign_source_feature_values(
+                feature_map,
+                "text",
+                self._cosine_scores(query_text_embedding, candidate_text),
+            )
 
         for source_key in self.required_sources:
             if source_key == "text":
                 continue
             font_path = FONT_FILES[source_key]
-            candidate_font_embeddings = self.backbone.encode_glyphs(candidates, font_path=font_path, batch_size=batch_size)
+            candidate_font_embeddings = self._backbone().encode_glyphs(
+                candidates,
+                font_path=font_path,
+                batch_size=batch_size,
+            )
             candidate_font_embeddings = self._project_if_available(source_key, candidate_font_embeddings)
-            feature_name = f"cosine_{source_key}" if source_key != "deja" else "cosine_deja"
-            feature_map[feature_name] = self._cosine_scores(query_font_embeddings[source_key], candidate_font_embeddings)
+            self._assign_source_feature_values(
+                feature_map,
+                source_key,
+                self._cosine_scores(query_font_embeddings[source_key], candidate_font_embeddings),
+            )
 
         columns = [feature_map[name] for name in self.bundle.feature_names]
         matrix = np.column_stack(columns).astype(np.float32, copy=False)
@@ -610,15 +640,22 @@ class DomainMatcher:
 
         if "text" in self.required_sources:
             assert query_text_embedding is not None
-            feature_map["text_cosine"] = self._cosine_scores(query_text_embedding, source_slices["text"])
+            self._assign_source_feature_values(
+                feature_map,
+                "text",
+                self._cosine_scores(query_text_embedding, source_slices["text"]),
+            )
 
         for source_key in self.required_sources:
             if source_key == "text":
                 continue
-            feature_name = f"cosine_{source_key}" if source_key != "deja" else "cosine_deja"
-            feature_map[feature_name] = self._cosine_scores(
-                query_font_embeddings[source_key],
-                source_slices[source_key],
+            self._assign_source_feature_values(
+                feature_map,
+                source_key,
+                self._cosine_scores(
+                    query_font_embeddings[source_key],
+                    source_slices[source_key],
+                ),
             )
 
         columns = [feature_map[name] for name in self.bundle.feature_names]
@@ -628,14 +665,14 @@ class DomainMatcher:
     def _prepare_query_embeddings(self, normalized_query: str, batch_size: int) -> tuple[np.ndarray | None, dict[str, np.ndarray]]:
         query_text_embedding = None
         if "text" in self.required_sources:
-            query_text_embedding = self.backbone.encode_texts([normalized_query], batch_size=batch_size)
+            query_text_embedding = self._backbone().encode_texts([normalized_query], batch_size=batch_size)
             query_text_embedding = self._project_if_available("text", query_text_embedding)[0]
 
         query_font_embeddings: dict[str, np.ndarray] = {}
         for source_key in self.required_sources:
             if source_key == "text":
                 continue
-            raw_embedding = self.backbone.encode_glyphs(
+            raw_embedding = self._backbone().encode_glyphs(
                 [normalized_query],
                 font_path=FONT_FILES[source_key],
                 batch_size=batch_size,

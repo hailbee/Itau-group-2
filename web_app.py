@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from functools import lru_cache
+from pathlib import Path
 import threading
 import time
 from typing import Any
@@ -9,13 +10,37 @@ from uuid import uuid4
 
 from flask import Flask, jsonify, render_template, request
 
-from domain_matcher import DEFAULT_CHUNK_SIZE, DomainMatcher, SearchCancelled, SearchReport
+from domain_matcher import DEFAULT_CHUNK_SIZE, DEFAULT_MODEL_PATH, DomainMatcher, SearchCancelled, SearchReport
 
 
 app = Flask(__name__)
 
 JOB_LOCK = threading.Lock()
 SEARCH_JOBS: dict[str, dict[str, Any]] = {}
+MODEL_OPTIONS = (
+    {
+        "key": "total_5f_model.joblib",
+        "label": "5 Font Model",
+        "description": "Text metrics, text embeddings, and five font embeddings.",
+    },
+    {
+        "key": "total_1f_model.joblib",
+        "label": "1 Font Model",
+        "description": "Text metrics, text embeddings, and the Deja font embedding.",
+    },
+    {
+        "key": "metrics_model.joblib",
+        "label": "Text Metrics",
+        "description": "String-only scoring from token, partial, and edit-distance metrics.",
+    },
+    {
+        "key": "sigliptext_model.joblib",
+        "label": "Text Embeddings",
+        "description": "SigLIP text embedding cosine similarity only.",
+    },
+)
+MODEL_OPTIONS_BY_KEY = {option["key"]: option for option in MODEL_OPTIONS}
+DEFAULT_MODEL_KEY = DEFAULT_MODEL_PATH.name
 
 
 def _job_cancel_requested(job_id: str) -> bool:
@@ -24,9 +49,17 @@ def _job_cancel_requested(job_id: str) -> bool:
         return bool(job and job.get("cancel_requested"))
 
 
+def _model_option(model_key: str) -> dict[str, str]:
+    option = MODEL_OPTIONS_BY_KEY.get(model_key)
+    if option is None:
+        raise ValueError(f"Unknown search model: {model_key}")
+    return option
+
+
 @lru_cache(maxsize=1)
-def get_matcher() -> DomainMatcher:
-    return DomainMatcher()
+def get_matcher(model_key: str = DEFAULT_MODEL_KEY) -> DomainMatcher:
+    model_path = (DEFAULT_MODEL_PATH.parent / model_key).resolve()
+    return DomainMatcher(model_path=model_path)
 
 
 def _int_field(name: str, default: int | None, values: dict[str, Any]) -> int | None:
@@ -46,6 +79,7 @@ def _float_field(name: str, default: float, values: dict[str, Any]) -> float:
 def _empty_form_values() -> dict[str, Any]:
     return {
         "query": "",
+        "model": DEFAULT_MODEL_KEY,
         "top_k": 25,
         "min_confidence": 0.5,
         "chunk_size": DEFAULT_CHUNK_SIZE,
@@ -53,8 +87,22 @@ def _empty_form_values() -> dict[str, Any]:
     }
 
 
-def _serialize_report(report: SearchReport) -> dict[str, Any]:
-    return asdict(report)
+def _model_field(values: dict[str, Any]) -> str:
+    raw = str(values.get("model", "") or "").strip()
+    model_key = raw or DEFAULT_MODEL_KEY
+    _model_option(model_key)
+    return model_key
+
+
+def _model_label(model_key: str) -> str:
+    return _model_option(model_key)["label"]
+
+
+def _serialize_report(report: SearchReport, model_key: str) -> dict[str, Any]:
+    payload = asdict(report)
+    payload["selected_model_key"] = model_key
+    payload["selected_model_label"] = _model_label(model_key)
+    return payload
 
 
 def _update_job(job_id: str, **updates: Any) -> None:
@@ -65,6 +113,8 @@ def _update_job(job_id: str, **updates: Any) -> None:
 
 def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
     started_at = time.time()
+    model_key = _model_field(form_values)
+    model_label = _model_label(model_key)
     try:
         _update_job(
             job_id,
@@ -72,7 +122,7 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
             progress={
                 "status": "starting",
                 "stage": "candidate_source",
-                "stage_detail": "Starting worker and resolving candidate source.",
+                "stage_detail": f"Starting worker and loading {model_label}.",
                 "scanned_rows": 0,
                 "total_rows_target": 0,
                 "total_predicted_positive": 0,
@@ -92,9 +142,10 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
                     "total_predicted_positive": 0,
                     "duration_seconds": 0.0,
                     "feature_mode": "initializing matcher",
+                    "selected_model_label": model_label,
                 }
             )
-        matcher = get_matcher()
+        matcher = get_matcher(model_key)
         if _job_cancel_requested(job_id):
             raise SearchCancelled(
                 {
@@ -106,6 +157,7 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
                     "total_predicted_positive": 0,
                     "duration_seconds": time.time() - started_at,
                     "feature_mode": matcher._feature_mode(),
+                    "selected_model_label": model_label,
                 }
             )
 
@@ -114,6 +166,7 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
             progress_status = "cancelling" if cancel_requested and progress.get("status") == "running" else progress.get("status", "running")
             progress_payload = dict(progress)
             progress_payload["status"] = progress_status
+            progress_payload["selected_model_label"] = model_label
             _update_job(
                 job_id,
                 status="cancelling" if cancel_requested else "running",
@@ -144,8 +197,9 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
                 "total_predicted_positive": report.total_predicted_positive,
                 "duration_seconds": report.duration_seconds,
                 "feature_mode": report.feature_mode,
+                "selected_model_label": model_label,
             },
-            report=_serialize_report(report),
+            report=_serialize_report(report, model_key),
             completed_at=time.time(),
             duration_seconds=time.time() - started_at,
         )
@@ -154,6 +208,7 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
         progress.setdefault("status", "cancelled")
         progress.setdefault("stage", "scan_candidates")
         progress.setdefault("stage_detail", "Search stopped by user.")
+        progress.setdefault("selected_model_label", model_label)
         progress["duration_seconds"] = time.time() - started_at
         _update_job(
             job_id,
@@ -180,19 +235,25 @@ def index():
         report=None,
         error=None,
         form_values=_empty_form_values(),
+        model_options=MODEL_OPTIONS,
+        selected_model_label=_model_label(DEFAULT_MODEL_KEY),
     )
 
 
 @app.post("/api/search")
 def start_search():
-    payload = request.get_json(silent=True) or request.form.to_dict()
-    form_values = {
-        "query": payload.get("query", ""),
-        "top_k": payload.get("top_k", "25"),
-        "min_confidence": payload.get("min_confidence", "0.5"),
-        "chunk_size": payload.get("chunk_size", str(DEFAULT_CHUNK_SIZE)),
-        "max_rows": payload.get("max_rows", ""),
-    }
+    try:
+        payload = request.get_json(silent=True) or request.form.to_dict()
+        form_values = {
+            "query": payload.get("query", ""),
+            "model": _model_field(payload),
+            "top_k": payload.get("top_k", "25"),
+            "min_confidence": payload.get("min_confidence", "0.5"),
+            "chunk_size": payload.get("chunk_size", str(DEFAULT_CHUNK_SIZE)),
+            "max_rows": payload.get("max_rows", ""),
+        }
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     job_id = uuid4().hex
     with JOB_LOCK:
         SEARCH_JOBS[job_id] = {
@@ -209,6 +270,7 @@ def start_search():
                 "total_predicted_positive": 0,
                 "duration_seconds": 0.0,
                 "feature_mode": "pending",
+                "selected_model_label": _model_label(form_values["model"]),
             },
             "error": None,
             "report": None,
@@ -253,13 +315,16 @@ def cancel_search(job_id: str):
 def search():
     form_values = {
         "query": request.form.get("query", ""),
+        "model": request.form.get("model", DEFAULT_MODEL_KEY),
         "top_k": request.form.get("top_k", "25"),
         "min_confidence": request.form.get("min_confidence", "0.5"),
         "chunk_size": request.form.get("chunk_size", str(DEFAULT_CHUNK_SIZE)),
         "max_rows": request.form.get("max_rows", ""),
     }
     try:
-        matcher = get_matcher()
+        model_key = _model_field(form_values)
+        form_values["model"] = model_key
+        matcher = get_matcher(model_key)
         report = matcher.search(
             form_values["query"],
             top_k=max(1, _int_field("top_k", 25, form_values) or 25),
@@ -267,9 +332,24 @@ def search():
             chunk_size=max(1, _int_field("chunk_size", DEFAULT_CHUNK_SIZE, form_values) or DEFAULT_CHUNK_SIZE),
             max_rows=_int_field("max_rows", None, form_values),
         )
-        return render_template("index.html", report=report, error=None, form_values=form_values)
+        return render_template(
+            "index.html",
+            report=report,
+            error=None,
+            form_values=form_values,
+            model_options=MODEL_OPTIONS,
+            selected_model_label=_model_label(model_key),
+        )
     except Exception as exc:
-        return render_template("index.html", report=None, error=str(exc), form_values=form_values), 400
+        model_key = form_values.get("model", DEFAULT_MODEL_KEY)
+        return render_template(
+            "index.html",
+            report=None,
+            error=str(exc),
+            form_values=form_values,
+            model_options=MODEL_OPTIONS,
+            selected_model_label=_model_label(model_key) if model_key in MODEL_OPTIONS_BY_KEY else _model_label(DEFAULT_MODEL_KEY),
+        ), 400
 
 
 if __name__ == "__main__":
