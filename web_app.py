@@ -17,6 +17,11 @@ app = Flask(__name__)
 JOB_LOCK = threading.Lock()
 SEARCH_JOBS: dict[str, dict[str, Any]] = {}
 DEFAULT_MODEL_KEY = DEFAULT_MODEL_PATH.name
+REQUIRED_WEBAPP_TEXT_METRICS = (
+    "token_set_ratio",
+    "partial_ratio",
+    "levenshtein_distance_score",
+)
 
 
 def _job_cancel_requested(job_id: str) -> bool:
@@ -28,7 +33,17 @@ def _job_cancel_requested(job_id: str) -> bool:
 @lru_cache(maxsize=1)
 def get_matcher(model_key: str = DEFAULT_MODEL_KEY) -> DomainMatcher:
     model_path = (DEFAULT_MODEL_PATH.parent / model_key).resolve()
-    return DomainMatcher(model_path=model_path)
+    matcher = DomainMatcher(model_path=model_path)
+    missing_metrics = [
+        metric_name for metric_name in REQUIRED_WEBAPP_TEXT_METRICS if metric_name not in matcher.bundle.feature_names
+    ]
+    if missing_metrics:
+        missing_text = ", ".join(missing_metrics)
+        raise RuntimeError(
+            "The default 5-font web app model is missing required text metrics: "
+            f"{missing_text}"
+        )
+    return matcher
 
 
 def _int_field(name: str, default: int | None, values: dict[str, Any]) -> int | None:

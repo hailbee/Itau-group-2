@@ -445,6 +445,7 @@
             <th>Confidence</th>
             <th>Token Set</th>
             <th>Partial</th>
+            <th>Levenshtein Score</th>
             <th>Text Cosine</th>
             <th>Mean Font Cosine</th>
           </tr>
@@ -456,6 +457,7 @@
             <td>{{ "%.4f"|format(hit.confidence) }}</td>
             <td>{{ "%.4f"|format(hit.token_set_ratio) }}</td>
             <td>{{ "%.4f"|format(hit.partial_ratio) }}</td>
+            <td>{{ "%.4f"|format(hit.levenshtein_distance_score) }}</td>
             <td>{% if hit.text_cosine is not none %}{{ "%.4f"|format(hit.text_cosine) }}{% else %}n/a{% endif %}</td>
             <td>{% if hit.mean_font_cosine is not none %}{{ "%.4f"|format(hit.mean_font_cosine) }}{% else %}n/a{% endif %}</td>
           </tr>
@@ -478,6 +480,8 @@
             <th>Confidence</th>
             <th>Predicted Positive</th>
             <th>Token Set</th>
+            <th>Partial</th>
+            <th>Levenshtein Score</th>
             <th>Text Cosine</th>
             <th>Mean Font Cosine</th>
           </tr>
@@ -489,6 +493,8 @@
             <td>{{ "%.4f"|format(hit.confidence) }}</td>
             <td>{{ "yes" if hit.predicted_positive else "no" }}</td>
             <td>{{ "%.4f"|format(hit.token_set_ratio) }}</td>
+            <td>{{ "%.4f"|format(hit.partial_ratio) }}</td>
+            <td>{{ "%.4f"|format(hit.levenshtein_distance_score) }}</td>
             <td>{% if hit.text_cosine is not none %}{{ "%.4f"|format(hit.text_cosine) }}{% else %}n/a{% endif %}</td>
             <td>{% if hit.mean_font_cosine is not none %}{{ "%.4f"|format(hit.mean_font_cosine) }}{% else %}n/a{% endif %}</td>
           </tr>
@@ -739,6 +745,8 @@
               <th>Confidence</th>
               ${predictionHeader}
               <th>Token Set</th>
+              <th>Partial</th>
+              <th>Levenshtein Score</th>
               <th>Text Cosine</th>
               <th>Mean Font Cosine</th>
             </tr>
@@ -750,6 +758,8 @@
                 <td>${formatFloat(row.confidence)}</td>
                 ${predictionCell(row)}
                 <td>${formatFloat(row.token_set_ratio)}</td>
+                <td>${formatFloat(row.partial_ratio)}</td>
+                <td>${formatFloat(row.levenshtein_distance_score)}</td>
                 <td>${row.text_cosine == null ? "n/a" : formatFloat(row.text_cosine)}</td>
                 <td>${row.mean_font_cosine == null ? "n/a" : formatFloat(row.mean_font_cosine)}</td>
               </tr>
