@@ -99,8 +99,7 @@
       color: var(--muted);
     }
 
-    input,
-    select {
+    input {
       width: 100%;
       border-radius: 14px;
       border: 1px solid var(--line);
@@ -110,8 +109,7 @@
       color: var(--ink);
     }
 
-    input:focus,
-    select:focus {
+    input:focus {
       outline: 2px solid rgba(11, 110, 79, 0.18);
       border-color: var(--accent);
     }
@@ -340,15 +338,6 @@
 
         <div class="field-grid">
           <div class="field">
-            <label for="model">Search model</label>
-            <select id="model" name="model">
-              {% for option in model_options %}
-              <option value="{{ option.key }}" {% if form_values.model == option.key %}selected{% endif %}>{{ option.label }}</option>
-              {% endfor %}
-            </select>
-            <span class="note">This build exposes the 1-font and 5-font image models plus text-only options.</span>
-          </div>
-          <div class="field">
             <label for="top_k">Top results to keep</label>
             <input id="top_k" name="top_k" type="number" min="1" value="{{ form_values.top_k }}">
           </div>
@@ -406,10 +395,6 @@
       </div>
 
       <div class="summary">
-        <div class="summary-card">
-          Selected model
-          <strong>{{ selected_model_label }}</strong>
-        </div>
         <div class="summary-card">
           Query
           <strong>{{ report.query }}</strong>
@@ -787,7 +772,6 @@
           </div>
 
           <div class="summary">
-            <div class="summary-card">Selected model<strong>${escapeHtml(report.selected_model_label || "Custom model")}</strong></div>
             <div class="summary-card">Query<strong>${escapeHtml(report.query)}</strong></div>
             <div class="summary-card">Normalized query<strong>${escapeHtml(report.normalized_query)}</strong></div>
             <div class="summary-card">Rows scanned<strong>${formatNumber(report.scanned_rows)}</strong></div>
