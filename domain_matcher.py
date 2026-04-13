@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from main import (
     REPO_ROOT,
+    SOURCE_ALIAS_COLUMNS,
     STRING_FEATURES,
     choose_device,
     feature_source_for,
@@ -33,12 +34,13 @@ from main import (
 
 
 DEFAULT_DOMAIN_DATASET = REPO_ROOT / "data" / "benign_domains.csv"
-DEFAULT_MODEL_PATH = REPO_ROOT / "saved_models" / "total_5f_model.joblib"
+DEFAULT_MODEL_PATH = REPO_ROOT / "saved_models" / "total_5f_img_model.joblib"
 DEFAULT_SIGLIP_MODEL = os.getenv("SIGLIP_MODEL_NAME", "google/siglip-base-patch16-224")
 DEFAULT_CHUNK_SIZE = int(os.getenv("MATCHER_CHUNK_SIZE", "256"))
 DEFAULT_PROJECTOR_DIR = REPO_ROOT / "projectors"
 DEFAULT_HF_CACHE_DIR = REPO_ROOT / ".cache" / "huggingface"
 DEFAULT_PRECOMPUTED_STORE_DIR = REPO_ROOT / "precomputed" / "benign_total5f"
+LEGACY_PRECOMPUTED_STORE_DIR = REPO_ROOT / "precomputed"
 
 os.environ.setdefault("HF_HOME", str(DEFAULT_HF_CACHE_DIR))
 os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(DEFAULT_HF_CACHE_DIR / "hub"))
@@ -67,6 +69,22 @@ PROJECTOR_PATHS: dict[str, Path] = {
 }
 
 
+def resolve_precomputed_store_dir() -> Path:
+    override = os.getenv("PRECOMPUTED_STORE_DIR")
+    if override:
+        return Path(override).resolve()
+
+    default_dir = DEFAULT_PRECOMPUTED_STORE_DIR.resolve()
+    if (default_dir / "metadata.json").exists():
+        return default_dir
+
+    legacy_dir = LEGACY_PRECOMPUTED_STORE_DIR.resolve()
+    if (legacy_dir / "metadata.json").exists():
+        return legacy_dir
+
+    return default_dir
+
+
 @dataclass
 class SearchHit:
     domain: str
@@ -91,6 +109,12 @@ class SearchReport:
     warnings: list[str]
     matches: list[SearchHit]
     top_candidates: list[SearchHit]
+
+
+class SearchCancelled(RuntimeError):
+    def __init__(self, progress: dict[str, Any] | None = None):
+        super().__init__("Search cancelled by user.")
+        self.progress = progress or {}
 
 
 @lru_cache(maxsize=4096)
@@ -372,9 +396,7 @@ class PrecomputedFeatureStore:
             for source_key, source_info in self.sources.items()
         }
 
-    def supports(self, feature_names: Sequence[str], required_sources: Sequence[str]) -> bool:
-        if self.feature_names and list(feature_names) != self.feature_names:
-            return False
+    def supports(self, required_sources: Sequence[str]) -> bool:
         return all(source_key in self.embeddings for source_key in required_sources)
 
     def iter_chunks(
@@ -419,7 +441,7 @@ class DomainMatcher:
         self.dataset_path = (dataset_path or DEFAULT_DOMAIN_DATASET).resolve()
         self.device = choose_device(os.getenv("MATCHER_DEVICE"))
         self.siglip_model_name = siglip_model_name
-        self.backbone = SiglipBackbone(siglip_model_name, self.device)
+        self.backbone: SiglipBackbone | None = None
         self.projectors = self._load_projectors(projector_paths or PROJECTOR_PATHS)
         self.required_sources = [
             feature_source_for(self.bundle, name)
@@ -449,6 +471,11 @@ class DomainMatcher:
         if not self.dataset_path.exists():
             raise FileNotFoundError(f"Missing benign-domain dataset at {self.dataset_path}")
 
+    def _backbone(self) -> SiglipBackbone:
+        if self.backbone is None:
+            self.backbone = SiglipBackbone(self.siglip_model_name, self.device)
+        return self.backbone
+
     def _load_projectors(self, projector_paths: dict[str, Path]) -> dict[str, tuple[Any, int] | None]:
         loaded: dict[str, tuple[Any, int] | None] = {}
         for source_key, path in projector_paths.items():
@@ -459,17 +486,19 @@ class DomainMatcher:
         return loaded
 
     def _load_precomputed_store(self) -> PrecomputedFeatureStore | None:
-        store_dir = Path(os.getenv("PRECOMPUTED_STORE_DIR", str(DEFAULT_PRECOMPUTED_STORE_DIR))).resolve()
+        store_dir = resolve_precomputed_store_dir()
         metadata_path = store_dir / "metadata.json"
         if not metadata_path.exists():
             return None
 
         store = PrecomputedFeatureStore(store_dir)
-        if not store.supports(self.bundle.feature_names, self.required_sources):
+        if not store.supports(self.required_sources):
             return None
         return store
 
     def _feature_mode(self) -> str:
+        if not self.required_sources:
+            return "string_metrics_only"
         if self.precomputed_store is not None:
             return "precomputed_projected"
         missing = [source for source in self.required_sources if self.projectors.get(source) is None]
@@ -479,9 +508,13 @@ class DomainMatcher:
 
     def _warnings(self, max_rows: int | None) -> list[str]:
         warnings: list[str] = []
-        if self.precomputed_store is not None:
+        if self.precomputed_store is not None and self.required_sources:
             warnings.append(
                 f"Using precomputed projected embeddings from {self.precomputed_store.store_dir}."
+            )
+        elif self.precomputed_store is not None:
+            warnings.append(
+                f"Using cached candidate domains from {self.precomputed_store.store_dir}."
             )
         missing = [source for source in self.required_sources if self.projectors.get(source) is None]
         if missing and self.precomputed_store is None:
@@ -546,6 +579,15 @@ class DomainMatcher:
         candidates = candidate_embeddings.astype(np.float32, copy=False)
         return candidates @ query
 
+    def _assign_source_feature_values(
+        self,
+        feature_map: dict[str, np.ndarray],
+        source_key: str,
+        values: np.ndarray,
+    ) -> None:
+        for feature_name in SOURCE_ALIAS_COLUMNS.get(source_key, ()):
+            feature_map[feature_name] = values
+
     def _build_feature_matrix(
         self,
         query: str,
@@ -557,19 +599,30 @@ class DomainMatcher:
         feature_map = self._pairwise_text_metrics(query, candidates)
 
         if "text" in self.required_sources:
-            candidate_text = self.backbone.encode_texts(candidates, batch_size=batch_size)
+            candidate_text = self._backbone().encode_texts(candidates, batch_size=batch_size)
             candidate_text = self._project_if_available("text", candidate_text)
             assert query_text_embedding is not None
-            feature_map["text_cosine"] = self._cosine_scores(query_text_embedding, candidate_text)
+            self._assign_source_feature_values(
+                feature_map,
+                "text",
+                self._cosine_scores(query_text_embedding, candidate_text),
+            )
 
         for source_key in self.required_sources:
             if source_key == "text":
                 continue
             font_path = FONT_FILES[source_key]
-            candidate_font_embeddings = self.backbone.encode_glyphs(candidates, font_path=font_path, batch_size=batch_size)
+            candidate_font_embeddings = self._backbone().encode_glyphs(
+                candidates,
+                font_path=font_path,
+                batch_size=batch_size,
+            )
             candidate_font_embeddings = self._project_if_available(source_key, candidate_font_embeddings)
-            feature_name = f"cosine_{source_key}" if source_key != "deja" else "cosine_deja"
-            feature_map[feature_name] = self._cosine_scores(query_font_embeddings[source_key], candidate_font_embeddings)
+            self._assign_source_feature_values(
+                feature_map,
+                source_key,
+                self._cosine_scores(query_font_embeddings[source_key], candidate_font_embeddings),
+            )
 
         columns = [feature_map[name] for name in self.bundle.feature_names]
         matrix = np.column_stack(columns).astype(np.float32, copy=False)
@@ -587,15 +640,22 @@ class DomainMatcher:
 
         if "text" in self.required_sources:
             assert query_text_embedding is not None
-            feature_map["text_cosine"] = self._cosine_scores(query_text_embedding, source_slices["text"])
+            self._assign_source_feature_values(
+                feature_map,
+                "text",
+                self._cosine_scores(query_text_embedding, source_slices["text"]),
+            )
 
         for source_key in self.required_sources:
             if source_key == "text":
                 continue
-            feature_name = f"cosine_{source_key}" if source_key != "deja" else "cosine_deja"
-            feature_map[feature_name] = self._cosine_scores(
-                query_font_embeddings[source_key],
-                source_slices[source_key],
+            self._assign_source_feature_values(
+                feature_map,
+                source_key,
+                self._cosine_scores(
+                    query_font_embeddings[source_key],
+                    source_slices[source_key],
+                ),
             )
 
         columns = [feature_map[name] for name in self.bundle.feature_names]
@@ -605,14 +665,14 @@ class DomainMatcher:
     def _prepare_query_embeddings(self, normalized_query: str, batch_size: int) -> tuple[np.ndarray | None, dict[str, np.ndarray]]:
         query_text_embedding = None
         if "text" in self.required_sources:
-            query_text_embedding = self.backbone.encode_texts([normalized_query], batch_size=batch_size)
+            query_text_embedding = self._backbone().encode_texts([normalized_query], batch_size=batch_size)
             query_text_embedding = self._project_if_available("text", query_text_embedding)[0]
 
         query_font_embeddings: dict[str, np.ndarray] = {}
         for source_key in self.required_sources:
             if source_key == "text":
                 continue
-            raw_embedding = self.backbone.encode_glyphs(
+            raw_embedding = self._backbone().encode_glyphs(
                 [normalized_query],
                 font_path=FONT_FILES[source_key],
                 batch_size=batch_size,
@@ -629,6 +689,7 @@ class DomainMatcher:
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         max_rows: int | None = None,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        cancel_callback: Callable[[], bool] | None = None,
     ) -> SearchReport:
         started_at = time.time()
         normalized_query = normalize_domain_string(query)
@@ -637,6 +698,83 @@ class DomainMatcher:
 
         batch_size = max(1, int(chunk_size))
         total_rows_target = self._target_row_count(max_rows)
+        feature_mode = self._feature_mode()
+
+        def build_progress(
+            *,
+            status: str,
+            stage: str,
+            stage_detail: str,
+            scanned_rows: int,
+            total_predicted_positive: int,
+        ) -> dict[str, Any]:
+            return {
+                "status": status,
+                "stage": stage,
+                "stage_detail": stage_detail,
+                "query": query,
+                "normalized_query": normalized_query,
+                "scanned_rows": scanned_rows,
+                "total_rows_target": total_rows_target,
+                "total_predicted_positive": total_predicted_positive,
+                "duration_seconds": time.time() - started_at,
+                "feature_mode": feature_mode,
+            }
+
+        def emit_progress(
+            *,
+            status: str,
+            stage: str,
+            stage_detail: str,
+            scanned_rows: int,
+            total_predicted_positive: int,
+        ) -> None:
+            if progress_callback is not None:
+                progress_callback(
+                    build_progress(
+                        status=status,
+                        stage=stage,
+                        stage_detail=stage_detail,
+                        scanned_rows=scanned_rows,
+                        total_predicted_positive=total_predicted_positive,
+                    )
+                )
+
+        def raise_if_cancelled(
+            *,
+            stage: str,
+            stage_detail: str,
+            scanned_rows: int,
+            total_predicted_positive: int,
+        ) -> None:
+            if cancel_callback is not None and cancel_callback():
+                raise SearchCancelled(
+                    build_progress(
+                        status="cancelled",
+                        stage=stage,
+                        stage_detail=stage_detail,
+                        scanned_rows=scanned_rows,
+                        total_predicted_positive=total_predicted_positive,
+                    )
+                )
+
+        emit_progress(
+            status="running",
+            stage="prepare_query",
+            stage_detail=(
+                "Candidate source ready. Preparing query features from the current input."
+                if self.precomputed_store is not None
+                else "Preparing query features. Candidate features will be generated during the scan."
+            ),
+            scanned_rows=0,
+            total_predicted_positive=0,
+        )
+        raise_if_cancelled(
+            stage="prepare_query",
+            stage_detail="Search stopped before query preparation began.",
+            scanned_rows=0,
+            total_predicted_positive=0,
+        )
         query_text_embedding, query_font_embeddings = self._prepare_query_embeddings(normalized_query, batch_size=batch_size)
 
         matches_heap: list[tuple[float, int, SearchHit]] = []
@@ -645,19 +783,19 @@ class DomainMatcher:
         total_predicted_positive = 0
         counter = 0
 
-        if progress_callback is not None:
-            progress_callback(
-                {
-                    "status": "running",
-                    "query": query,
-                    "normalized_query": normalized_query,
-                    "scanned_rows": 0,
-                    "total_rows_target": total_rows_target,
-                    "total_predicted_positive": 0,
-                    "duration_seconds": 0.0,
-                    "feature_mode": self._feature_mode(),
-                }
-            )
+        emit_progress(
+            status="running",
+            stage="scan_candidates",
+            stage_detail="Query features ready. Scanning candidate domains.",
+            scanned_rows=0,
+            total_predicted_positive=0,
+        )
+        raise_if_cancelled(
+            stage="scan_candidates",
+            stage_detail="Search stopped before candidate scanning began.",
+            scanned_rows=0,
+            total_predicted_positive=0,
+        )
 
         if self.precomputed_store is not None:
             chunk_iter: Iterable[tuple[pd.DataFrame, dict[str, np.ndarray]]] = self.precomputed_store.iter_chunks(
@@ -671,9 +809,15 @@ class DomainMatcher:
                     {},
                 )
                 for chunk in pd.read_csv(self.dataset_path, usecols=["domain"], chunksize=batch_size)
-            )
+                )
 
         for chunk, source_slices in chunk_iter:
+            raise_if_cancelled(
+                stage="scan_candidates",
+                stage_detail="Search stopped during candidate scanning.",
+                scanned_rows=scanned_rows,
+                total_predicted_positive=total_predicted_positive,
+            )
             if self.precomputed_store is None:
                 if max_rows is not None and scanned_rows >= max_rows:
                     break
@@ -735,19 +879,27 @@ class DomainMatcher:
                 counter += 1
 
             scanned_rows += len(raw_domains)
-            if progress_callback is not None:
-                progress_callback(
-                    {
-                        "status": "running",
-                        "query": query,
-                        "normalized_query": normalized_query,
-                        "scanned_rows": scanned_rows,
-                        "total_rows_target": total_rows_target,
-                        "total_predicted_positive": total_predicted_positive,
-                        "duration_seconds": time.time() - started_at,
-                        "feature_mode": self._feature_mode(),
-                    }
-                )
+            emit_progress(
+                status="running",
+                stage="scan_candidates",
+                stage_detail="Scanning candidate domains.",
+                scanned_rows=scanned_rows,
+                total_predicted_positive=total_predicted_positive,
+            )
+
+        emit_progress(
+            status="running",
+            stage="rank_results",
+            stage_detail="Candidate scan finished. Ranking the strongest matches.",
+            scanned_rows=scanned_rows,
+            total_predicted_positive=total_predicted_positive,
+        )
+        raise_if_cancelled(
+            stage="rank_results",
+            stage_detail="Search stopped before result ranking finished.",
+            scanned_rows=scanned_rows,
+            total_predicted_positive=total_predicted_positive,
+        )
 
         matches = [item[2] for item in sorted(matches_heap, key=lambda item: (item[0], -item[1]), reverse=True)]
         top_candidates = [item[2] for item in sorted(overall_heap, key=lambda item: (item[0], -item[1]), reverse=True)]

@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model-path",
-        default="saved_models/total_5f_model.joblib",
+        default="saved_models/total_5f_img_model.joblib",
         help="Saved model whose candidate-side inputs should be cached.",
     )
     parser.add_argument(

@@ -181,6 +181,55 @@
       color: var(--ink);
     }
 
+    .stage-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .stage-item {
+      display: grid;
+      grid-template-columns: 14px 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .stage-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      margin-top: 4px;
+      background: rgba(24, 32, 34, 0.14);
+    }
+
+    .stage-item strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .stage-item p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 0.94rem;
+    }
+
+    .stage-item[data-status="done"] .stage-dot {
+      background: var(--accent);
+    }
+
+    .stage-item[data-status="running"] .stage-dot {
+      background: #d6a236;
+      box-shadow: 0 0 0 6px rgba(214, 162, 54, 0.16);
+    }
+
+    .stage-item[data-status="cancelled"] .stage-dot {
+      background: var(--warn);
+    }
+
     .summary {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -275,8 +324,8 @@
       <h1>Total 5F Domain Matcher</h1>
       <p class="subtitle">
         Enter a string, compare it against the benign-domain dataset, and score each pair with
-        <code>total_5f_model.joblib</code>. The app computes text metrics plus rendered-font
-        similarities for the model’s required feature set.
+        <code>total_5f_img_model.joblib</code>. The app computes text metrics plus rendered-font
+        image similarities for the model’s required feature set.
       </p>
     </section>
 
@@ -284,7 +333,7 @@
       <form id="search-form" method="post" action="/search">
         <div class="field">
           <label for="query">Domain or string to test</label>
-          <input id="query" name="query" type="text" placeholder="facebook.com" value="{{ form_values.query }}" required>
+          <input id="query" name="query" type="text" placeholder="f@ceb00k.com" value="{{ form_values.query }}" required>
         </div>
 
         <div class="field-grid">
@@ -396,6 +445,7 @@
             <th>Confidence</th>
             <th>Token Set</th>
             <th>Partial</th>
+            <th>Levenshtein Score</th>
             <th>Text Cosine</th>
             <th>Mean Font Cosine</th>
           </tr>
@@ -407,6 +457,7 @@
             <td>{{ "%.4f"|format(hit.confidence) }}</td>
             <td>{{ "%.4f"|format(hit.token_set_ratio) }}</td>
             <td>{{ "%.4f"|format(hit.partial_ratio) }}</td>
+            <td>{{ "%.4f"|format(hit.levenshtein_distance_score) }}</td>
             <td>{% if hit.text_cosine is not none %}{{ "%.4f"|format(hit.text_cosine) }}{% else %}n/a{% endif %}</td>
             <td>{% if hit.mean_font_cosine is not none %}{{ "%.4f"|format(hit.mean_font_cosine) }}{% else %}n/a{% endif %}</td>
           </tr>
@@ -429,6 +480,8 @@
             <th>Confidence</th>
             <th>Predicted Positive</th>
             <th>Token Set</th>
+            <th>Partial</th>
+            <th>Levenshtein Score</th>
             <th>Text Cosine</th>
             <th>Mean Font Cosine</th>
           </tr>
@@ -440,6 +493,8 @@
             <td>{{ "%.4f"|format(hit.confidence) }}</td>
             <td>{{ "yes" if hit.predicted_positive else "no" }}</td>
             <td>{{ "%.4f"|format(hit.token_set_ratio) }}</td>
+            <td>{{ "%.4f"|format(hit.partial_ratio) }}</td>
+            <td>{{ "%.4f"|format(hit.levenshtein_distance_score) }}</td>
             <td>{% if hit.text_cosine is not none %}{{ "%.4f"|format(hit.text_cosine) }}{% else %}n/a{% endif %}</td>
             <td>{% if hit.mean_font_cosine is not none %}{{ "%.4f"|format(hit.mean_font_cosine) }}{% else %}n/a{% endif %}</td>
           </tr>
@@ -449,6 +504,14 @@
     </section>
     {% endif %}
     </div>
+
+    <section id="run-steps" class="card" style="display:none">
+      <div class="section-title">
+        <h2>Run Steps</h2>
+        <span id="steps-status" class="pill">queued</span>
+      </div>
+      <div id="stage-list" class="stage-list"></div>
+    </section>
   </main>
   <script>
     const form = document.getElementById("search-form");
@@ -462,6 +525,11 @@
     const progressMode = document.getElementById("progress-mode");
     const errorBox = document.getElementById("error-box");
     const resultsRoot = document.getElementById("results-root");
+    const stepsCard = document.getElementById("run-steps");
+    const stepsStatus = document.getElementById("steps-status");
+    const stageList = document.getElementById("stage-list");
+    let activeJobId = null;
+    let activeJobStatus = "idle";
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -490,19 +558,169 @@
       errorBox.style.display = "none";
     }
 
-    function setProgress(progress) {
+    function isActiveStatus(status) {
+      return ["queued", "starting", "running", "cancelling"].includes(status);
+    }
+
+    function setSubmitMode(mode) {
+      if (mode === "running") {
+        submitButton.disabled = false;
+        submitButton.textContent = "Stop Search";
+        return;
+      }
+      if (mode === "cancelling") {
+        submitButton.disabled = true;
+        submitButton.textContent = "Stopping...";
+        return;
+      }
+      submitButton.disabled = false;
+      submitButton.textContent = "Run Search";
+    }
+
+    function formatStageLabel(stage) {
+      const labels = {
+        candidate_source: "candidate source",
+        prepare_query: "prepare query",
+        scan_candidates: "scan candidates",
+        rank_results: "rank results",
+        completed: "complete",
+      };
+      return labels[stage] || "running";
+    }
+
+    function featureModeDetail(featureMode) {
+      if (featureMode === "precomputed_projected") {
+        return "Using cached candidate embeddings.";
+      }
+      if (featureMode === "pending" || featureMode === "queued") {
+        return "Waiting to resolve the candidate source.";
+      }
+      if (featureMode === "initializing matcher") {
+        return "Resolving the model and candidate source.";
+      }
+      if (featureMode) {
+        return `Using ${featureMode}.`;
+      }
+      return "Preparing the candidate source.";
+    }
+
+    function renderStepList(progress) {
+      const status = progress.status || "queued";
+      const stage = progress.stage || "candidate_source";
       const scanned = Number(progress.scanned_rows || 0);
       const total = Number(progress.total_rows_target || 0);
-      const pct = total > 0 ? Math.min(100, (scanned / total) * 100) : 0;
+      const scanText = total > 0
+        ? `${formatNumber(scanned)} of ${formatNumber(total)} rows processed.`
+        : `${formatNumber(scanned)} rows processed so far.`;
+      const steps = [
+        {
+          label: "Candidate source",
+          status: ["queued", "starting"].includes(status) ? "running" : "done",
+          detail: featureModeDetail(progress.feature_mode),
+        },
+        {
+          label: "Prepare query features",
+          status: "pending",
+          detail: "Waiting for the worker to prepare the query.",
+        },
+        {
+          label: "Scan candidates",
+          status: "pending",
+          detail: "Waiting for query features.",
+        },
+        {
+          label: "Rank results",
+          status: "pending",
+          detail: "Ranking starts after the scan finishes.",
+        },
+      ];
+
+      if (status === "cancelled" && stage === "candidate_source") {
+        steps[0].status = "cancelled";
+        steps[0].detail = progress.stage_detail || "Stopped before the candidate source was ready.";
+      }
+
+      if (stage === "prepare_query") {
+        steps[0].status = "done";
+        steps[1].status = status === "cancelled" ? "cancelled" : "running";
+        steps[1].detail = progress.stage_detail || "Preparing query features.";
+      } else if (["scan_candidates", "rank_results", "completed"].includes(stage) || status === "completed") {
+        steps[0].status = "done";
+        steps[1].status = "done";
+        steps[1].detail = "Query features are ready.";
+      }
+
+      if (stage === "scan_candidates") {
+        steps[2].status = status === "cancelled" ? "cancelled" : "running";
+        steps[2].detail = status === "cancelled"
+          ? `Stopped during the scan after ${scanText.toLowerCase()}`
+          : `${progress.stage_detail || "Scanning candidate domains."} ${scanText}`;
+      } else if (["rank_results", "completed"].includes(stage) || status === "completed") {
+        steps[2].status = "done";
+        steps[2].detail = `Candidate scan finished. ${scanText}`;
+      }
+
+      if (stage === "rank_results") {
+        steps[3].status = status === "cancelled" ? "cancelled" : "running";
+        steps[3].detail = progress.stage_detail || "Ranking the strongest matches.";
+      } else if (status === "completed") {
+        steps[3].status = "done";
+        steps[3].detail = "Ranking complete. Final matches are ready.";
+      }
+
+      if (status === "cancelled" && stage === "prepare_query") {
+        steps[1].status = "cancelled";
+        steps[1].detail = progress.stage_detail || "Stopped during query preparation.";
+      }
+      if (status === "cancelled" && stage === "rank_results") {
+        steps[2].status = "done";
+        steps[3].status = "cancelled";
+        steps[3].detail = progress.stage_detail || "Stopped before ranking finished.";
+      }
+
+      stepsCard.style.display = "block";
+      stepsStatus.textContent = status === "completed" ? "complete" : formatStageLabel(stage);
+      stageList.innerHTML = steps.map((step) => `
+        <div class="stage-item" data-status="${escapeHtml(step.status)}">
+          <div class="stage-dot" aria-hidden="true"></div>
+          <div>
+            <strong>${escapeHtml(step.label)}</strong>
+            <p>${escapeHtml(step.detail)}</p>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function setProgress(progress) {
+      const status = progress.status || "running";
+      const scanned = Number(progress.scanned_rows || 0);
+      const total = Number(progress.total_rows_target || 0);
+      let pct = total > 0 ? Math.min(100, (scanned / total) * 100) : 0;
+      if (status === "completed") {
+        pct = 100;
+      }
       progressCard.style.display = "block";
       progressFill.style.width = `${pct}%`;
       progressRows.textContent = `${formatNumber(scanned)} / ${formatNumber(total)}`;
       progressPositives.textContent = formatNumber(progress.total_predicted_positive || 0);
       progressElapsed.textContent = `${formatFloat(progress.duration_seconds || 0, 2)} s`;
-      progressMode.textContent = progress.feature_mode || progress.status || "running";
-      progressText.textContent = total > 0
-        ? `Scanned ${formatNumber(scanned)} of ${formatNumber(total)} rows so far (${formatFloat(pct, 1)}%).`
-        : "Preparing search…";
+      progressMode.textContent = status === "completed" ? "complete" : formatStageLabel(progress.stage);
+      if (status === "queued") {
+        progressText.textContent = progress.stage_detail || "Waiting to start.";
+      } else if (status === "starting") {
+        progressText.textContent = progress.stage_detail || "Starting the search worker.";
+      } else if (status === "cancelling") {
+        progressText.textContent = progress.stage_detail || "Stop requested. Finishing the current step.";
+      } else if (status === "cancelled") {
+        progressText.textContent = progress.stage_detail || "Search stopped by user.";
+      } else if (status === "completed") {
+        progressText.textContent = progress.stage_detail || "Search complete.";
+      } else if (progress.stage === "scan_candidates" && total > 0) {
+        progressText.textContent = `${progress.stage_detail || "Scanning candidate domains."} ${formatNumber(scanned)} of ${formatNumber(total)} rows so far (${formatFloat(pct, 1)}%).`;
+      } else {
+        progressText.textContent = progress.stage_detail || "Preparing search.";
+      }
+      renderStepList(progress);
     }
 
     function renderWarnings(warnings) {
@@ -527,6 +745,8 @@
               <th>Confidence</th>
               ${predictionHeader}
               <th>Token Set</th>
+              <th>Partial</th>
+              <th>Levenshtein Score</th>
               <th>Text Cosine</th>
               <th>Mean Font Cosine</th>
             </tr>
@@ -538,6 +758,8 @@
                 <td>${formatFloat(row.confidence)}</td>
                 ${predictionCell(row)}
                 <td>${formatFloat(row.token_set_ratio)}</td>
+                <td>${formatFloat(row.partial_ratio)}</td>
+                <td>${formatFloat(row.levenshtein_distance_score)}</td>
                 <td>${row.text_cosine == null ? "n/a" : formatFloat(row.text_cosine)}</td>
                 <td>${row.mean_font_cosine == null ? "n/a" : formatFloat(row.mean_font_cosine)}</td>
               </tr>
@@ -587,6 +809,29 @@
       `;
     }
 
+    function renderCancelledState(progress) {
+      resultsRoot.innerHTML = `
+        <section class="card">
+          <div class="section-title">
+            <h2>Search Stopped</h2>
+          </div>
+          <p class="note">${escapeHtml(progress.stage_detail || "Search stopped before completion.")}</p>
+        </section>
+      `;
+    }
+
+    async function stopJob(jobId) {
+      const response = await fetch(`/api/search/${jobId}/cancel`, {method: "POST"});
+      const job = await response.json();
+      if (!response.ok) {
+        throw new Error(job.error || "Failed to stop search.");
+      }
+      activeJobStatus = job.status || "cancelling";
+      if (job.progress) {
+        setProgress(job.progress);
+      }
+    }
+
     async function pollJob(jobId) {
       while (true) {
         const response = await fetch(`/api/search/${jobId}`);
@@ -599,20 +844,34 @@
           setProgress(job.progress);
         }
 
+        activeJobStatus = job.status || "running";
+
         if (job.status === "completed") {
           setProgress(job.progress || {});
           renderReport(job.report);
-          submitButton.disabled = false;
-          submitButton.textContent = "Run Search";
+          activeJobId = null;
+          activeJobStatus = "idle";
+          setSubmitMode("idle");
+          return;
+        }
+
+        if (job.status === "cancelled") {
+          setProgress(job.progress || {});
+          renderCancelledState(job.progress || {});
+          activeJobId = null;
+          activeJobStatus = "idle";
+          setSubmitMode("idle");
           return;
         }
 
         if (job.status === "failed") {
-          submitButton.disabled = false;
-          submitButton.textContent = "Run Search";
+          activeJobId = null;
+          activeJobStatus = "idle";
+          setSubmitMode("idle");
           throw new Error(job.error || "Search failed.");
         }
 
+        setSubmitMode(job.status === "cancelling" ? "cancelling" : "running");
         await new Promise((resolve) => setTimeout(resolve, 750));
       }
     }
@@ -623,17 +882,35 @@
       }
 
       event.preventDefault();
+
+      if (activeJobId && isActiveStatus(activeJobStatus)) {
+        if (activeJobStatus === "cancelling") {
+          return;
+        }
+        try {
+          setSubmitMode("cancelling");
+          await stopJob(activeJobId);
+        } catch (error) {
+          showError(error.message || "Failed to stop search.");
+          setSubmitMode("running");
+        }
+        return;
+      }
+
       clearError();
       resultsRoot.innerHTML = "";
+      activeJobStatus = "queued";
       submitButton.disabled = true;
-      submitButton.textContent = "Scanning…";
+      submitButton.textContent = "Starting...";
       setProgress({
         status: "queued",
+        stage: "candidate_source",
+        stage_detail: "Queued and waiting to start.",
         scanned_rows: 0,
         total_rows_target: 0,
         total_predicted_positive: 0,
         duration_seconds: 0,
-        feature_mode: "queued",
+        feature_mode: "pending",
       });
 
       const payload = Object.fromEntries(new FormData(form).entries());
@@ -647,11 +924,15 @@
         if (!response.ok) {
           throw new Error(data.error || "Failed to start search.");
         }
+        activeJobId = data.job_id;
+        activeJobStatus = data.status || "queued";
+        setSubmitMode("running");
         await pollJob(data.job_id);
       } catch (error) {
         showError(error.message || "Search failed.");
-        submitButton.disabled = false;
-        submitButton.textContent = "Run Search";
+        activeJobId = null;
+        activeJobStatus = "idle";
+        setSubmitMode("idle");
       }
     });
   </script>

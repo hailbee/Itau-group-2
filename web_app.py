@@ -9,18 +9,41 @@ from uuid import uuid4
 
 from flask import Flask, jsonify, render_template, request
 
-from domain_matcher import DEFAULT_CHUNK_SIZE, DomainMatcher, SearchReport
+from domain_matcher import DEFAULT_CHUNK_SIZE, DEFAULT_MODEL_PATH, DomainMatcher, SearchCancelled, SearchReport
 
 
 app = Flask(__name__)
 
 JOB_LOCK = threading.Lock()
 SEARCH_JOBS: dict[str, dict[str, Any]] = {}
+DEFAULT_MODEL_KEY = DEFAULT_MODEL_PATH.name
+REQUIRED_WEBAPP_TEXT_METRICS = (
+    "token_set_ratio",
+    "partial_ratio",
+    "levenshtein_distance_score",
+)
+
+
+def _job_cancel_requested(job_id: str) -> bool:
+    with JOB_LOCK:
+        job = SEARCH_JOBS.get(job_id)
+        return bool(job and job.get("cancel_requested"))
 
 
 @lru_cache(maxsize=1)
-def get_matcher() -> DomainMatcher:
-    return DomainMatcher()
+def get_matcher(model_key: str = DEFAULT_MODEL_KEY) -> DomainMatcher:
+    model_path = (DEFAULT_MODEL_PATH.parent / model_key).resolve()
+    matcher = DomainMatcher(model_path=model_path)
+    missing_metrics = [
+        metric_name for metric_name in REQUIRED_WEBAPP_TEXT_METRICS if metric_name not in matcher.bundle.feature_names
+    ]
+    if missing_metrics:
+        missing_text = ", ".join(missing_metrics)
+        raise RuntimeError(
+            "The default 5-font web app model is missing required text metrics: "
+            f"{missing_text}"
+        )
+    return matcher
 
 
 def _int_field(name: str, default: int | None, values: dict[str, Any]) -> int | None:
@@ -65,6 +88,8 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
             status="starting",
             progress={
                 "status": "starting",
+                "stage": "candidate_source",
+                "stage_detail": "Starting worker and loading the 5-font model.",
                 "scanned_rows": 0,
                 "total_rows_target": 0,
                 "total_predicted_positive": 0,
@@ -73,13 +98,43 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
             },
             updated_at=time.time(),
         )
+        if _job_cancel_requested(job_id):
+            raise SearchCancelled(
+                {
+                    "status": "cancelled",
+                    "stage": "candidate_source",
+                    "stage_detail": "Search stopped before the matcher finished starting.",
+                    "scanned_rows": 0,
+                    "total_rows_target": 0,
+                    "total_predicted_positive": 0,
+                    "duration_seconds": 0.0,
+                    "feature_mode": "initializing matcher",
+                }
+            )
         matcher = get_matcher()
+        if _job_cancel_requested(job_id):
+            raise SearchCancelled(
+                {
+                    "status": "cancelled",
+                    "stage": "prepare_query",
+                    "stage_detail": "Search stopped before query preparation began.",
+                    "scanned_rows": 0,
+                    "total_rows_target": 0,
+                    "total_predicted_positive": 0,
+                    "duration_seconds": time.time() - started_at,
+                    "feature_mode": matcher._feature_mode(),
+                }
+            )
 
         def on_progress(progress: dict[str, Any]) -> None:
+            cancel_requested = _job_cancel_requested(job_id)
+            progress_status = "cancelling" if cancel_requested and progress.get("status") == "running" else progress.get("status", "running")
+            progress_payload = dict(progress)
+            progress_payload["status"] = progress_status
             _update_job(
                 job_id,
-                status="running",
-                progress=progress,
+                status="cancelling" if cancel_requested else "running",
+                progress=progress_payload,
                 updated_at=time.time(),
             )
 
@@ -90,12 +145,15 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
             chunk_size=max(1, _int_field("chunk_size", DEFAULT_CHUNK_SIZE, form_values) or DEFAULT_CHUNK_SIZE),
             max_rows=_int_field("max_rows", None, form_values),
             progress_callback=on_progress,
+            cancel_callback=lambda: _job_cancel_requested(job_id),
         )
         _update_job(
             job_id,
             status="completed",
             progress={
                 "status": "completed",
+                "stage": "completed",
+                "stage_detail": "Search complete. Final ranking is ready.",
                 "query": report.query,
                 "normalized_query": report.normalized_query,
                 "scanned_rows": report.scanned_rows,
@@ -105,6 +163,20 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
                 "feature_mode": report.feature_mode,
             },
             report=_serialize_report(report),
+            completed_at=time.time(),
+            duration_seconds=time.time() - started_at,
+        )
+    except SearchCancelled as exc:
+        progress = dict(exc.progress or {})
+        progress.setdefault("status", "cancelled")
+        progress.setdefault("stage", "scan_candidates")
+        progress.setdefault("stage_detail", "Search stopped by user.")
+        progress["duration_seconds"] = time.time() - started_at
+        _update_job(
+            job_id,
+            status="cancelled",
+            error=None,
+            progress=progress,
             completed_at=time.time(),
             duration_seconds=time.time() - started_at,
         )
@@ -143,9 +215,12 @@ def start_search():
         SEARCH_JOBS[job_id] = {
             "job_id": job_id,
             "status": "queued",
+            "cancel_requested": False,
             "form_values": form_values,
             "progress": {
                 "status": "queued",
+                "stage": "candidate_source",
+                "stage_detail": "Queued and waiting to start.",
                 "scanned_rows": 0,
                 "total_rows_target": 0,
                 "total_predicted_positive": 0,
@@ -172,6 +247,25 @@ def search_status(job_id: str):
     return jsonify(job)
 
 
+@app.post("/api/search/<job_id>/cancel")
+def cancel_search(job_id: str):
+    with JOB_LOCK:
+        job = SEARCH_JOBS.get(job_id)
+        if job is None:
+            return jsonify({"error": f"Unknown job id: {job_id}"}), 404
+
+        if job["status"] in {"queued", "starting", "running", "cancelling"}:
+            job["cancel_requested"] = True
+            progress = dict(job.get("progress") or {})
+            progress["status"] = "cancelling"
+            progress["stage_detail"] = "Stop requested. Finishing the current step."
+            job["progress"] = progress
+            job["status"] = "cancelling"
+            job["updated_at"] = time.time()
+
+    return jsonify(job)
+
+
 @app.post("/search")
 def search():
     form_values = {
@@ -190,9 +284,19 @@ def search():
             chunk_size=max(1, _int_field("chunk_size", DEFAULT_CHUNK_SIZE, form_values) or DEFAULT_CHUNK_SIZE),
             max_rows=_int_field("max_rows", None, form_values),
         )
-        return render_template("index.html", report=report, error=None, form_values=form_values)
+        return render_template(
+            "index.html",
+            report=report,
+            error=None,
+            form_values=form_values,
+        )
     except Exception as exc:
-        return render_template("index.html", report=None, error=str(exc), form_values=form_values), 400
+        return render_template(
+            "index.html",
+            report=None,
+            error=str(exc),
+            form_values=form_values,
+        ), 400
 
 
 if __name__ == "__main__":

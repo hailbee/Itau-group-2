@@ -1,6 +1,6 @@
 # Itau Group 2 Models
 
-This repository contains saved classifiers for business-name matching, a command-line script for applying them to new data, and a Flask web app for scanning a benign-domain dataset with the `total_5f_model.joblib` pipeline.
+This repository contains saved classifiers for business-name matching, a command-line script for applying them to new data, and a Flask web app for scanning a benign-domain dataset with the `total_5f_img_model.joblib` pipeline.
 
 ## Files
 
@@ -71,7 +71,7 @@ python3 scripts/prepare_benign_domains.py \
 ```bash
 python3 scripts/precompute_model_inputs.py \
   --dataset data/benign_domains.csv \
-  --model-path saved_models/total_5f_model.joblib \
+  --model-path saved_models/total_5f_img_model.joblib \
   --output-dir precomputed/benign_total5f
 ```
 
@@ -88,7 +88,7 @@ Full exact flow for the best runtime during searches:
 ```bash
 python3 scripts/precompute_model_inputs.py \
   --dataset data/benign_domains.csv \
-  --model-path saved_models/total_5f_model.joblib \
+  --model-path saved_models/total_5f_img_model.joblib \
   --output-dir precomputed/benign_total5f
 ```
 
@@ -106,12 +106,12 @@ The app:
 2. Normalizes the user input
 3. Computes the query-side embeddings and text metrics
 4. Compares the query against the cached candidate vectors
-5. Builds the `total_5f_model.joblib` feature vector and ranks the best matches
+5. Builds the `total_5f_img_model.joblib` feature vector and ranks the best matches
 
 Important:
 
 - The exact projected-cosine path requires projector checkpoints in `projectors/README.md`.
-- With the bundled 1M-row dataset, the precompute store is about `6.68 GiB` with `float16` output and about `13.35 GiB` with `float32`. Larger datasets scale roughly linearly.
+- With the bundled 1M-row dataset, the precompute store is still multi-GB even with `float16` output, and larger datasets scale roughly linearly.
 - If the precomputed store is missing, the matcher falls back to runtime candidate embedding generation, which is much slower.
 - The UI still exposes `chunk_size` and `max_rows` so you can preview on a smaller slice before scanning all `1,000,000` bundled domains.
 - The web UI shows live scan progress while a search is running, including rows scanned, percent complete, predicted positives so far, and elapsed time.
@@ -128,7 +128,7 @@ python3 main.py --list-models
 See what a model expects:
 
 ```bash
-python3 main.py --describe-model total_5f_model.joblib
+python3 main.py --describe-model total_5f_img_model.joblib
 ```
 
 Run a model:
@@ -231,26 +231,24 @@ Precompute candidate-side model inputs for faster web searches:
 ```bash
 python3 scripts/precompute_model_inputs.py \
   --dataset data/benign_domains.csv \
-  --model-path saved_models/total_5f_model.joblib \
+  --model-path saved_models/total_5f_img_model.joblib \
   --output-dir precomputed/benign_total5f
 ```
 
 Apply a model with a merged feature table:
 
 ```bash
-python3 main.py --model-path total_5f_model.joblib \
+python3 main.py --model-path total_5f_img_model.joblib \
   --data your_feature_table.parquet
 ```
 
 Apply a model when you have embeddings and projector checkpoints:
 
 ```bash
-python3 main.py --model-path total_5f_model.joblib \
+python3 main.py --model-path total_5f_img_model.joblib \
   --data your_pairs.csv \
-  --text-data your_text_embeddings.parquet \
-  --text-projector your_text_projector.pt \
   --deja-data your_deja_embeddings.parquet \
   --deja-projector your_deja_projector.pt
 ```
 
-Add the other sources the same way for `unifont`, `gentium`, `libre`, `exo2`, `doulos`, and `cousine` when the selected model requires them.
+Add the other sources the same way for `unifont`, `libre`, `doulos`, and `cousine` when the selected model requires them. Use the text-source flags only for models that include `text_cosine`.
