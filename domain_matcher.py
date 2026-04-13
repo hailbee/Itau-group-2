@@ -39,8 +39,11 @@ DEFAULT_SIGLIP_MODEL = os.getenv("SIGLIP_MODEL_NAME", "google/siglip-base-patch1
 DEFAULT_CHUNK_SIZE = int(os.getenv("MATCHER_CHUNK_SIZE", "256"))
 DEFAULT_PROJECTOR_DIR = REPO_ROOT / "projectors"
 DEFAULT_HF_CACHE_DIR = REPO_ROOT / ".cache" / "huggingface"
-DEFAULT_PRECOMPUTED_STORE_DIR = REPO_ROOT / "precomputed" / "benign_total5f"
+DEFAULT_PRECOMPUTED_STORE_DIR = REPO_ROOT / "precomputed" / "benign_total5f_img"
 LEGACY_PRECOMPUTED_STORE_DIR = REPO_ROOT / "precomputed"
+LEGACY_MODEL_STORE_DIRS: dict[str, tuple[str, ...]] = {
+    "total_5f_img_model.joblib": ("benign_total5f",),
+}
 
 os.environ.setdefault("HF_HOME", str(DEFAULT_HF_CACHE_DIR))
 os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(DEFAULT_HF_CACHE_DIR / "hub"))
@@ -69,20 +72,46 @@ PROJECTOR_PATHS: dict[str, Path] = {
 }
 
 
-def resolve_precomputed_store_dir() -> Path:
+def default_precomputed_store_dir(model_path: Path | None = None) -> Path:
+    resolved_model = Path(model_path).resolve() if model_path is not None else DEFAULT_MODEL_PATH.resolve()
+    if resolved_model.name == "total_5f_img_model.joblib":
+        return DEFAULT_PRECOMPUTED_STORE_DIR.resolve()
+    if resolved_model.name == "total_5f_model.joblib":
+        return (REPO_ROOT / "precomputed" / "benign_total5f").resolve()
+
+    stem = resolved_model.stem
+    if stem.endswith("_model"):
+        stem = stem[: -len("_model")]
+    return (REPO_ROOT / "precomputed" / f"benign_{stem}").resolve()
+
+
+def candidate_precomputed_store_dirs(model_path: Path | None = None) -> list[Path]:
+    override = os.getenv("PRECOMPUTED_STORE_DIR")
+    if override:
+        return [Path(override).resolve()]
+
+    resolved_model = Path(model_path).resolve() if model_path is not None else DEFAULT_MODEL_PATH.resolve()
+    candidates = [default_precomputed_store_dir(resolved_model)]
+    for legacy_dir_name in LEGACY_MODEL_STORE_DIRS.get(resolved_model.name, ()):
+        candidates.append((REPO_ROOT / "precomputed" / legacy_dir_name).resolve())
+    candidates.append(LEGACY_PRECOMPUTED_STORE_DIR.resolve())
+
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        deduped.append(candidate)
+        seen.add(key)
+    return deduped
+
+
+def resolve_precomputed_store_dir(model_path: Path | None = None) -> Path:
     override = os.getenv("PRECOMPUTED_STORE_DIR")
     if override:
         return Path(override).resolve()
-
-    default_dir = DEFAULT_PRECOMPUTED_STORE_DIR.resolve()
-    if (default_dir / "metadata.json").exists():
-        return default_dir
-
-    legacy_dir = LEGACY_PRECOMPUTED_STORE_DIR.resolve()
-    if (legacy_dir / "metadata.json").exists():
-        return legacy_dir
-
-    return default_dir
+    return default_precomputed_store_dir(model_path)
 
 
 @dataclass
@@ -467,7 +496,7 @@ class DomainMatcher:
             if name.startswith("cosine_") and name != "text_cosine"
         ]
         self.positive_label = self.bundle.metadata.get("positive_label", 1)
-        self.precomputed_store_notice: str | None = None
+        self.precomputed_store_notices: list[str] = []
         self.precomputed_store = self._load_precomputed_store()
         self._dataset_row_count_cache: int | None = None
         missing_query_projectors = [
@@ -504,24 +533,26 @@ class DomainMatcher:
         return loaded
 
     def _load_precomputed_store(self) -> PrecomputedFeatureStore | None:
-        store_dir = resolve_precomputed_store_dir()
-        metadata_path = store_dir / "metadata.json"
-        if not metadata_path.exists():
-            return None
+        for store_dir in candidate_precomputed_store_dirs(self.model_path):
+            metadata_path = store_dir / "metadata.json"
+            if not metadata_path.exists():
+                continue
 
-        store = PrecomputedFeatureStore(store_dir)
-        if not store.supports(
-            model_name=self.model_path.name,
-            feature_names=self.bundle.feature_names,
-            required_sources=self.required_sources,
-        ):
+            store = PrecomputedFeatureStore(store_dir)
+            if store.supports(
+                model_name=self.model_path.name,
+                feature_names=self.bundle.feature_names,
+                required_sources=self.required_sources,
+            ):
+                return store
+
             store_model_name = str(store.metadata.get("model_name", "unknown model"))
-            self.precomputed_store_notice = (
+            self.precomputed_store_notices.append(
                 f"Ignoring precomputed store at {store.store_dir} because it was built for {store_model_name}, "
                 f"not {self.model_path.name}."
             )
-            return None
-        return store
+
+        return None
 
     def _feature_mode(self) -> str:
         if not self.required_sources:
@@ -535,8 +566,7 @@ class DomainMatcher:
 
     def _warnings(self, max_rows: int | None) -> list[str]:
         warnings: list[str] = []
-        if self.precomputed_store_notice:
-            warnings.append(self.precomputed_store_notice)
+        warnings.extend(self.precomputed_store_notices)
         if self.precomputed_store is not None and self.required_sources:
             warnings.append(
                 f"Using precomputed projected embeddings from {self.precomputed_store.store_dir}."
@@ -610,7 +640,12 @@ class DomainMatcher:
     def _cosine_scores(self, query_embedding: np.ndarray, candidate_embeddings: np.ndarray) -> np.ndarray:
         query = query_embedding.astype(np.float32, copy=False)
         candidates = candidate_embeddings.astype(np.float32, copy=False)
-        return candidates @ query
+        query_norm = max(float(np.linalg.norm(query)), 1e-8)
+        normalized_query = query / query_norm
+        candidate_norms = np.linalg.norm(candidates, axis=1, keepdims=True)
+        candidate_norms = np.clip(candidate_norms, 1e-8, None)
+        normalized_candidates = candidates / candidate_norms
+        return normalized_candidates @ normalized_query
 
     def _assign_source_feature_values(
         self,

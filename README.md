@@ -72,7 +72,7 @@ python3 scripts/prepare_benign_domains.py \
 python3 scripts/precompute_model_inputs.py \
   --dataset data/benign_domains.csv \
   --model-path saved_models/total_5f_img_model.joblib \
-  --output-dir precomputed/benign_total5f
+  --output-dir precomputed/benign_total5f_img
 ```
 
 4. Start the web app:
@@ -89,7 +89,7 @@ Full exact flow for the best runtime during searches:
 python3 scripts/precompute_model_inputs.py \
   --dataset data/benign_domains.csv \
   --model-path saved_models/total_5f_img_model.joblib \
-  --output-dir precomputed/benign_total5f
+  --output-dir precomputed/benign_total5f_img
 ```
 
 Run the Flask app:
@@ -102,7 +102,7 @@ Then open [http://127.0.0.1:5000](http://127.0.0.1:5000).
 
 The app:
 
-1. Loads the precomputed projected candidate-side inputs from `precomputed/benign_total5f`
+1. Loads the precomputed projected candidate-side inputs from `precomputed/benign_total5f_img`
 2. Normalizes the user input
 3. Computes the query-side embeddings and text metrics
 4. Compares the query against the cached candidate vectors
@@ -111,6 +111,7 @@ The app:
 Important:
 
 - The exact projected-cosine path requires projector checkpoints in `projectors/README.md`.
+- The precomputed store must be built for the same model the web app is using. A `total_5f_model.joblib` cache will be rejected by the `total_5f_img_model.joblib` matcher.
 - With the bundled 1M-row dataset, the precompute store is still multi-GB even with `float16` output, and larger datasets scale roughly linearly.
 - If the precomputed store is missing, the matcher falls back to runtime candidate embedding generation, which is much slower.
 - The UI still exposes `chunk_size` and `max_rows` so you can preview on a smaller slice before scanning all `1,000,000` bundled domains.
@@ -232,7 +233,7 @@ Precompute candidate-side model inputs for faster web searches:
 python3 scripts/precompute_model_inputs.py \
   --dataset data/benign_domains.csv \
   --model-path saved_models/total_5f_img_model.joblib \
-  --output-dir precomputed/benign_total5f
+  --output-dir precomputed/benign_total5f_img
 ```
 
 Apply a model with a merged feature table:

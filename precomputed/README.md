@@ -6,7 +6,7 @@ Example:
 python3 scripts/precompute_model_inputs.py \
   --dataset data/benign_domains.csv \
   --model-path saved_models/total_5f_img_model.joblib \
-  --output-dir precomputed/benign_total5f
+  --output-dir precomputed/benign_total5f_img
 ```
 
 The generated files can be large. For `total_5f_img_model.joblib`, a full benign-domain cache is still multi-GB even

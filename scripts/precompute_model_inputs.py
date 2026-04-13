@@ -18,10 +18,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from domain_matcher import (
     DEFAULT_DOMAIN_DATASET,
-    DEFAULT_PRECOMPUTED_STORE_DIR,
     FONT_FILES,
     PROJECTOR_PATHS,
     SiglipBackbone,
+    default_precomputed_store_dir,
     normalize_domain_string,
 )
 from main import (
@@ -50,8 +50,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        default=str(DEFAULT_PRECOMPUTED_STORE_DIR),
-        help="Directory to hold the precomputed store.",
+        default=None,
+        help="Directory to hold the precomputed store. Defaults to the model-specific precomputed path.",
     )
     parser.add_argument(
         "--batch-size",
@@ -120,8 +120,8 @@ def projected_embedding(
 def main() -> None:
     args = parse_args()
     dataset_path = Path(args.dataset).resolve()
-    output_dir = Path(args.output_dir).resolve()
     model_path = resolve_model_path(args.model_path, REPO_ROOT / "saved_models")
+    output_dir = Path(args.output_dir).resolve() if args.output_dir else default_precomputed_store_dir(model_path)
     model_spec = load_model_spec(model_path)
     needed_sources = required_sources(model_spec)
     device = choose_device(None)
