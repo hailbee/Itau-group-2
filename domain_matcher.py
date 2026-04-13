@@ -398,7 +398,17 @@ class PrecomputedFeatureStore:
             for source_key, source_info in self.sources.items()
         }
 
-    def supports(self, required_sources: Sequence[str]) -> bool:
+    def supports(
+        self,
+        *,
+        model_name: str,
+        feature_names: Sequence[str],
+        required_sources: Sequence[str],
+    ) -> bool:
+        if str(self.metadata.get("model_name", "")) != str(model_name):
+            return False
+        if self.feature_names and list(self.feature_names) != list(feature_names):
+            return False
         return all(source_key in self.embeddings for source_key in required_sources)
 
     def iter_chunks(
@@ -457,6 +467,7 @@ class DomainMatcher:
             if name.startswith("cosine_") and name != "text_cosine"
         ]
         self.positive_label = self.bundle.metadata.get("positive_label", 1)
+        self.precomputed_store_notice: str | None = None
         self.precomputed_store = self._load_precomputed_store()
         self._dataset_row_count_cache: int | None = None
         missing_query_projectors = [
@@ -499,7 +510,16 @@ class DomainMatcher:
             return None
 
         store = PrecomputedFeatureStore(store_dir)
-        if not store.supports(self.required_sources):
+        if not store.supports(
+            model_name=self.model_path.name,
+            feature_names=self.bundle.feature_names,
+            required_sources=self.required_sources,
+        ):
+            store_model_name = str(store.metadata.get("model_name", "unknown model"))
+            self.precomputed_store_notice = (
+                f"Ignoring precomputed store at {store.store_dir} because it was built for {store_model_name}, "
+                f"not {self.model_path.name}."
+            )
             return None
         return store
 
@@ -515,6 +535,8 @@ class DomainMatcher:
 
     def _warnings(self, max_rows: int | None) -> list[str]:
         warnings: list[str] = []
+        if self.precomputed_store_notice:
+            warnings.append(self.precomputed_store_notice)
         if self.precomputed_store is not None and self.required_sources:
             warnings.append(
                 f"Using precomputed projected embeddings from {self.precomputed_store.store_dir}."
