@@ -17,11 +17,6 @@ app = Flask(__name__)
 JOB_LOCK = threading.Lock()
 SEARCH_JOBS: dict[str, dict[str, Any]] = {}
 DEFAULT_MODEL_KEY = DEFAULT_MODEL_PATH.name
-REQUIRED_WEBAPP_TEXT_METRICS = (
-    "token_set_ratio",
-    "partial_ratio",
-    "levenshtein_distance_score",
-)
 
 
 def _job_cancel_requested(job_id: str) -> bool:
@@ -34,14 +29,9 @@ def _job_cancel_requested(job_id: str) -> bool:
 def get_matcher(model_key: str = DEFAULT_MODEL_KEY) -> DomainMatcher:
     model_path = (DEFAULT_MODEL_PATH.parent / model_key).resolve()
     matcher = DomainMatcher(model_path=model_path)
-    missing_metrics = [
-        metric_name for metric_name in REQUIRED_WEBAPP_TEXT_METRICS if metric_name not in matcher.bundle.feature_names
-    ]
-    if missing_metrics:
-        missing_text = ", ".join(missing_metrics)
+    if not matcher.font_feature_names:
         raise RuntimeError(
-            "The default 5-font web app model is missing required text metrics: "
-            f"{missing_text}"
+            "The default 5-font web app model is missing the font cosine features required for ranking."
         )
     return matcher
 
@@ -64,7 +54,7 @@ def _empty_form_values() -> dict[str, Any]:
     return {
         "query": "",
         "top_k": 25,
-        "min_confidence": 0.5,
+        "min_mean_font_cosine": 0.5,
         "chunk_size": DEFAULT_CHUNK_SIZE,
         "max_rows": "",
     }
@@ -92,7 +82,7 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
                 "stage_detail": "Starting worker and loading the 5-font model.",
                 "scanned_rows": 0,
                 "total_rows_target": 0,
-                "total_predicted_positive": 0,
+                "total_threshold_hits": 0,
                 "duration_seconds": 0.0,
                 "feature_mode": "initializing matcher",
             },
@@ -106,7 +96,7 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
                     "stage_detail": "Search stopped before the matcher finished starting.",
                     "scanned_rows": 0,
                     "total_rows_target": 0,
-                    "total_predicted_positive": 0,
+                    "total_threshold_hits": 0,
                     "duration_seconds": 0.0,
                     "feature_mode": "initializing matcher",
                 }
@@ -120,7 +110,7 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
                     "stage_detail": "Search stopped before query preparation began.",
                     "scanned_rows": 0,
                     "total_rows_target": 0,
-                    "total_predicted_positive": 0,
+                    "total_threshold_hits": 0,
                     "duration_seconds": time.time() - started_at,
                     "feature_mode": matcher._feature_mode(),
                 }
@@ -141,7 +131,7 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
         report = matcher.search(
             form_values["query"],
             top_k=max(1, _int_field("top_k", 25, form_values) or 25),
-            min_confidence=max(0.0, min(1.0, _float_field("min_confidence", 0.5, form_values))),
+            min_mean_font_cosine=max(0.0, min(1.0, _float_field("min_mean_font_cosine", 0.5, form_values))),
             chunk_size=max(1, _int_field("chunk_size", DEFAULT_CHUNK_SIZE, form_values) or DEFAULT_CHUNK_SIZE),
             max_rows=_int_field("max_rows", None, form_values),
             progress_callback=on_progress,
@@ -153,12 +143,12 @@ def _run_search_job(job_id: str, form_values: dict[str, Any]) -> None:
             progress={
                 "status": "completed",
                 "stage": "completed",
-                "stage_detail": "Search complete. Final ranking is ready.",
+                "stage_detail": "Search complete. Final mean-font-cosine ranking is ready.",
                 "query": report.query,
                 "normalized_query": report.normalized_query,
                 "scanned_rows": report.scanned_rows,
                 "total_rows_target": report.total_rows_target,
-                "total_predicted_positive": report.total_predicted_positive,
+                "total_threshold_hits": report.total_threshold_hits,
                 "duration_seconds": report.duration_seconds,
                 "feature_mode": report.feature_mode,
             },
@@ -206,7 +196,7 @@ def start_search():
     form_values = {
         "query": payload.get("query", ""),
         "top_k": payload.get("top_k", "25"),
-        "min_confidence": payload.get("min_confidence", "0.5"),
+        "min_mean_font_cosine": payload.get("min_mean_font_cosine", "0.5"),
         "chunk_size": payload.get("chunk_size", str(DEFAULT_CHUNK_SIZE)),
         "max_rows": payload.get("max_rows", ""),
     }
@@ -223,7 +213,7 @@ def start_search():
                 "stage_detail": "Queued and waiting to start.",
                 "scanned_rows": 0,
                 "total_rows_target": 0,
-                "total_predicted_positive": 0,
+                "total_threshold_hits": 0,
                 "duration_seconds": 0.0,
                 "feature_mode": "pending",
             },
@@ -271,7 +261,7 @@ def search():
     form_values = {
         "query": request.form.get("query", ""),
         "top_k": request.form.get("top_k", "25"),
-        "min_confidence": request.form.get("min_confidence", "0.5"),
+        "min_mean_font_cosine": request.form.get("min_mean_font_cosine", "0.5"),
         "chunk_size": request.form.get("chunk_size", str(DEFAULT_CHUNK_SIZE)),
         "max_rows": request.form.get("max_rows", ""),
     }
@@ -280,7 +270,7 @@ def search():
         report = matcher.search(
             form_values["query"],
             top_k=max(1, _int_field("top_k", 25, form_values) or 25),
-            min_confidence=max(0.0, min(1.0, _float_field("min_confidence", 0.5, form_values))),
+            min_mean_font_cosine=max(0.0, min(1.0, _float_field("min_mean_font_cosine", 0.5, form_values))),
             chunk_size=max(1, _int_field("chunk_size", DEFAULT_CHUNK_SIZE, form_values) or DEFAULT_CHUNK_SIZE),
             max_rows=_int_field("max_rows", None, form_values),
         )

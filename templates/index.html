@@ -311,7 +311,11 @@
       th:nth-child(5),
       td:nth-child(5),
       th:nth-child(6),
-      td:nth-child(6) {
+      td:nth-child(6),
+      th:nth-child(7),
+      td:nth-child(7),
+      th:nth-child(8),
+      td:nth-child(8) {
         display: none;
       }
     }
@@ -323,9 +327,9 @@
       <div class="eyebrow">Itau Group 2</div>
       <h1>Total 5F Domain Matcher</h1>
       <p class="subtitle">
-        Enter a string, compare it against the benign-domain dataset, and score each pair with
-        <code>total_5f_img_model.joblib</code>. The app computes text metrics plus rendered-font
-        image similarities for the model’s required feature set.
+        Enter a string, compare it against the benign-domain dataset, and rank each pair by
+        mean font cosine using <code>total_5f_img_model.joblib</code>'s rendered-font image
+        feature set.
       </p>
     </section>
 
@@ -342,8 +346,8 @@
             <input id="top_k" name="top_k" type="number" min="1" value="{{ form_values.top_k }}">
           </div>
           <div class="field">
-            <label for="min_confidence">Minimum confidence</label>
-            <input id="min_confidence" name="min_confidence" type="number" min="0" max="1" step="0.01" value="{{ form_values.min_confidence }}">
+            <label for="min_mean_font_cosine">Minimum mean font cosine</label>
+            <input id="min_mean_font_cosine" name="min_mean_font_cosine" type="number" min="0" max="1" step="0.01" value="{{ form_values.min_mean_font_cosine }}">
           </div>
           <div class="field">
             <label for="chunk_size">Chunk size</label>
@@ -380,7 +384,7 @@
         <div id="progress-text">Waiting to start…</div>
         <div class="status-line">
           <span>Rows scanned: <strong id="progress-rows">0</strong></span>
-          <span>Predicted positives: <strong id="progress-positives">0</strong></span>
+          <span>Threshold hits: <strong id="progress-matches">0</strong></span>
           <span>Elapsed: <strong id="progress-elapsed">0.00 s</strong></span>
         </div>
       </div>
@@ -408,8 +412,8 @@
           <strong>{{ "{:,}".format(report.scanned_rows) }}</strong>
         </div>
         <div class="summary-card">
-          Predicted positives
-          <strong>{{ "{:,}".format(report.total_predicted_positive) }}</strong>
+          Threshold hits
+          <strong>{{ "{:,}".format(report.total_threshold_hits) }}</strong>
         </div>
         <div class="summary-card">
           Duration
@@ -432,7 +436,7 @@
           {% if report.matches %}
           Matches
           {% else %}
-          No positive matches cleared the threshold
+          No candidates cleared the threshold
           {% endif %}
         </h2>
       </div>
@@ -442,30 +446,26 @@
         <thead>
           <tr>
             <th>Domain</th>
-            <th>Confidence</th>
-            <th>Token Set</th>
-            <th>Partial</th>
-            <th>Levenshtein Score</th>
-            <th>Text Cosine</th>
             <th>Mean Font Cosine</th>
+            {% for column in report.font_columns %}
+            <th>{{ column.label }}</th>
+            {% endfor %}
           </tr>
         </thead>
         <tbody>
           {% for hit in report.matches %}
           <tr>
             <td>{{ hit.domain }}</td>
-            <td>{{ "%.4f"|format(hit.confidence) }}</td>
-            <td>{{ "%.4f"|format(hit.token_set_ratio) }}</td>
-            <td>{{ "%.4f"|format(hit.partial_ratio) }}</td>
-            <td>{{ "%.4f"|format(hit.levenshtein_distance_score) }}</td>
-            <td>{% if hit.text_cosine is not none %}{{ "%.4f"|format(hit.text_cosine) }}{% else %}n/a{% endif %}</td>
-            <td>{% if hit.mean_font_cosine is not none %}{{ "%.4f"|format(hit.mean_font_cosine) }}{% else %}n/a{% endif %}</td>
+            <td>{{ "%.4f"|format(hit.mean_font_cosine) }}</td>
+            {% for column in report.font_columns %}
+            <td>{{ "%.4f"|format(hit.font_cosines[column.key]) }}</td>
+            {% endfor %}
           </tr>
           {% endfor %}
         </tbody>
       </table>
       {% else %}
-      <p class="note">The model did not emit any positive matches at the chosen threshold. The highest-confidence candidates are shown below.</p>
+      <p class="note">No candidates cleared the chosen mean-font-cosine threshold. The highest-scoring candidates are shown below.</p>
       {% endif %}
     </section>
 
@@ -477,26 +477,20 @@
         <thead>
           <tr>
             <th>Domain</th>
-            <th>Confidence</th>
-            <th>Predicted Positive</th>
-            <th>Token Set</th>
-            <th>Partial</th>
-            <th>Levenshtein Score</th>
-            <th>Text Cosine</th>
             <th>Mean Font Cosine</th>
+            {% for column in report.font_columns %}
+            <th>{{ column.label }}</th>
+            {% endfor %}
           </tr>
         </thead>
         <tbody>
           {% for hit in report.top_candidates %}
           <tr>
             <td>{{ hit.domain }}</td>
-            <td>{{ "%.4f"|format(hit.confidence) }}</td>
-            <td>{{ "yes" if hit.predicted_positive else "no" }}</td>
-            <td>{{ "%.4f"|format(hit.token_set_ratio) }}</td>
-            <td>{{ "%.4f"|format(hit.partial_ratio) }}</td>
-            <td>{{ "%.4f"|format(hit.levenshtein_distance_score) }}</td>
-            <td>{% if hit.text_cosine is not none %}{{ "%.4f"|format(hit.text_cosine) }}{% else %}n/a{% endif %}</td>
-            <td>{% if hit.mean_font_cosine is not none %}{{ "%.4f"|format(hit.mean_font_cosine) }}{% else %}n/a{% endif %}</td>
+            <td>{{ "%.4f"|format(hit.mean_font_cosine) }}</td>
+            {% for column in report.font_columns %}
+            <td>{{ "%.4f"|format(hit.font_cosines[column.key]) }}</td>
+            {% endfor %}
           </tr>
           {% endfor %}
         </tbody>
@@ -520,7 +514,7 @@
     const progressFill = document.getElementById("progress-fill");
     const progressText = document.getElementById("progress-text");
     const progressRows = document.getElementById("progress-rows");
-    const progressPositives = document.getElementById("progress-positives");
+    const progressMatches = document.getElementById("progress-matches");
     const progressElapsed = document.getElementById("progress-elapsed");
     const progressMode = document.getElementById("progress-mode");
     const errorBox = document.getElementById("error-box");
@@ -702,7 +696,7 @@
       progressCard.style.display = "block";
       progressFill.style.width = `${pct}%`;
       progressRows.textContent = `${formatNumber(scanned)} / ${formatNumber(total)}`;
-      progressPositives.textContent = formatNumber(progress.total_predicted_positive || 0);
+      progressMatches.textContent = formatNumber(progress.total_threshold_hits || 0);
       progressElapsed.textContent = `${formatFloat(progress.duration_seconds || 0, 2)} s`;
       progressMode.textContent = status === "completed" ? "complete" : formatStageLabel(progress.stage);
       if (status === "queued") {
@@ -734,34 +728,28 @@
       `;
     }
 
-    function renderMatchesTable(rows, includePrediction) {
-      const predictionHeader = includePrediction ? "<th>Predicted Positive</th>" : "";
-      const predictionCell = (row) => includePrediction ? `<td>${row.predicted_positive ? "yes" : "no"}</td>` : "";
+    function renderMatchesTable(rows, fontColumns) {
+      const fontHeaders = fontColumns
+        .map((column) => `<th>${escapeHtml(column.label)}</th>`)
+        .join("");
       return `
         <table>
           <thead>
             <tr>
               <th>Domain</th>
-              <th>Confidence</th>
-              ${predictionHeader}
-              <th>Token Set</th>
-              <th>Partial</th>
-              <th>Levenshtein Score</th>
-              <th>Text Cosine</th>
               <th>Mean Font Cosine</th>
+              ${fontHeaders}
             </tr>
           </thead>
           <tbody>
             ${rows.map((row) => `
               <tr>
                 <td>${escapeHtml(row.domain)}</td>
-                <td>${formatFloat(row.confidence)}</td>
-                ${predictionCell(row)}
-                <td>${formatFloat(row.token_set_ratio)}</td>
-                <td>${formatFloat(row.partial_ratio)}</td>
-                <td>${formatFloat(row.levenshtein_distance_score)}</td>
-                <td>${row.text_cosine == null ? "n/a" : formatFloat(row.text_cosine)}</td>
-                <td>${row.mean_font_cosine == null ? "n/a" : formatFloat(row.mean_font_cosine)}</td>
+                <td>${formatFloat(row.mean_font_cosine)}</td>
+                ${fontColumns.map((column) => {
+                  const value = row.font_cosines?.[column.key];
+                  return `<td>${value == null ? "n/a" : formatFloat(value)}</td>`;
+                }).join("")}
               </tr>
             `).join("")}
           </tbody>
@@ -771,8 +759,8 @@
 
     function renderReport(report) {
       const matchesSection = report.matches.length > 0
-        ? renderMatchesTable(report.matches, false)
-        : `<p class="note">The model did not emit any positive matches at the chosen threshold. The highest-confidence candidates are shown below.</p>`;
+        ? renderMatchesTable(report.matches, report.font_columns || [])
+        : `<p class="note">No candidates cleared the chosen mean-font-cosine threshold. The highest-scoring candidates are shown below.</p>`;
 
       resultsRoot.innerHTML = `
         <section class="card">
@@ -786,7 +774,7 @@
             <div class="summary-card">Normalized query<strong>${escapeHtml(report.normalized_query)}</strong></div>
             <div class="summary-card">Rows scanned<strong>${formatNumber(report.scanned_rows)}</strong></div>
             <div class="summary-card">Target rows<strong>${formatNumber(report.total_rows_target)}</strong></div>
-            <div class="summary-card">Predicted positives<strong>${formatNumber(report.total_predicted_positive)}</strong></div>
+            <div class="summary-card">Threshold hits<strong>${formatNumber(report.total_threshold_hits)}</strong></div>
             <div class="summary-card">Duration<strong>${formatFloat(report.duration_seconds, 2)} s</strong></div>
           </div>
 
@@ -795,7 +783,7 @@
 
         <section class="card">
           <div class="section-title">
-            <h2>${report.matches.length > 0 ? "Matches" : "No positive matches cleared the threshold"}</h2>
+            <h2>${report.matches.length > 0 ? "Matches" : "No candidates cleared the threshold"}</h2>
           </div>
           ${matchesSection}
         </section>
@@ -804,7 +792,7 @@
           <div class="section-title">
             <h2>Top Candidates</h2>
           </div>
-          ${renderMatchesTable(report.top_candidates, true)}
+          ${renderMatchesTable(report.top_candidates, report.font_columns || [])}
         </section>
       `;
     }
@@ -908,7 +896,7 @@
         stage_detail: "Queued and waiting to start.",
         scanned_rows: 0,
         total_rows_target: 0,
-        total_predicted_positive: 0,
+        total_threshold_hits: 0,
         duration_seconds: 0,
         feature_mode: "pending",
       });

@@ -86,15 +86,16 @@ def resolve_precomputed_store_dir() -> Path:
 
 
 @dataclass
+class FontCosineColumn:
+    key: str
+    label: str
+
+
+@dataclass
 class SearchHit:
     domain: str
-    confidence: float
-    predicted_positive: bool
-    token_set_ratio: float
-    partial_ratio: float
-    levenshtein_distance_score: float
-    text_cosine: float | None
-    mean_font_cosine: float | None
+    mean_font_cosine: float
+    font_cosines: dict[str, float]
 
 
 @dataclass
@@ -103,10 +104,11 @@ class SearchReport:
     normalized_query: str
     scanned_rows: int
     total_rows_target: int
-    total_predicted_positive: int
+    total_threshold_hits: int
     duration_seconds: float
     feature_mode: str
     warnings: list[str]
+    font_columns: list[FontCosineColumn]
     matches: list[SearchHit]
     top_candidates: list[SearchHit]
 
@@ -449,6 +451,11 @@ class DomainMatcher:
             if name not in STRING_FEATURES
         ]
         self.required_sources = list(dict.fromkeys(self.required_sources))
+        self.font_feature_names = [
+            name
+            for name in self.bundle.feature_names
+            if name.startswith("cosine_") and name != "text_cosine"
+        ]
         self.positive_label = self.bundle.metadata.get("positive_label", 1)
         self.precomputed_store = self._load_precomputed_store()
         self._dataset_row_count_cache: int | None = None
@@ -530,6 +537,10 @@ class DomainMatcher:
             "metrics for the query against many candidate domains."
         )
         return warnings
+
+    @staticmethod
+    def _font_label(feature_name: str) -> str:
+        return feature_name.replace("cosine_", "").replace("_", " ").title()
 
     def _dataset_row_count(self) -> int:
         if self.precomputed_store is not None:
@@ -684,7 +695,7 @@ class DomainMatcher:
         self,
         query: str,
         *,
-        min_confidence: float = 0.5,
+        min_mean_font_cosine: float = 0.5,
         top_k: int = 25,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         max_rows: int | None = None,
@@ -695,6 +706,8 @@ class DomainMatcher:
         normalized_query = normalize_domain_string(query)
         if not normalized_query:
             raise ValueError("Please enter a non-empty domain string.")
+        if not self.font_feature_names:
+            raise RuntimeError("The selected model does not provide any font cosine features.")
 
         batch_size = max(1, int(chunk_size))
         total_rows_target = self._target_row_count(max_rows)
@@ -706,7 +719,7 @@ class DomainMatcher:
             stage: str,
             stage_detail: str,
             scanned_rows: int,
-            total_predicted_positive: int,
+            total_threshold_hits: int,
         ) -> dict[str, Any]:
             return {
                 "status": status,
@@ -716,7 +729,7 @@ class DomainMatcher:
                 "normalized_query": normalized_query,
                 "scanned_rows": scanned_rows,
                 "total_rows_target": total_rows_target,
-                "total_predicted_positive": total_predicted_positive,
+                "total_threshold_hits": total_threshold_hits,
                 "duration_seconds": time.time() - started_at,
                 "feature_mode": feature_mode,
             }
@@ -727,7 +740,7 @@ class DomainMatcher:
             stage: str,
             stage_detail: str,
             scanned_rows: int,
-            total_predicted_positive: int,
+            total_threshold_hits: int,
         ) -> None:
             if progress_callback is not None:
                 progress_callback(
@@ -736,7 +749,7 @@ class DomainMatcher:
                         stage=stage,
                         stage_detail=stage_detail,
                         scanned_rows=scanned_rows,
-                        total_predicted_positive=total_predicted_positive,
+                        total_threshold_hits=total_threshold_hits,
                     )
                 )
 
@@ -745,7 +758,7 @@ class DomainMatcher:
             stage: str,
             stage_detail: str,
             scanned_rows: int,
-            total_predicted_positive: int,
+            total_threshold_hits: int,
         ) -> None:
             if cancel_callback is not None and cancel_callback():
                 raise SearchCancelled(
@@ -754,7 +767,7 @@ class DomainMatcher:
                         stage=stage,
                         stage_detail=stage_detail,
                         scanned_rows=scanned_rows,
-                        total_predicted_positive=total_predicted_positive,
+                        total_threshold_hits=total_threshold_hits,
                     )
                 )
 
@@ -767,20 +780,20 @@ class DomainMatcher:
                 else "Preparing query features. Candidate features will be generated during the scan."
             ),
             scanned_rows=0,
-            total_predicted_positive=0,
+            total_threshold_hits=0,
         )
         raise_if_cancelled(
             stage="prepare_query",
             stage_detail="Search stopped before query preparation began.",
             scanned_rows=0,
-            total_predicted_positive=0,
+            total_threshold_hits=0,
         )
         query_text_embedding, query_font_embeddings = self._prepare_query_embeddings(normalized_query, batch_size=batch_size)
 
         matches_heap: list[tuple[float, int, SearchHit]] = []
         overall_heap: list[tuple[float, int, SearchHit]] = []
         scanned_rows = 0
-        total_predicted_positive = 0
+        total_threshold_hits = 0
         counter = 0
 
         emit_progress(
@@ -788,13 +801,13 @@ class DomainMatcher:
             stage="scan_candidates",
             stage_detail="Query features ready. Scanning candidate domains.",
             scanned_rows=0,
-            total_predicted_positive=0,
+            total_threshold_hits=0,
         )
         raise_if_cancelled(
             stage="scan_candidates",
             stage_detail="Search stopped before candidate scanning began.",
             scanned_rows=0,
-            total_predicted_positive=0,
+            total_threshold_hits=0,
         )
 
         if self.precomputed_store is not None:
@@ -816,7 +829,7 @@ class DomainMatcher:
                 stage="scan_candidates",
                 stage_detail="Search stopped during candidate scanning.",
                 scanned_rows=scanned_rows,
-                total_predicted_positive=total_predicted_positive,
+                total_threshold_hits=total_threshold_hits,
             )
             if self.precomputed_store is None:
                 if max_rows is not None and scanned_rows >= max_rows:
@@ -831,7 +844,7 @@ class DomainMatcher:
             raw_domains = chunk["domain"].fillna("").astype(str).tolist()
             if self.precomputed_store is not None and "normalized_domain" in chunk.columns:
                 normalized_candidates = chunk["normalized_domain"].fillna("").astype(str).tolist()
-                feature_matrix, feature_map = self._build_feature_matrix_from_precomputed(
+                _feature_matrix, feature_map = self._build_feature_matrix_from_precomputed(
                     normalized_query,
                     normalized_candidates,
                     source_slices,
@@ -840,42 +853,31 @@ class DomainMatcher:
                 )
             else:
                 normalized_candidates = [normalize_domain_string(domain) for domain in raw_domains]
-                feature_matrix, feature_map = self._build_feature_matrix(
+                _feature_matrix, feature_map = self._build_feature_matrix(
                     normalized_query,
                     normalized_candidates,
                     query_text_embedding,
                     query_font_embeddings,
                     batch_size=batch_size,
                 )
-
-            probabilities = self.estimator.predict_proba(feature_matrix)[:, 1].astype(np.float32, copy=False)
-            predictions = self.estimator.predict(feature_matrix)
-
-            font_feature_names = [name for name in self.bundle.feature_names if name.startswith("cosine_") and name != "text_cosine"]
             for index, domain in enumerate(raw_domains):
-                probability = float(probabilities[index])
-                predicted_positive = str(predictions[index]) == str(self.positive_label)
-                if predicted_positive:
-                    total_predicted_positive += 1
-
-                mean_font_cosine = None
-                if font_feature_names:
-                    mean_font_cosine = float(np.mean([feature_map[name][index] for name in font_feature_names]))
+                font_cosines = {
+                    feature_name: float(feature_map[feature_name][index])
+                    for feature_name in self.font_feature_names
+                }
+                mean_font_cosine = float(np.mean(list(font_cosines.values())))
+                if mean_font_cosine >= float(min_mean_font_cosine):
+                    total_threshold_hits += 1
 
                 hit = SearchHit(
                     domain=domain,
-                    confidence=probability,
-                    predicted_positive=predicted_positive,
-                    token_set_ratio=float(feature_map["token_set_ratio"][index]),
-                    partial_ratio=float(feature_map["partial_ratio"][index]),
-                    levenshtein_distance_score=float(feature_map["levenshtein_distance_score"][index]),
-                    text_cosine=float(feature_map["text_cosine"][index]) if "text_cosine" in feature_map else None,
                     mean_font_cosine=mean_font_cosine,
+                    font_cosines=font_cosines,
                 )
 
-                _push_topk(overall_heap, probability, counter, hit, max(1, int(top_k)))
-                if predicted_positive and probability >= float(min_confidence):
-                    _push_topk(matches_heap, probability, counter, hit, max(1, int(top_k)))
+                _push_topk(overall_heap, mean_font_cosine, counter, hit, max(1, int(top_k)))
+                if mean_font_cosine >= float(min_mean_font_cosine):
+                    _push_topk(matches_heap, mean_font_cosine, counter, hit, max(1, int(top_k)))
                 counter += 1
 
             scanned_rows += len(raw_domains)
@@ -884,21 +886,21 @@ class DomainMatcher:
                 stage="scan_candidates",
                 stage_detail="Scanning candidate domains.",
                 scanned_rows=scanned_rows,
-                total_predicted_positive=total_predicted_positive,
+                total_threshold_hits=total_threshold_hits,
             )
 
         emit_progress(
             status="running",
             stage="rank_results",
-            stage_detail="Candidate scan finished. Ranking the strongest matches.",
+            stage_detail="Candidate scan finished. Ranking the strongest mean-font-cosine matches.",
             scanned_rows=scanned_rows,
-            total_predicted_positive=total_predicted_positive,
+            total_threshold_hits=total_threshold_hits,
         )
         raise_if_cancelled(
             stage="rank_results",
             stage_detail="Search stopped before result ranking finished.",
             scanned_rows=scanned_rows,
-            total_predicted_positive=total_predicted_positive,
+            total_threshold_hits=total_threshold_hits,
         )
 
         matches = [item[2] for item in sorted(matches_heap, key=lambda item: (item[0], -item[1]), reverse=True)]
@@ -908,10 +910,14 @@ class DomainMatcher:
             normalized_query=normalized_query,
             scanned_rows=scanned_rows,
             total_rows_target=total_rows_target,
-            total_predicted_positive=total_predicted_positive,
+            total_threshold_hits=total_threshold_hits,
             duration_seconds=time.time() - started_at,
             feature_mode=self._feature_mode(),
             warnings=self._warnings(max_rows=max_rows),
+            font_columns=[
+                FontCosineColumn(key=feature_name, label=self._font_label(feature_name))
+                for feature_name in self.font_feature_names
+            ],
             matches=matches,
             top_candidates=top_candidates,
         )
