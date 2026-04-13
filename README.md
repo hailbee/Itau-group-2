@@ -1,6 +1,6 @@
 # Itau Group 2 Models
 
-This repository contains saved classifiers for business-name matching, a command-line script for applying them to new data, and a Flask web app for scanning a benign-domain dataset with the `total_5f_img_model.joblib` pipeline.
+This repository contains saved classifiers for business-name matching, a command-line script for applying them to new data, and a Flask web app for scanning a benign-domain dataset or comparing a single pair with the `total_5f_img_model.joblib` pipeline.
 
 ## Files
 
@@ -17,7 +17,7 @@ Bundled one-column domain dataset, currently sourced from the Alexa top 1M list.
 Local font files used to render glyph images for the font-based similarity features.
 
 `web_app.py`
-Flask entrypoint for the interactive matcher UI.
+Flask entrypoint for the interactive matcher UI, including dataset search and pairwise compare routes.
 
 `domain_matcher.py`
 Shared runtime for text metrics, rendered-font embeddings, and chunked dataset search.
@@ -108,14 +108,22 @@ The app:
 4. Compares the query against the cached candidate vectors
 5. Builds the `total_5f_img_model.joblib` feature vector and ranks the best matches
 
+The web UI has two tabs:
+
+1. `Dataset Search` scans the benign-domain dataset and ranks the strongest matches by mean font cosine.
+2. `Pairwise Compare` compares two inputs directly and returns `spoof` or `not spoof` using a caller-supplied mean-font-cosine threshold.
+
 Important:
 
 - The exact projected-cosine path requires projector checkpoints in `projectors/README.md`.
 - The precomputed store must be built for the same model the web app is using. A `total_5f_model.joblib` cache will be rejected by the `total_5f_img_model.joblib` matcher.
+- The precompute output now stores each source in its own subdirectory, such as `precomputed/benign_total5f_img/deja/projected.npy`.
 - With the bundled 1M-row dataset, the precompute store is still multi-GB even with `float16` output, and larger datasets scale roughly linearly.
 - If the precomputed store is missing, the matcher falls back to runtime candidate embedding generation, which is much slower.
+- Search normalization still reduces domains to a shared stem such as `google`, but exact host matches like `google.com` are now restored and pinned to `1.0` when that full host exists in the dataset.
 - The UI still exposes `chunk_size` and `max_rows` so you can preview on a smaller slice before scanning all `1,000,000` bundled domains.
-- The web UI shows live scan progress while a search is running, including rows scanned, percent complete, predicted positives so far, and elapsed time.
+- The web UI shows live scan progress while a search is running, including rows scanned, threshold hits so far, and elapsed time.
+- The pairwise compare tab also shows the per-font cosine breakdown and the model verdict/probability when the estimator exposes `predict_proba`.
 - For a quick sanity check, start with a small `max_rows` such as `50000` or `100000`, then remove the cap once everything looks right.
 
 ## Quick Start

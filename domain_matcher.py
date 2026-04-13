@@ -125,6 +125,8 @@ class SearchHit:
     domain: str
     mean_font_cosine: float
     font_cosines: dict[str, float]
+    exact_match: bool = False
+    normalized_domain: str | None = None
 
 
 @dataclass
@@ -140,6 +142,23 @@ class SearchReport:
     font_columns: list[FontCosineColumn]
     matches: list[SearchHit]
     top_candidates: list[SearchHit]
+
+
+@dataclass
+class PairwiseComparisonReport:
+    left_query: str
+    right_query: str
+    left_host: str
+    right_host: str
+    left_normalized: str
+    right_normalized: str
+    threshold: float
+    mean_font_cosine: float
+    font_columns: list[FontCosineColumn]
+    font_cosines: dict[str, float]
+    is_spoof: bool
+    model_prediction: bool | None
+    model_probability: float | None
 
 
 class SearchCancelled(RuntimeError):
@@ -296,17 +315,40 @@ def generate_glyph_image(
     draw_hd.text((x_hd, y_hd), text, font=_load_font(str(font_path), font_size_hd), fill=(255, 255, 255))
     return img_hd.resize((width, height), resample=Image.Resampling.LANCZOS)
 
-
-def normalize_domain_string(value: object) -> str:
+def canonicalize_domain_host(value: object) -> str:
     if value is None or pd.isna(value):
         return ""
+
     text = unicodedata.normalize("NFC", str(value)).strip().lower()
-    text = re.sub(r"^https?://", "", text)
+
+    # Remove scheme
+    text = re.sub(r"^[a-z]+://", "", text)
+
+    # Remove user info, like user:pass@
+    if "@" in text:
+        text = text.rsplit("@", 1)[-1]
+
+    # Keep only host portion
+    text = text.split("/", 1)[0]
+    text = text.split("?", 1)[0]
+    text = text.split("#", 1)[0]
+
+    # Remove port, like :8080
+    text = text.split(":", 1)[0]
+
+    # Remove trailing dot and common www prefix
+    text = text.rstrip(".")
     text = re.sub(r"^www\.", "", text)
-    text = text.rstrip("/")
-    text = re.sub(r"\.com$", "", text, flags=re.IGNORECASE)
+
     return text
 
+
+def normalize_domain_string(value: object) -> str:
+    text = canonicalize_domain_host(value)
+
+    # For datasets like google.com, google.ie, google.xyz
+    # return the part before the first dot
+    return text.split(".", 1)[0]
 
 def _push_topk(heap: list[tuple[float, int, SearchHit]], score: float, counter: int, hit: SearchHit, limit: int) -> None:
     item = (float(score), int(counter), hit)
@@ -423,9 +465,16 @@ class PrecomputedFeatureStore:
         self.domains_path = (self.store_dir / self.metadata["domains_file"]).resolve()
         self.sources = dict(self.metadata["sources"])
         self.embeddings = {
-            source_key: np.load((self.store_dir / source_info["file"]).resolve(), mmap_mode="r")
+            source_key: np.load(self._source_file_path(source_info), mmap_mode="r")
             for source_key, source_info in self.sources.items()
         }
+
+    def _source_file_path(self, source_info: dict[str, Any]) -> Path:
+        source_dir = source_info.get("dir")
+        file_name = source_info["file"]
+        if source_dir:
+            return (self.store_dir / str(source_dir) / str(file_name)).resolve()
+        return (self.store_dir / str(file_name)).resolve()
 
     def supports(
         self,
@@ -748,6 +797,84 @@ class DomainMatcher:
             query_font_embeddings[source_key] = self._project_if_available(source_key, raw_embedding)[0]
         return query_text_embedding, query_font_embeddings
 
+    def compare_pair(
+        self,
+        left_query: str,
+        right_query: str,
+        *,
+        threshold: float = 0.5,
+    ) -> PairwiseComparisonReport:
+        left_normalized = normalize_domain_string(left_query)
+        right_normalized = normalize_domain_string(right_query)
+        if not left_normalized:
+            raise ValueError("Please enter a non-empty left-side domain string.")
+        if not right_normalized:
+            raise ValueError("Please enter a non-empty right-side domain string.")
+        if not self.font_feature_names:
+            raise RuntimeError("The selected model does not provide any font cosine features.")
+
+        left_host = canonicalize_domain_host(left_query)
+        right_host = canonicalize_domain_host(right_query)
+        batch_size = 1
+        query_text_embedding, query_font_embeddings = self._prepare_query_embeddings(
+            left_normalized,
+            batch_size=batch_size,
+        )
+        feature_matrix, feature_map = self._build_feature_matrix(
+            left_normalized,
+            [right_normalized],
+            query_text_embedding,
+            query_font_embeddings,
+            batch_size=batch_size,
+        )
+        font_cosines = {
+            feature_name: float(feature_map[feature_name][0])
+            for feature_name in self.font_feature_names
+        }
+        mean_font_cosine = float(np.mean(list(font_cosines.values())))
+        bounded_threshold = max(0.0, min(1.0, float(threshold)))
+        is_spoof = mean_font_cosine >= bounded_threshold
+
+        model_prediction: bool | None = None
+        raw_prediction = self.bundle.estimator.predict(feature_matrix)
+        if len(raw_prediction) > 0:
+            prediction = raw_prediction[0]
+            model_prediction = bool(
+                prediction == self.positive_label or str(prediction) == str(self.positive_label)
+            )
+
+        model_probability: float | None = None
+        if hasattr(self.bundle.estimator, "predict_proba"):
+            probabilities = self.bundle.estimator.predict_proba(feature_matrix)
+            if probabilities.ndim == 2 and probabilities.shape[0] > 0 and probabilities.shape[1] > 0:
+                classes = list(getattr(self.bundle.estimator, "classes_", []))
+                positive_index = probabilities.shape[1] - 1
+                for index, class_label in enumerate(classes):
+                    if class_label == self.positive_label or str(class_label) == str(self.positive_label):
+                        positive_index = index
+                        break
+                positive_index = max(0, min(positive_index, probabilities.shape[1] - 1))
+                model_probability = float(probabilities[0, positive_index])
+
+        return PairwiseComparisonReport(
+            left_query=left_query,
+            right_query=right_query,
+            left_host=left_host,
+            right_host=right_host,
+            left_normalized=left_normalized,
+            right_normalized=right_normalized,
+            threshold=bounded_threshold,
+            mean_font_cosine=mean_font_cosine,
+            font_columns=[
+                FontCosineColumn(key=feature_name, label=self._font_label(feature_name))
+                for feature_name in self.font_feature_names
+            ],
+            font_cosines=font_cosines,
+            is_spoof=is_spoof,
+            model_prediction=model_prediction,
+            model_probability=model_probability,
+        )
+
     def search(
         self,
         query: str,
@@ -930,6 +1057,7 @@ class DomainMatcher:
                     domain=domain,
                     mean_font_cosine=mean_font_cosine,
                     font_cosines=font_cosines,
+                    normalized_domain=normalized_candidates[index],
                 )
 
                 _push_topk(overall_heap, mean_font_cosine, counter, hit, max(1, int(top_k)))

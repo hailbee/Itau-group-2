@@ -14,6 +14,7 @@
       --accent: #0b6e4f;
       --accent-strong: #084c39;
       --warn: #8b3d2c;
+      --gold: #d6a236;
       --shadow: 0 20px 40px rgba(24, 32, 34, 0.08);
     }
 
@@ -77,6 +78,38 @@
       padding: 22px;
     }
 
+    .tab-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .tab-button {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 12px 18px;
+      font: inherit;
+      font-weight: 700;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.82);
+      cursor: pointer;
+    }
+
+    .tab-button[aria-selected="true"] {
+      color: white;
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      border-color: transparent;
+    }
+
+    .tab-panel {
+      display: none;
+      gap: 22px;
+    }
+
+    .tab-panel.is-active {
+      display: grid;
+    }
+
     form {
       display: grid;
       gap: 16px;
@@ -90,6 +123,12 @@
     .field-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 14px;
+    }
+
+    .compare-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 14px;
     }
 
@@ -159,7 +198,7 @@
       width: 0%;
       height: 100%;
       border-radius: 999px;
-      background: linear-gradient(90deg, var(--accent), #d6a236);
+      background: linear-gradient(90deg, var(--accent), var(--gold));
       transition: width 0.35s ease;
     }
 
@@ -222,7 +261,7 @@
     }
 
     .stage-item[data-status="running"] .stage-dot {
-      background: #d6a236;
+      background: var(--gold);
       box-shadow: 0 0 0 6px rgba(214, 162, 54, 0.16);
     }
 
@@ -286,6 +325,18 @@
       color: var(--accent-strong);
     }
 
+    .mini-badge {
+      display: inline-block;
+      margin-left: 8px;
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      background: rgba(214, 162, 54, 0.16);
+      color: #7a5811;
+      vertical-align: middle;
+    }
+
     .section-title {
       display: flex;
       justify-content: space-between;
@@ -297,6 +348,35 @@
     .section-title h2 {
       margin: 0;
       font-size: 1.25rem;
+    }
+
+    .compare-headline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+
+    .verdict-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      padding: 9px 14px;
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    .verdict-pill.spoof {
+      background: rgba(139, 61, 44, 0.12);
+      color: var(--warn);
+    }
+
+    .verdict-pill.not-spoof {
+      background: rgba(11, 110, 79, 0.12);
+      color: var(--accent-strong);
     }
 
     @media (max-width: 720px) {
@@ -327,187 +407,346 @@
       <div class="eyebrow">Itau Group 2</div>
       <h1>Total 5F Domain Matcher</h1>
       <p class="subtitle">
-        Enter a string, compare it against the benign-domain dataset, and rank each pair by
-        mean font cosine using <code>total_5f_img_model.joblib</code>'s rendered-font image
-        feature set.
+        Search the benign-domain dataset or compare two inputs directly using the
+        <code>total_5f_img_model.joblib</code> rendered-font feature stack.
       </p>
     </section>
 
     <section class="card">
-      <form id="search-form" method="post" action="/search">
-        <div class="field">
-          <label for="query">Domain or string to test</label>
-          <input id="query" name="query" type="text" placeholder="f@ceb00k.com" value="{{ form_values.query }}" required>
+      <div class="tab-row" role="tablist" aria-label="Matcher tools">
+        <button id="tab-search-button" class="tab-button" type="button" role="tab" aria-selected="true" aria-controls="tab-search-panel" data-tab-target="search">
+          Dataset Search
+        </button>
+        <button id="tab-compare-button" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="tab-compare-panel" data-tab-target="compare">
+          Pairwise Compare
+        </button>
+      </div>
+    </section>
+
+    <section id="tab-search-panel" class="tab-panel grid" role="tabpanel" aria-labelledby="tab-search-button">
+      <section class="card">
+        <form id="search-form" method="post" action="/search">
+          <div class="field">
+            <label for="query">Domain or string to test</label>
+            <input id="query" name="query" type="text" placeholder="f@ceb00k.com" value="{{ form_values.query }}" required>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="top_k">Top results to keep</label>
+              <input id="top_k" name="top_k" type="number" min="1" value="{{ form_values.top_k }}">
+            </div>
+            <div class="field">
+              <label for="min_mean_font_cosine">Minimum mean font cosine</label>
+              <input id="min_mean_font_cosine" name="min_mean_font_cosine" type="number" min="0" max="1" step="0.01" value="{{ form_values.min_mean_font_cosine }}">
+            </div>
+            <div class="field">
+              <label for="chunk_size">Chunk size</label>
+              <input id="chunk_size" name="chunk_size" type="number" min="1" value="{{ form_values.chunk_size }}">
+            </div>
+            <div class="field">
+              <label for="max_rows">Optional scan cap</label>
+              <input id="max_rows" name="max_rows" type="number" min="1" placeholder="Blank = full benign set" value="{{ form_values.max_rows }}">
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button id="submit-button" type="submit">Run Search</button>
+            <span class="note">Blank <code>max_rows</code> means scan the full dataset. Exact host matches such as <code>google.com</code> are now pinned back to the full host when that domain exists in the dataset.</span>
+          </div>
+        </form>
+
+        {% if error %}
+        <div id="error-box" class="error">{{ error }}</div>
+        {% else %}
+        <div id="error-box" class="error" style="display:none"></div>
+        {% endif %}
+      </section>
+
+      <section id="live-progress" class="card" style="display:none">
+        <div class="section-title">
+          <h2>Scan Progress</h2>
+          <span id="progress-mode" class="pill">queued</span>
+        </div>
+        <div class="progress-shell">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <div class="progress-meta">
+          <div id="progress-text">Waiting to start…</div>
+          <div class="status-line">
+            <span>Rows scanned: <strong id="progress-rows">0</strong></span>
+            <span>Threshold hits: <strong id="progress-matches">0</strong></span>
+            <span>Elapsed: <strong id="progress-elapsed">0.00 s</strong></span>
+          </div>
+        </div>
+      </section>
+
+      <div id="results-root">
+      {% if report %}
+      <section class="card">
+        <div class="section-title">
+          <h2>Search Summary</h2>
+          <span class="pill">{{ report.feature_mode }}</span>
         </div>
 
-        <div class="field-grid">
-          <div class="field">
-            <label for="top_k">Top results to keep</label>
-            <input id="top_k" name="top_k" type="number" min="1" value="{{ form_values.top_k }}">
+        <div class="summary">
+          <div class="summary-card">
+            Query
+            <strong>{{ report.query }}</strong>
           </div>
-          <div class="field">
-            <label for="min_mean_font_cosine">Minimum mean font cosine</label>
-            <input id="min_mean_font_cosine" name="min_mean_font_cosine" type="number" min="0" max="1" step="0.01" value="{{ form_values.min_mean_font_cosine }}">
+          <div class="summary-card">
+            Normalized query
+            <strong>{{ report.normalized_query }}</strong>
           </div>
-          <div class="field">
-            <label for="chunk_size">Chunk size</label>
-            <input id="chunk_size" name="chunk_size" type="number" min="1" value="{{ form_values.chunk_size }}">
+          <div class="summary-card">
+            Rows scanned
+            <strong>{{ "{:,}".format(report.scanned_rows) }}</strong>
           </div>
-          <div class="field">
-            <label for="max_rows">Optional scan cap</label>
-            <input id="max_rows" name="max_rows" type="number" min="1" placeholder="Blank = full benign set" value="{{ form_values.max_rows }}">
+          <div class="summary-card">
+            Threshold hits
+            <strong>{{ "{:,}".format(report.total_threshold_hits) }}</strong>
+          </div>
+          <div class="summary-card">
+            Duration
+            <strong>{{ "%.2f"|format(report.duration_seconds) }} s</strong>
           </div>
         </div>
 
-        <div class="button-row">
-          <button id="submit-button" type="submit">Run Search</button>
-          <span class="note">Blank <code>max_rows</code> means scan the full dataset. With the precomputed store, searches are much faster than raw runtime mode, but a full 1M-row scan is still not instant.</span>
-        </div>
-      </form>
+        {% if report.warnings %}
+        <ul class="warnings">
+          {% for warning in report.warnings %}
+          <li>{{ warning }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </section>
 
-      {% if error %}
-      <div id="error-box" class="error">{{ error }}</div>
-      {% else %}
-      <div id="error-box" class="error" style="display:none"></div>
+      <section class="card">
+        <div class="section-title">
+          <h2>
+            {% if report.matches %}
+            Matches
+            {% else %}
+            No candidates cleared the threshold
+            {% endif %}
+          </h2>
+        </div>
+
+        {% if report.matches %}
+        <table>
+          <thead>
+            <tr>
+              <th>Domain</th>
+              <th>Mean Font Cosine</th>
+              {% for column in report.font_columns %}
+              <th>{{ column.label }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for hit in report.matches %}
+            <tr>
+              <td>
+                {{ hit.domain }}
+                {% if hit.exact_match %}
+                <span class="mini-badge">Exact host</span>
+                {% endif %}
+              </td>
+              <td>{{ "%.4f"|format(hit.mean_font_cosine) }}</td>
+              {% for column in report.font_columns %}
+              <td>{{ "%.4f"|format(hit.font_cosines[column.key]) }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="note">No candidates cleared the chosen mean-font-cosine threshold. The highest-scoring candidates are shown below.</p>
+        {% endif %}
+      </section>
+
+      <section class="card">
+        <div class="section-title">
+          <h2>Top Candidates</h2>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Domain</th>
+              <th>Mean Font Cosine</th>
+              {% for column in report.font_columns %}
+              <th>{{ column.label }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for hit in report.top_candidates %}
+            <tr>
+              <td>
+                {{ hit.domain }}
+                {% if hit.exact_match %}
+                <span class="mini-badge">Exact host</span>
+                {% endif %}
+              </td>
+              <td>{{ "%.4f"|format(hit.mean_font_cosine) }}</td>
+              {% for column in report.font_columns %}
+              <td>{{ "%.4f"|format(hit.font_cosines[column.key]) }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
       {% endif %}
+      </div>
+
+      <section id="run-steps" class="card" style="display:none">
+        <div class="section-title">
+          <h2>Run Steps</h2>
+          <span id="steps-status" class="pill">queued</span>
+        </div>
+        <div id="stage-list" class="stage-list"></div>
+      </section>
     </section>
 
-    <section id="live-progress" class="card" style="display:none">
-      <div class="section-title">
-        <h2>Scan Progress</h2>
-        <span id="progress-mode" class="pill">queued</span>
-      </div>
-      <div class="progress-shell">
-        <div id="progress-fill" class="progress-fill"></div>
-      </div>
-      <div class="progress-meta">
-        <div id="progress-text">Waiting to start…</div>
-        <div class="status-line">
-          <span>Rows scanned: <strong id="progress-rows">0</strong></span>
-          <span>Threshold hits: <strong id="progress-matches">0</strong></span>
-          <span>Elapsed: <strong id="progress-elapsed">0.00 s</strong></span>
-        </div>
-      </div>
-    </section>
+    <section id="tab-compare-panel" class="tab-panel grid" role="tabpanel" aria-labelledby="tab-compare-button">
+      <section class="card">
+        <form id="compare-form" method="post" action="/compare">
+          <div class="compare-grid">
+            <div class="field">
+              <label for="left_query">Left input</label>
+              <input id="left_query" name="left_query" type="text" placeholder="google.com" value="{{ compare_form_values.left_query }}" required>
+            </div>
+            <div class="field">
+              <label for="right_query">Right input</label>
+              <input id="right_query" name="right_query" type="text" placeholder="g00gle.com" value="{{ compare_form_values.right_query }}" required>
+            </div>
+            <div class="field">
+              <label for="threshold">Spoof threshold</label>
+              <input id="threshold" name="threshold" type="number" min="0" max="1" step="0.01" value="{{ compare_form_values.threshold }}">
+            </div>
+          </div>
 
-    <div id="results-root">
-    {% if report %}
-    <section class="card">
-      <div class="section-title">
-        <h2>Search Summary</h2>
-        <span class="pill">{{ report.feature_mode }}</span>
-      </div>
+          <div class="button-row">
+            <button id="compare-submit-button" type="submit">Compare Pair</button>
+            <span class="note">This compares the two inputs directly, computes the same mean font cosine used in search, and returns <code>spoof</code> when the score meets or exceeds your threshold.</span>
+          </div>
+          <p class="note">The matcher compares cleaned hosts and the normalized stem used by the search pipeline, so the summary below shows both views.</p>
+        </form>
 
-      <div class="summary">
-        <div class="summary-card">
-          Query
-          <strong>{{ report.query }}</strong>
-        </div>
-        <div class="summary-card">
-          Normalized query
-          <strong>{{ report.normalized_query }}</strong>
-        </div>
-        <div class="summary-card">
-          Rows scanned
-          <strong>{{ "{:,}".format(report.scanned_rows) }}</strong>
-        </div>
-        <div class="summary-card">
-          Threshold hits
-          <strong>{{ "{:,}".format(report.total_threshold_hits) }}</strong>
-        </div>
-        <div class="summary-card">
-          Duration
-          <strong>{{ "%.2f"|format(report.duration_seconds) }} s</strong>
-        </div>
-      </div>
+        {% if compare_error %}
+        <div id="compare-error-box" class="error">{{ compare_error }}</div>
+        {% else %}
+        <div id="compare-error-box" class="error" style="display:none"></div>
+        {% endif %}
+      </section>
 
-      {% if report.warnings %}
-      <ul class="warnings">
-        {% for warning in report.warnings %}
-        <li>{{ warning }}</li>
-        {% endfor %}
-      </ul>
-      {% endif %}
-    </section>
+      <div id="compare-results-root">
+      {% if compare_report %}
+      <section class="card">
+        <div class="compare-headline">
+          <div>
+            <h2 style="margin:0">Pairwise Result</h2>
+            <p class="note" style="margin:8px 0 0">Threshold verdict is based on mean font cosine.</p>
+          </div>
+          <span class="verdict-pill {{ 'spoof' if compare_report.is_spoof else 'not-spoof' }}">
+            {{ "Spoof" if compare_report.is_spoof else "Not Spoof" }}
+          </span>
+        </div>
 
-    <section class="card">
-      <div class="section-title">
-        <h2>
-          {% if report.matches %}
-          Matches
-          {% else %}
-          No candidates cleared the threshold
+        <div class="summary">
+          <div class="summary-card">
+            Left host
+            <strong>{{ compare_report.left_host or compare_report.left_query }}</strong>
+          </div>
+          <div class="summary-card">
+            Right host
+            <strong>{{ compare_report.right_host or compare_report.right_query }}</strong>
+          </div>
+          <div class="summary-card">
+            Left normalized
+            <strong>{{ compare_report.left_normalized }}</strong>
+          </div>
+          <div class="summary-card">
+            Right normalized
+            <strong>{{ compare_report.right_normalized }}</strong>
+          </div>
+          <div class="summary-card">
+            Mean font cosine
+            <strong>{{ "%.4f"|format(compare_report.mean_font_cosine) }}</strong>
+          </div>
+          <div class="summary-card">
+            Threshold
+            <strong>{{ "%.2f"|format(compare_report.threshold) }}</strong>
+          </div>
+          {% if compare_report.model_prediction is not none %}
+          <div class="summary-card">
+            Model verdict
+            <strong>{{ "Spoof" if compare_report.model_prediction else "Not Spoof" }}</strong>
+          </div>
           {% endif %}
-        </h2>
-      </div>
+          {% if compare_report.model_probability is not none %}
+          <div class="summary-card">
+            Model probability
+            <strong>{{ "%.4f"|format(compare_report.model_probability) }}</strong>
+          </div>
+          {% endif %}
+        </div>
+      </section>
 
-      {% if report.matches %}
-      <table>
-        <thead>
-          <tr>
-            <th>Domain</th>
-            <th>Mean Font Cosine</th>
-            {% for column in report.font_columns %}
-            <th>{{ column.label }}</th>
+      <section class="card">
+        <div class="section-title">
+          <h2>Per-Font Cosines</h2>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Cosine</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for column in compare_report.font_columns %}
+            <tr>
+              <td>{{ column.label }}</td>
+              <td>{{ "%.4f"|format(compare_report.font_cosines[column.key]) }}</td>
+            </tr>
             {% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for hit in report.matches %}
-          <tr>
-            <td>{{ hit.domain }}</td>
-            <td>{{ "%.4f"|format(hit.mean_font_cosine) }}</td>
-            {% for column in report.font_columns %}
-            <td>{{ "%.4f"|format(hit.font_cosines[column.key]) }}</td>
-            {% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <p class="note">No candidates cleared the chosen mean-font-cosine threshold. The highest-scoring candidates are shown below.</p>
+          </tbody>
+        </table>
+      </section>
       {% endif %}
-    </section>
-
-    <section class="card">
-      <div class="section-title">
-        <h2>Top Candidates</h2>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Domain</th>
-            <th>Mean Font Cosine</th>
-            {% for column in report.font_columns %}
-            <th>{{ column.label }}</th>
-            {% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for hit in report.top_candidates %}
-          <tr>
-            <td>{{ hit.domain }}</td>
-            <td>{{ "%.4f"|format(hit.mean_font_cosine) }}</td>
-            {% for column in report.font_columns %}
-            <td>{{ "%.4f"|format(hit.font_cosines[column.key]) }}</td>
-            {% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </section>
-    {% endif %}
-    </div>
-
-    <section id="run-steps" class="card" style="display:none">
-      <div class="section-title">
-        <h2>Run Steps</h2>
-        <span id="steps-status" class="pill">queued</span>
-      </div>
-      <div id="stage-list" class="stage-list"></div>
     </section>
   </main>
+
   <script>
+    const initialActiveTab = "{{ active_tab|default('search') }}";
+    const tabButtons = Array.from(document.querySelectorAll("[data-tab-target]"));
+    const tabPanels = {
+      search: document.getElementById("tab-search-panel"),
+      compare: document.getElementById("tab-compare-panel"),
+    };
+
+    function setActiveTab(tabName) {
+      const nextTab = tabPanels[tabName] ? tabName : "search";
+      tabButtons.forEach((button) => {
+        const isActive = button.dataset.tabTarget === nextTab;
+        button.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
+      Object.entries(tabPanels).forEach(([name, panel]) => {
+        if (!panel) {
+          return;
+        }
+        panel.classList.toggle("is-active", name === nextTab);
+      });
+    }
+
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", () => setActiveTab(button.dataset.tabTarget));
+    });
+    setActiveTab(initialActiveTab);
+
     const form = document.getElementById("search-form");
     const submitButton = document.getElementById("submit-button");
     const progressCard = document.getElementById("live-progress");
@@ -522,6 +761,10 @@
     const stepsCard = document.getElementById("run-steps");
     const stepsStatus = document.getElementById("steps-status");
     const stageList = document.getElementById("stage-list");
+    const compareForm = document.getElementById("compare-form");
+    const compareSubmitButton = document.getElementById("compare-submit-button");
+    const compareErrorBox = document.getElementById("compare-error-box");
+    const compareResultsRoot = document.getElementById("compare-results-root");
     let activeJobId = null;
     let activeJobStatus = "idle";
 
@@ -550,6 +793,16 @@
     function clearError() {
       errorBox.textContent = "";
       errorBox.style.display = "none";
+    }
+
+    function showCompareError(message) {
+      compareErrorBox.textContent = message;
+      compareErrorBox.style.display = "block";
+    }
+
+    function clearCompareError() {
+      compareErrorBox.textContent = "";
+      compareErrorBox.style.display = "none";
     }
 
     function isActiveStatus(status) {
@@ -728,6 +981,13 @@
       `;
     }
 
+    function renderDomainCell(row) {
+      return `
+        ${escapeHtml(row.domain)}
+        ${row.exact_match ? '<span class="mini-badge">Exact host</span>' : ""}
+      `;
+    }
+
     function renderMatchesTable(rows, fontColumns) {
       const fontHeaders = fontColumns
         .map((column) => `<th>${escapeHtml(column.label)}</th>`)
@@ -744,7 +1004,7 @@
           <tbody>
             ${rows.map((row) => `
               <tr>
-                <td>${escapeHtml(row.domain)}</td>
+                <td>${renderDomainCell(row)}</td>
                 <td>${formatFloat(row.mean_font_cosine)}</td>
                 ${fontColumns.map((column) => {
                   const value = row.font_cosines?.[column.key];
@@ -804,6 +1064,61 @@
             <h2>Search Stopped</h2>
           </div>
           <p class="note">${escapeHtml(progress.stage_detail || "Search stopped before completion.")}</p>
+        </section>
+      `;
+    }
+
+    function renderCompareReport(report) {
+      const verdictClass = report.is_spoof ? "spoof" : "not-spoof";
+      const verdictLabel = report.is_spoof ? "Spoof" : "Not Spoof";
+      const modelVerdict = report.model_prediction == null
+        ? ""
+        : `<div class="summary-card">Model verdict<strong>${report.model_prediction ? "Spoof" : "Not Spoof"}</strong></div>`;
+      const modelProbability = report.model_probability == null
+        ? ""
+        : `<div class="summary-card">Model probability<strong>${formatFloat(report.model_probability)}</strong></div>`;
+      compareResultsRoot.innerHTML = `
+        <section class="card">
+          <div class="compare-headline">
+            <div>
+              <h2 style="margin:0">Pairwise Result</h2>
+              <p class="note" style="margin:8px 0 0">Threshold verdict is based on mean font cosine.</p>
+            </div>
+            <span class="verdict-pill ${verdictClass}">${verdictLabel}</span>
+          </div>
+
+          <div class="summary">
+            <div class="summary-card">Left host<strong>${escapeHtml(report.left_host || report.left_query)}</strong></div>
+            <div class="summary-card">Right host<strong>${escapeHtml(report.right_host || report.right_query)}</strong></div>
+            <div class="summary-card">Left normalized<strong>${escapeHtml(report.left_normalized)}</strong></div>
+            <div class="summary-card">Right normalized<strong>${escapeHtml(report.right_normalized)}</strong></div>
+            <div class="summary-card">Mean font cosine<strong>${formatFloat(report.mean_font_cosine)}</strong></div>
+            <div class="summary-card">Threshold<strong>${formatFloat(report.threshold, 2)}</strong></div>
+            ${modelVerdict}
+            ${modelProbability}
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <h2>Per-Font Cosines</h2>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Cosine</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(report.font_columns || []).map((column) => `
+                <tr>
+                  <td>${escapeHtml(column.label)}</td>
+                  <td>${formatFloat(report.font_cosines?.[column.key])}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
         </section>
       `;
     }
@@ -870,6 +1185,7 @@
       }
 
       event.preventDefault();
+      setActiveTab("search");
 
       if (activeJobId && isActiveStatus(activeJobStatus)) {
         if (activeJobStatus === "cancelling") {
@@ -921,6 +1237,38 @@
         activeJobId = null;
         activeJobStatus = "idle";
         setSubmitMode("idle");
+      }
+    });
+
+    compareForm.addEventListener("submit", async (event) => {
+      if (!window.fetch) {
+        return;
+      }
+
+      event.preventDefault();
+      setActiveTab("compare");
+      clearCompareError();
+      compareResultsRoot.innerHTML = "";
+      compareSubmitButton.disabled = true;
+      compareSubmitButton.textContent = "Comparing...";
+
+      const payload = Object.fromEntries(new FormData(compareForm).entries());
+      try {
+        const response = await fetch("/api/compare", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to compare the pair.");
+        }
+        renderCompareReport(data.report);
+      } catch (error) {
+        showCompareError(error.message || "Comparison failed.");
+      } finally {
+        compareSubmitButton.disabled = false;
+        compareSubmitButton.textContent = "Compare Pair";
       }
     });
   </script>
