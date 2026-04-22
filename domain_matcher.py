@@ -320,18 +320,29 @@ def canonicalize_domain_host(value: object) -> str:
         return ""
 
     text = unicodedata.normalize("NFC", str(value)).strip().lower()
+    if not text:
+        return ""
 
-    # Remove scheme
-    text = re.sub(r"^[a-z]+://", "", text)
-
-    # Remove user info, like user:pass@
-    if "@" in text:
-        text = text.rsplit("@", 1)[-1]
+    scheme_match = re.match(r"^[a-z][a-z0-9+.-]*://", text)
+    has_explicit_authority = bool(scheme_match) or text.startswith("//")
+    if scheme_match:
+        text = text[scheme_match.end() :]
+    elif text.startswith("//"):
+        text = text[2:]
 
     # Keep only host portion
-    text = text.split("/", 1)[0]
-    text = text.split("?", 1)[0]
-    text = text.split("#", 1)[0]
+    host_end = len(text)
+    for delimiter in ("/", "?", "#"):
+        index = text.find(delimiter)
+        if index != -1:
+            host_end = min(host_end, index)
+    authority = text[:host_end]
+
+    # Treat `@` as URL user info only when the input clearly looked like a URL.
+    if (has_explicit_authority or host_end < len(text)) and "@" in authority:
+        authority = authority.rsplit("@", 1)[-1]
+
+    text = authority
 
     # Remove port, like :8080
     text = text.split(":", 1)[0]
